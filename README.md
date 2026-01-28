@@ -79,18 +79,25 @@ Create `.claude/bruhs.json` in your project:
 
 ```json
 {
-  "linear": {
-    "team": "Your Team",
-    "project": "Your Project",
-    "labelMapping": {
-      "feat": "Feature",
-      "fix": "Bug",
-      "chore": "Chore",
-      "refactor": "Improvement"
+  "project": {
+    "name": "Your Project",
+    "team": "Your Team"
+  },
+  "integrations": {
+    "linear": {
+      "project": "Your Project",
+      "labelMapping": {
+        "feat": "Feature",
+        "fix": "Bug",
+        "chore": "Chore",
+        "refactor": "Improvement"
+      }
     }
   },
-  "mcps": ["linear", "notion", "context7"],
-  "plugins": ["superpowers", "commit-commands", "feature-dev"],
+  "tooling": {
+    "mcps": ["linear", "notion", "context7"],
+    "plugins": ["superpowers", "commit-commands", "feature-dev"]
+  },
   "stack": {
     "structure": "turborepo",
     "framework": "nextjs",
@@ -101,8 +108,10 @@ Create `.claude/bruhs.json` in your project:
 }
 ```
 
-- **mcps** - MCP servers used by the project (for onboarding/setup)
-- **plugins** - Claude Code plugins used by the project
+- **project** - Project metadata
+- **integrations** - Config for external services (Linear, GitHub, etc.)
+- **tooling** - Recommended MCPs and plugins (auto-detected at setup)
+- **stack** - Tech stack choices
 
 ## Dependencies
 

@@ -235,14 +235,19 @@ Reads `.claude/bruhs.json`:
 
 ```json
 {
-  "linear": {
-    "team": "Perdix Labs",
-    "project": "Gambit",
-    "labelMapping": {
-      "feat": "Feature",
-      "fix": "Bug",
-      "chore": "Chore",
-      "refactor": "Improvement"
+  "project": {
+    "name": "Gambit",
+    "team": "Perdix Labs"
+  },
+  "integrations": {
+    "linear": {
+      "project": "Gambit",
+      "labelMapping": {
+        "feat": "Feature",
+        "fix": "Bug",
+        "chore": "Chore",
+        "refactor": "Improvement"
+      }
     }
   }
 }

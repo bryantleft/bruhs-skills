@@ -190,18 +190,25 @@ Create `.claude/bruhs.json` with selected configuration:
 
 ```json
 {
-  "linear": {
-    "team": "<selected-team>",
-    "project": "<project-name>",
-    "labelMapping": {
-      "feat": "Feature",
-      "fix": "Bug",
-      "chore": "Chore",
-      "refactor": "Improvement"
+  "project": {
+    "name": "<project-name>",
+    "team": "<team-name>"
+  },
+  "integrations": {
+    "linear": {
+      "project": "<project-name>",
+      "labelMapping": {
+        "feat": "Feature",
+        "fix": "Bug",
+        "chore": "Chore",
+        "refactor": "Improvement"
+      }
     }
   },
-  "mcps": ["linear", "notion", "context7"],
-  "plugins": ["superpowers", "commit-commands", "feature-dev"],
+  "tooling": {
+    "mcps": ["linear", "notion", "context7"],
+    "plugins": ["superpowers", "commit-commands", "feature-dev"]
+  },
   "stack": {
     "structure": "<monorepo|single>",
     "framework": "<framework>",
@@ -217,7 +224,7 @@ Create `.claude/bruhs.json` with selected configuration:
 }
 ```
 
-**MCPs and Plugins are auto-detected at generation time:**
+**Tooling is auto-detected at generation time:**
 
 ```bash
 # Read user's current setup
@@ -225,7 +232,7 @@ cat ~/.claude/settings.json | jq '.mcpServers | keys'      # Installed MCPs
 cat ~/.claude/settings.json | jq '.enabledPlugins | keys'  # Enabled plugins
 ```
 
-The `mcps` and `plugins` fields store what's recommended for this project. When a new dev joins, they can compare against their setup and install missing ones.
+The `tooling` section stores what's recommended for this project. New devs can compare against their setup and install missing ones.
 
 ### Step 8: Setup GitHub Actions
 
