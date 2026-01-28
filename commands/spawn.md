@@ -217,15 +217,15 @@ Create `.claude/bruhs.json` with selected configuration:
 }
 ```
 
-**MCPs** - Model Context Protocol servers for integrations:
-- `linear` - Linear issue tracking
-- `notion` - Notion docs
-- `context7` - Documentation lookup
+**MCPs and Plugins are auto-detected at generation time:**
 
-**Plugins** - Claude Code plugins for workflows:
-- `superpowers` - TDD, debugging, collaboration patterns
-- `commit-commands` - Git commit workflows
-- `feature-dev` - Feature development
+```bash
+# Read user's current setup
+cat ~/.claude/settings.json | jq '.mcpServers | keys'      # Installed MCPs
+cat ~/.claude/settings.json | jq '.enabledPlugins | keys'  # Enabled plugins
+```
+
+The `mcps` and `plugins` fields store what's recommended for this project. When a new dev joins, they can compare against their setup and install missing ones.
 
 ### Step 8: Setup GitHub Actions
 
