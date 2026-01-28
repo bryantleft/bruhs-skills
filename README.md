@@ -1,32 +1,25 @@
 # bruhs
 
-Opinionated development lifecycle plugin for Claude Code - spawn projects, cook features, yeet to ship.
+Opinionated development lifecycle for Claude Code - spawn projects, cook features, yeet to ship.
 
 ## Installation
 
 ```bash
-claude plugin install bruhs
+npx skills add bryantleft/bruhs-skills
+```
+
+## Usage
+
+```bash
+/bruhs              # Interactive selection
+/bruhs spawn        # Create new project or add to monorepo
+/bruhs cook         # Plan + Build a feature end-to-end
+/bruhs yeet         # Ship: Linear ticket → Branch → Commit → PR
 ```
 
 ## Commands
 
-| Command | Purpose |
-|---------|---------|
-| `/bruhs:spawn` | Create new project or add to monorepo |
-| `/bruhs:cook` | Plan + Build a feature end-to-end |
-| `/bruhs:yeet` | Ship: Linear ticket → Branch → Commit → PR |
-
-## Workflow
-
-```
-/bruhs:spawn → Create project/app with full stack setup
-    ↓
-/bruhs:cook → Plan and build features with TDD
-    ↓
-/bruhs:yeet → Ship to Linear + GitHub
-```
-
-## `/bruhs:spawn`
+### `/bruhs spawn`
 
 Create a new project from scratch or add an app/package to an existing monorepo.
 
@@ -37,6 +30,7 @@ Create a new project from scratch or add an app/package to an existing monorepo.
 - Creates Linear project + initial tickets
 - Sets up GitHub Actions with Blacksmith runner
 - Creates `.claude/bruhs.json` config
+- Recommends relevant skills via `find-skills`
 
 **Supported stacks:**
 - **Web:** Next.js, TanStack Start, Astro
@@ -46,7 +40,7 @@ Create a new project from scratch or add an app/package to an existing monorepo.
 - **CLI:** Node, uv, cargo
 - **Roblox:** Rojo
 
-## `/bruhs:cook`
+### `/bruhs cook`
 
 Plan and build a feature end-to-end.
 
@@ -57,9 +51,9 @@ Plan and build a feature end-to-end.
 4. **Setup** - Stash unrelated changes if needed
 5. **Build** - Implement with TDD where applicable
 6. **Review** - Use code-reviewer agents
-7. **Ready** - Prompt user to `/bruhs:yeet`
+7. **Ready** - Prompt user to `/bruhs yeet`
 
-## `/bruhs:yeet`
+### `/bruhs yeet`
 
 Ship code with Linear integration.
 
