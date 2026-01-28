@@ -99,21 +99,23 @@ branchName = issue.gitBranchName  // e.g., "perdix-140-improve-game-state-valida
 ticketId = issue.identifier  // e.g., "PERDIX-140"
 ```
 
-### Step 5: Checkout Branch
+### Step 5: Create Branch
+
+Use modern git commands for branch operations:
 
 ```bash
-git checkout -b <branchName>
+git switch -c <branchName>
 ```
 
 Example:
 ```bash
-git checkout -b perdix-140-improve-game-state-validation
+git switch -c perdix-140-improve-game-state-validation
 ```
 
 If Linear not available, generate branch name:
 ```bash
 # Format: <type>/<short-description>
-git checkout -b feat/add-leaderboard
+git switch -c feat/add-leaderboard
 ```
 
 ### Step 6: Stage and Commit
@@ -217,7 +219,7 @@ Analyzing changes...
 Creating Linear ticket...
 ✓ PERDIX-140: Add leaderboard to game page
 
-Checking out branch...
+Switching to branch...
 ✓ perdix-140-add-leaderboard-to-game-page
 
 Committing...
@@ -272,7 +274,7 @@ Analyzing changes...
 
 ⚠ Linear not configured (git-only mode)
 
-Checking out branch...
+Switching to branch...
 ✓ feat/add-leaderboard
 
 Committing...
@@ -299,7 +301,7 @@ Analyzing changes...
 Creating Linear ticket...
 ✓ PERDIX-141: Add dark mode toggle
 
-Checking out branch...
+Switching to branch...
 ✓ perdix-141-add-dark-mode-toggle
 
 Committing...
@@ -326,7 +328,7 @@ Analyzing changes...
 Creating Linear ticket...
 ✓ PERDIX-142: Fix card draw validation
 
-Checking out branch...
+Switching to branch...
 ✓ perdix-142-fix-card-draw-validation
 
 Committing...
@@ -374,6 +376,29 @@ Remaining changes:
 
 Ship these too? [Y/n]
 ```
+
+## Git Best Practices
+
+yeet follows modern git conventions:
+
+| Old Command | Modern Command | Purpose |
+|-------------|----------------|---------|
+| `git checkout -b <branch>` | `git switch -c <branch>` | Create and switch to new branch |
+| `git checkout <branch>` | `git switch <branch>` | Switch to existing branch |
+| `git checkout -- <file>` | `git restore <file>` | Discard changes to file |
+| `git reset HEAD <file>` | `git restore --staged <file>` | Unstage file |
+
+**Why modern commands?**
+- `git switch` and `git restore` were introduced in Git 2.23 (2019)
+- Clearer intent: `switch` for branches, `restore` for files
+- Less ambiguous than overloaded `checkout` command
+- Better error messages and safer defaults
+
+**Other conventions:**
+- Stage specific files over `git add -A` when possible
+- Use HEREDOC for multi-line commit messages
+- Include ticket references in commit body, not title
+- Push with `-u` to set upstream tracking
 
 ## Tips
 
