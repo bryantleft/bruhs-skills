@@ -1,0 +1,20 @@
+{
+  "name": "bruhs",
+  "description": "Opinionated development lifecycle - spawn projects, cook features, yeet to ship",
+  "owner": {
+    "name": "Bryan Tle",
+    "email": "bryan@perdixlabs.com"
+  },
+  "plugins": [
+    {
+      "name": "bruhs",
+      "description": "Opinionated development lifecycle - spawn projects, cook features, yeet to ship",
+      "version": "1.0.0",
+      "source": "./",
+      "author": {
+        "name": "Bryan Tle",
+        "email": "bryan@perdixlabs.com"
+      }
+    }
+  ]
+}
