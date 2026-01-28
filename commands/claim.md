@@ -112,6 +112,40 @@ Extract:
 - Installed MCP servers
 - Enabled plugins
 
+### Step 6b: Detect Relevant Skills
+
+Based on the detected stack, find skills that should be loaded for this project:
+
+```javascript
+// Map stack to relevant skills
+skillsMap = {
+  "shadcn": ["shadcn"],                          // styling includes shadcn
+  "vercel-ai-sdk": ["vercel-ai-sdk"],            // ai: vercel-ai-sdk
+  "better-auth": ["better-auth-best-practices"], // auth: better-auth
+  "nextjs": ["vercel-react-best-practices"],     // framework: nextjs
+  "tanstack-query": [],                          // covered by react best practices
+  "drizzle": [],                                 // no specific skill yet
+  "effect": [],                                  // no specific skill yet
+}
+
+// Collect skills based on detected stack
+detectedSkills = []
+if (stack.styling?.includes("shadcn")) detectedSkills.push("shadcn")
+if (stack.ai === "vercel-ai-sdk") detectedSkills.push("vercel-ai-sdk")
+if (stack.auth === "better-auth") detectedSkills.push("better-auth-best-practices")
+if (stack.framework === "nextjs") detectedSkills.push("vercel-react-best-practices")
+
+// Verify skills actually exist
+Skill("find-skills")  // Use to validate detected skills
+```
+
+Output:
+```
+Detecting relevant skills...
+✓ Found: shadcn (component library)
+✓ Found: vercel-react-best-practices (React/Next.js patterns)
+```
+
 ### Step 7: Create Config
 
 Create `.claude/bruhs.json`:
@@ -132,7 +166,8 @@ Create `.claude/bruhs.json`:
   },
   "tooling": {
     "mcps": ["<detected-mcps>"],
-    "plugins": ["<detected-plugins>"]
+    "plugins": ["<detected-plugins>"],
+    "skills": ["<detected-skills>"]
   },
   "stack": {
     "structure": "<detected>",
@@ -176,6 +211,7 @@ Stack detected:
 Tooling:
   ✓ MCPs: linear, notion, context7
   ✓ Plugins: superpowers, commit-commands
+  ✓ Skills: shadcn, vercel-react-best-practices
 
 Ready! You can now use /bruhs cook and /bruhs yeet.
 ```
@@ -234,6 +270,10 @@ Which Linear team?
 
 Which Linear project?
 ○ Gambit ← selected
+
+Detecting relevant skills...
+✓ Found: shadcn (component library)
+✓ Found: vercel-react-best-practices (React/Next.js patterns)
 
 Confirm detected stack? [Y/n]
 > Y

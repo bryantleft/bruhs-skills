@@ -289,31 +289,53 @@ Scope: <what's included/excluded>
 
 ### Step 2: Explore
 
-**Search for relevant skills:**
+**Load project skills from bruhs.json:**
 
-Based on the feature requirements and detected stack, search for skills that might help:
+```javascript
+// Load skills already configured for this project
+config = readJson(".claude/bruhs.json")
+projectSkills = config.tooling?.skills || []
+
+// Load each configured skill
+projectSkills.forEach(skill => Skill(skill))
+```
+
+```
+Loading project skills...
+✓ Loaded: shadcn
+✓ Loaded: vercel-react-best-practices
+```
+
+**Search for additional skills needed for this feature:**
+
+Based on the feature requirements, search for skills not already in bruhs.json:
 
 ```javascript
 // Identify libraries/technologies involved in the feature
-// Examples: shadcn, ai-sdk, tanstack-query, drizzle, stripe, etc.
+// Examples: stripe, resend, uploadthing, etc.
 
-// Search for matching skills
+// Search for matching skills not already loaded
 Skill("find-skills")
 
-// Or check specific known skills:
-// - shadcn → mcp__shadcn__* tools for component installation
-// - ai-sdk → vercel-ai-sdk patterns
-// - auth → better-auth-best-practices
-// - react → vercel-react-best-practices
+// Track newly discovered skills
+newSkills = []
 ```
 
 ```
-Checking for relevant skills...
-✓ Found: shadcn (component library tools)
-✓ Found: vercel-react-best-practices
+Checking for feature-specific skills...
+✓ Found: stripe (not in project config)
 ```
 
-If skills are found, load them to inform the planning and building phases.
+**Persist newly discovered skills to bruhs.json:**
+
+```javascript
+if (newSkills.length > 0) {
+  // Add to bruhs.json for future sessions
+  config.tooling.skills = [...projectSkills, ...newSkills]
+  writeJson(".claude/bruhs.json", config)
+  console.log(`✓ Added ${newSkills.join(", ")} to bruhs.json`)
+}
+```
 
 **Launch code-explorer agents to understand the codebase:**
 
