@@ -99,9 +99,6 @@ Create `.claude/bruhs.json` in your project:
 
 ```json
 {
-  "git": {
-    "baseBranch": "main"
-  },
   "integrations": {
     "linear": {
       "team": "Your Team",
@@ -128,7 +125,6 @@ Create `.claude/bruhs.json` in your project:
 }
 ```
 
-- **git** - Git workflow settings (optional baseBranch override for dip)
 - **integrations** - Config for external services (Linear, GitHub, etc.)
 - **tooling** - Recommended MCPs and plugins (auto-detected at setup)
 - **stack** - Tech stack choices

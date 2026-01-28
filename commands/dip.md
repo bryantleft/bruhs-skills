@@ -42,21 +42,15 @@ How would you like to proceed?
 
 ### Step 2: Detect Base Branch
 
-Detect the base branch automatically (with optional config override):
+Auto-detect the default branch from the remote:
 
 ```bash
-# Check config first (optional override)
-configBranch = config.git?.baseBranch
+# Detect from GitHub CLI (preferred)
+baseBranch = $(gh repo view --json defaultBranchRef -q '.defaultBranchRef.name')
 
-# If not configured, detect from remote
-if (!configBranch) {
-  baseBranch = $(gh repo view --json defaultBranchRef -q '.defaultBranchRef.name')
-  # Fallback if gh not available
-  if (!baseBranch) {
-    baseBranch = $(git remote show origin | grep "HEAD branch" | cut -d: -f2 | xargs)
-  }
-} else {
-  baseBranch = configBranch
+# Fallback to git remote
+if (!baseBranch) {
+  baseBranch = $(git remote show origin | grep "HEAD branch" | cut -d: -f2 | xargs)
 }
 ```
 
@@ -132,22 +126,6 @@ Cleaning up...
 
 Ready for your next feature! Run /bruhs cook to start.
 ```
-
-## Configuration
-
-The base branch is auto-detected from the remote. Optionally override in `.claude/bruhs.json`:
-
-```json
-{
-  "git": {
-    "baseBranch": "dev"
-  }
-}
-```
-
-| Field | Default | Description |
-|-------|---------|-------------|
-| `baseBranch` | (auto-detect) | Override branch to switch to after cleanup |
 
 ## Examples
 
