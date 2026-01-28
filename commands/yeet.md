@@ -8,8 +8,8 @@ Ship code that's ready to go. Creates Linear ticket, commits, pushes, and opens 
 
 ## Invocation
 
-- `/bruhs:yeet` - Ship current changes
-- `/bruhs:yeet` after `/bruhs:cook` - Complete the cooking workflow
+- `/bruhs yeet` - Ship current changes
+- `/bruhs yeet` after `/bruhs cook` - Complete the cooking workflow (uses existing ticket if cook started from one)
 
 ## Prerequisites
 
@@ -86,9 +86,24 @@ try {
 }
 ```
 
-### Step 4: Create Linear Ticket (if available)
+### Step 4: Get or Create Linear Ticket (if available)
 
-Load Linear MCP tools and create issue:
+**First, check if ticket context exists from cook:**
+
+```javascript
+// If cook passed ticket context (started from a ticket ID), use it
+if (ticketContext) {
+  console.log("Using existing ticket from cook...")
+  branchName = ticketContext.branchName   // "perdix-145-add-dark-mode-toggle"
+  ticketId = ticketContext.identifier     // "PERDIX-145"
+  issueId = ticketContext.id              // UUID for API calls
+
+  // Skip ticket creation
+  return
+}
+```
+
+**If no existing ticket, create one:**
 
 ```javascript
 // Load Linear tools
@@ -116,6 +131,7 @@ issue = mcp__linear__create_issue({
 // Capture the branch name Linear generates
 branchName = issue.gitBranchName  // e.g., "perdix-140-improve-game-state-validation"
 ticketId = issue.identifier  // e.g., "PERDIX-140"
+issueId = issue.id
 ```
 
 ### Step 5: Create Branch
@@ -231,6 +247,7 @@ mcp__linear__update_issue({
 
 ### Step 10: Output Summary
 
+**If created new ticket:**
 ```
 Analyzing changes...
 - 3 files modified in components/game/
@@ -249,6 +266,29 @@ Pushing & creating PR...
 
 Updating Linear...
 ✓ PERDIX-140 → In Review
+
+Done! 🚀
+```
+
+**If using existing ticket (from cook):**
+```
+Analyzing changes...
+- 2 files modified in app/settings/, lib/hooks/
+
+Using existing ticket...
+✓ PERDIX-145: Add dark mode toggle to settings page
+
+Switching to branch...
+✓ perdix-145-add-dark-mode-toggle-to-settings-page
+
+Committing...
+✓ feat: add dark mode toggle to settings page (Fixes PERDIX-145)
+
+Pushing & creating PR...
+✓ PR #45: https://github.com/org/repo/pull/45
+
+Updating Linear...
+✓ PERDIX-145 → In Review
 
 Done! 🚀
 ```
@@ -307,10 +347,10 @@ Done! 🚀
 
 ## Examples
 
-### After /bruhs:cook
+### After /bruhs cook (from feature description)
 
 ```
-> /bruhs:yeet
+> /bruhs yeet
 
 Analyzing changes...
 - 2 files created
@@ -331,6 +371,33 @@ Pushing & creating PR...
 
 Updating Linear...
 ✓ PERDIX-141 → In Review
+
+Done! 🚀
+```
+
+### After /bruhs cook PERDIX-145 (from ticket)
+
+```
+> /bruhs yeet
+
+Analyzing changes...
+- 2 files modified
+- Type: feat (new feature)
+
+Using existing ticket...
+✓ PERDIX-145: Add dark mode toggle to settings page
+
+Switching to branch...
+✓ perdix-145-add-dark-mode-toggle-to-settings-page
+
+Committing...
+✓ feat: add dark mode toggle to settings page (Fixes PERDIX-145)
+
+Pushing & creating PR...
+✓ PR #46: https://github.com/perdixlabs/gambit/pull/46
+
+Updating Linear...
+✓ PERDIX-145 → In Review
 
 Done! 🚀
 ```

@@ -8,8 +8,9 @@ Combined planning and building workflow. Wraps brainstorming and feature develop
 
 ## Invocation
 
-- `/bruhs:cook <feature>` - Start cooking a specific feature
-- `/bruhs:cook` - Interactive mode, will ask what to build
+- `/bruhs cook <feature>` - Start cooking a specific feature
+- `/bruhs cook <TICKET-ID>` - Fetch Linear ticket and start working on it (e.g., `PERDIX-123`)
+- `/bruhs cook` - Interactive mode, will ask what to build
 
 ## Core Principles
 
@@ -240,6 +241,39 @@ If user chooses to continue without config:
 
 Clarify what we're building:
 
+**If input looks like a ticket ID** (e.g., `PERDIX-123`, `LIN-456`):
+
+```javascript
+// Load Linear MCP and fetch the ticket
+ToolSearch("select:mcp__linear__get_issue")
+
+issue = mcp__linear__get_issue({ id: ticketId })
+
+// Store ticket context for yeet
+ticketContext = {
+  id: issue.id,
+  identifier: issue.identifier,      // "PERDIX-123"
+  title: issue.title,
+  description: issue.description,
+  branchName: issue.gitBranchName,   // "perdix-123-add-feature"
+}
+
+// Output what we're working on
+```
+
+Output:
+```
+Working on Linear ticket...
+✓ PERDIX-123: Add dark mode toggle
+
+Description:
+<ticket description from Linear>
+
+Starting exploration...
+```
+
+**If input is a feature description:**
+
 1. Parse the feature request
 2. Ask clarifying questions if needed:
    - What's the user story?
@@ -382,20 +416,34 @@ Fixing...
 
 Signal completion and prompt for shipping:
 
+**If started from a Linear ticket:**
 ```
-Ready to ship! Run /bruhs:yeet to create ticket and PR.
+Ready to ship! Run /bruhs yeet to create PR.
+📋 Using existing ticket: PERDIX-123
+```
+
+**If started from feature description:**
+```
+Ready to ship! Run /bruhs yeet to create ticket and PR.
 ```
 
 If we stashed changes:
 ```
-Ready to ship! Run /bruhs:yeet to create ticket and PR.
 💡 You have stashed changes from before this feature (git stash pop to restore)
 ```
 
-## Example
+**Important:** When handing off to yeet, pass the ticket context if it exists:
+```javascript
+// If ticketContext exists from Step 1, pass it to yeet
+// yeet will skip ticket creation and use existing ticket info
+```
+
+## Examples
+
+### From Feature Description
 
 ```
-> /bruhs:cook add leaderboard to game page
+> /bruhs cook add leaderboard to game page
 
 Understanding...
 Feature: Leaderboard
@@ -442,7 +490,52 @@ Building...
 Reviewing...
 ✓ No high-confidence issues found
 
-Ready to ship! Run /bruhs:yeet to create ticket and PR.
+Ready to ship! Run /bruhs yeet to create ticket and PR.
+```
+
+### From Linear Ticket
+
+```
+> /bruhs cook PERDIX-145
+
+Working on Linear ticket...
+✓ PERDIX-145: Add dark mode toggle to settings page
+
+Description:
+Users should be able to toggle between light and dark mode from the settings.
+Acceptance criteria:
+- Toggle in settings page
+- Persists preference to localStorage
+- Respects system preference by default
+
+Exploring codebase...
+- Found: app/settings/page.tsx (settings page)
+- Found: components/ui/switch.tsx (toggle component)
+- Found: lib/hooks/use-theme.ts (existing theme hook)
+- Pattern: Zustand for client state, localStorage for persistence
+
+Planning...
+
+**Approach 1: Extend existing useTheme hook**
+- Add toggle to settings page using existing hook
+- Files: app/settings/page.tsx, lib/hooks/use-theme.ts
+- Pros: Minimal changes, uses existing infrastructure
+- Cons: None significant
+
+Which approach? [1]
+
+> 1
+
+Building...
+✓ Modified lib/hooks/use-theme.ts (added system preference detection)
+✓ Modified app/settings/page.tsx (added theme toggle)
+✓ All manual verification passed
+
+Reviewing...
+✓ No high-confidence issues found
+
+Ready to ship! Run /bruhs yeet to create PR.
+📋 Using existing ticket: PERDIX-145
 ```
 
 ## Integration with Other Skills
