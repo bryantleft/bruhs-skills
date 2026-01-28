@@ -365,8 +365,26 @@ Implement the feature using TDD where applicable:
 4. Repeat
 
 **For UI/non-testable code:**
+
+First, check if dev server is running (for UI changes):
+```bash
+# Check if dev server is running on common ports
+lsof -i :3000 -i :3001 -i :5173 | grep LISTEN
+```
+
+If not running:
+```
+Dev server not running. Start it? [Y/n]
+```
+
+If yes, start in background:
+```bash
+pnpm dev &
+```
+
+Then:
 1. Implement component/feature
-2. Manual verification
+2. Verify in browser (see Step 6)
 3. Refactor
 
 Use feature-dev patterns:
@@ -378,6 +396,7 @@ Use feature-dev patterns:
 **Progress output:**
 ```
 Building...
+✓ Dev server running on :3000
 ✓ Created <file>
 ✓ Modified <file>
 ✓ Added tests for <feature>
@@ -385,6 +404,8 @@ Building...
 ```
 
 ### Step 6: Review
+
+**Code Review:**
 
 Launch code-reviewer agents to check the implementation:
 
@@ -396,11 +417,33 @@ Use the Task tool with `subagent_type: "feature-dev:code-reviewer"` to:
 - Check adherence to project conventions
 
 ```
-Reviewing...
+Reviewing code...
 ✓ No high-confidence issues found
 ```
 
-Or if issues found:
+**Visual Verification (for UI changes):**
+
+If the feature includes UI changes, use the browser agent to verify:
+
+```javascript
+// Invoke the agent-browser skill for visual verification
+Skill("agent-browser")
+
+// The browser agent will:
+// - Navigate to the relevant page
+// - Verify the UI renders correctly
+// - Check for visual regressions
+// - Test basic interactions
+```
+
+```
+Verifying in browser...
+✓ Page loads without errors
+✓ Component renders correctly
+✓ Interactions work as expected
+```
+
+**If issues found:**
 ```
 Reviewing...
 ⚠ Found issues:
