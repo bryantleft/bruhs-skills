@@ -367,9 +367,20 @@ Implement the feature using TDD where applicable:
 **For UI/non-testable code:**
 
 First, check if dev server is running (for UI changes):
+
+```javascript
+// 1. Detect the dev command and port from package.json
+//    - Read package.json (or app's package.json in monorepo)
+//    - Parse "dev" script for port flags (--port, -p, etc.)
+//    - Check for framework config files (next.config.js, vite.config.ts)
+//    - Default ports: Next.js (3000), Vite (5173), etc.
+
+// 2. Check if that port is in use
+```
+
 ```bash
-# Check if dev server is running on common ports
-lsof -i :3000 -i :3001 -i :5173 | grep LISTEN
+# Check if detected port is in use
+lsof -i :<detected-port> | grep LISTEN
 ```
 
 If not running:
@@ -377,8 +388,12 @@ If not running:
 Dev server not running. Start it? [Y/n]
 ```
 
-If yes, start in background:
+If yes, start in background using the project's dev command:
 ```bash
+# For monorepo, run from the correct workspace
+pnpm --filter <app-name> dev &
+
+# For single project
 pnpm dev &
 ```
 
@@ -396,7 +411,7 @@ Use feature-dev patterns:
 **Progress output:**
 ```
 Building...
-✓ Dev server running on :3000
+✓ Dev server running on :<detected-port>
 ✓ Created <file>
 ✓ Modified <file>
 ✓ Added tests for <feature>
