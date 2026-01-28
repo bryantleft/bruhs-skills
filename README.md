@@ -113,7 +113,7 @@ Create `.claude/bruhs.json` in your project:
   },
   "tooling": {
     "mcps": ["linear", "notion", "context7"],
-    "plugins": ["superpowers", "commit-commands", "feature-dev"]
+    "skills": ["superpowers", "feature-dev", "commit-commands", "shadcn", "vercel-react-best-practices"]
   },
   "stack": {
     "structure": "turborepo",
@@ -126,7 +126,7 @@ Create `.claude/bruhs.json` in your project:
 ```
 
 - **integrations** - Config for external services (Linear, GitHub, etc.)
-- **tooling** - Recommended MCPs and plugins (auto-detected at setup)
+- **tooling** - MCPs and skills (auto-detected at setup, grows as you build)
 - **stack** - Tech stack choices
 
 ## Dependencies

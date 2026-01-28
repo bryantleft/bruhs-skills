@@ -104,32 +104,33 @@ Allow user to:
 ### Step 6: Detect Installed Tooling
 
 ```bash
-# Check user's Claude settings for installed MCPs and plugins
+# Check user's Claude settings for installed MCPs
 cat ~/.claude/settings.json 2>/dev/null
 ```
 
 Extract:
 - Installed MCP servers
-- Enabled plugins
 
 ### Step 6b: Detect Relevant Skills
 
 Based on the detected stack, find skills that should be loaded for this project:
 
 ```javascript
-// Map stack to relevant skills
+// Always include workflow skills
+detectedSkills = [
+  "superpowers",       // brainstorming, debugging, verification, etc.
+  "feature-dev",       // code-explorer, code-reviewer, code-architect
+  "commit-commands",   // commit, commit-push-pr
+]
+
+// Add library/tech skills based on detected stack
 skillsMap = {
   "shadcn": ["shadcn"],                          // styling includes shadcn
   "vercel-ai-sdk": ["vercel-ai-sdk"],            // ai: vercel-ai-sdk
   "better-auth": ["better-auth-best-practices"], // auth: better-auth
   "nextjs": ["vercel-react-best-practices"],     // framework: nextjs
-  "tanstack-query": [],                          // covered by react best practices
-  "drizzle": [],                                 // no specific skill yet
-  "effect": [],                                  // no specific skill yet
 }
 
-// Collect skills based on detected stack
-detectedSkills = []
 if (stack.styling?.includes("shadcn")) detectedSkills.push("shadcn")
 if (stack.ai === "vercel-ai-sdk") detectedSkills.push("vercel-ai-sdk")
 if (stack.auth === "better-auth") detectedSkills.push("better-auth-best-practices")
@@ -166,7 +167,6 @@ Create `.claude/bruhs.json`:
   },
   "tooling": {
     "mcps": ["<detected-mcps>"],
-    "plugins": ["<detected-plugins>"],
     "skills": ["<detected-skills>"]
   },
   "stack": {
@@ -210,8 +210,7 @@ Stack detected:
 
 Tooling:
   ✓ MCPs: linear, notion, context7
-  ✓ Plugins: superpowers, commit-commands
-  ✓ Skills: shadcn, vercel-react-best-practices
+  ✓ Skills: superpowers, feature-dev, commit-commands, shadcn, vercel-react-best-practices
 
 Ready! You can now use /bruhs cook and /bruhs yeet.
 ```
@@ -272,6 +271,9 @@ Which Linear project?
 ○ Gambit ← selected
 
 Detecting relevant skills...
+✓ Found: superpowers (workflow patterns)
+✓ Found: feature-dev (code explorer/reviewer)
+✓ Found: commit-commands (git workflows)
 ✓ Found: shadcn (component library)
 ✓ Found: vercel-react-best-practices (React/Next.js patterns)
 
