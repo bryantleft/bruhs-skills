@@ -79,12 +79,9 @@ Create `.claude/bruhs.json` in your project:
 
 ```json
 {
-  "project": {
-    "name": "Your Project",
-    "team": "Your Team"
-  },
   "integrations": {
     "linear": {
+      "team": "Your Team",
       "project": "Your Project",
       "labelMapping": {
         "feat": "Feature",
@@ -108,7 +105,6 @@ Create `.claude/bruhs.json` in your project:
 }
 ```
 
-- **project** - Project metadata
 - **integrations** - Config for external services (Linear, GitHub, etc.)
 - **tooling** - Recommended MCPs and plugins (auto-detected at setup)
 - **stack** - Tech stack choices

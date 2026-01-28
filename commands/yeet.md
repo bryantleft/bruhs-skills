@@ -235,12 +235,9 @@ Reads `.claude/bruhs.json`:
 
 ```json
 {
-  "project": {
-    "name": "Gambit",
-    "team": "Perdix Labs"
-  },
   "integrations": {
     "linear": {
+      "team": "Perdix Labs",
       "project": "Gambit",
       "labelMapping": {
         "feat": "Feature",

@@ -190,13 +190,10 @@ Create `.claude/bruhs.json` with selected configuration:
 
 ```json
 {
-  "project": {
-    "name": "<project-name>",
-    "team": "<team-name>"
-  },
   "integrations": {
     "linear": {
-      "project": "<project-name>",
+      "team": "<linear-team>",
+      "project": "<linear-project>",
       "labelMapping": {
         "feat": "Feature",
         "fix": "Bug",
