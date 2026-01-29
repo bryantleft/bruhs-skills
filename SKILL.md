@@ -13,6 +13,7 @@ What do you want to do?
 ○ claim - Claim existing project for bruhs
 ○ cook - Plan + Build a feature end-to-end
 ○ yeet - Ship: Linear ticket → Branch → Commit → PR
+○ peep - Address PR review comments and merge
 ○ dip - Clean up after merge and switch to base branch
 ```
 
@@ -21,6 +22,7 @@ Present these options interactively, then follow the corresponding command file:
 - **claim** → Read and follow `commands/claim.md`
 - **cook** → Read and follow `commands/cook.md`
 - **yeet** → Read and follow `commands/yeet.md`
+- **peep** → Read and follow `commands/peep.md`
 - **dip** → Read and follow `commands/dip.md`
 
 ## Quick Access
@@ -30,6 +32,7 @@ Users can also specify directly:
 - `/bruhs claim`
 - `/bruhs cook` or `/bruhs cook <feature>`
 - `/bruhs yeet`
+- `/bruhs peep` or `/bruhs peep <PR#>` or `/bruhs peep <TICKET-ID>`
 - `/bruhs dip`
 
 If an argument is provided, skip the selection and go directly to that command.

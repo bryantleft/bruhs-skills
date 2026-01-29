@@ -16,6 +16,7 @@ npx skills add bryantleft/bruhs-skills
 /bruhs claim        # Initialize config for existing project
 /bruhs cook         # Plan + Build a feature end-to-end
 /bruhs yeet         # Ship: Linear ticket → Branch → Commit → PR
+/bruhs peep         # Address PR review comments and merge
 /bruhs dip          # Clean up after merge and switch to base branch
 ```
 
@@ -67,6 +68,8 @@ Plan and build a feature end-to-end.
 6. **Review** - Use code-reviewer agents
 7. **Ready** - Prompt user to `/bruhs yeet`
 
+**Full lifecycle:** cook → yeet → peep → dip
+
 ### `/bruhs yeet`
 
 Ship code with Linear integration.
@@ -80,6 +83,24 @@ Ship code with Linear integration.
 6. Update Linear status to "In Review"
 
 **Git-only mode:** Works without Linear - just skips ticket management.
+
+### `/bruhs peep`
+
+Address PR review comments and optionally merge.
+
+**Workflow:**
+1. Detect PR from current branch (or specify PR# / ticket ID)
+2. Fetch all review comments and categorize (must-fix, suggestion, question)
+3. Address each comment interactively (apply fix, respond, skip)
+4. Commit and push fixes
+5. Request re-review if needed
+6. Merge when approved (squash/merge/rebase)
+7. Auto-transition to dip workflow after merge
+
+**Invocation:**
+- `/bruhs peep` - Current branch's PR
+- `/bruhs peep 42` - Specific PR number
+- `/bruhs peep PERDIX-145` - Find PR by Linear ticket
 
 ### `/bruhs dip`
 
