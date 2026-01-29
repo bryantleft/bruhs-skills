@@ -273,6 +273,8 @@ Updating Linear...
 ✓ PERDIX-140 → In Review
 
 Done! 🚀
+
+When you get review feedback, run /bruhs peep to address comments.
 ```
 
 **If using existing ticket (from cook):**
@@ -296,6 +298,8 @@ Updating Linear...
 ✓ PERDIX-145 → In Review
 
 Done! 🚀
+
+When you get review feedback, run /bruhs peep to address comments.
 ```
 
 ## Configuration
@@ -348,6 +352,8 @@ Pushing & creating PR...
 ✓ PR #42: https://github.com/org/repo/pull/42
 
 Done! 🚀
+
+When you get review feedback, run /bruhs peep to address comments.
 ```
 
 ## Examples
@@ -378,6 +384,8 @@ Updating Linear...
 ✓ PERDIX-141 → In Review
 
 Done! 🚀
+
+When you get review feedback, run /bruhs peep to address comments.
 ```
 
 ### After /bruhs cook PERDIX-145 (from ticket)
@@ -405,6 +413,8 @@ Updating Linear...
 ✓ PERDIX-145 → In Review
 
 Done! 🚀
+
+When you get review feedback, run /bruhs peep to address comments.
 ```
 
 ### Bug Fix
@@ -432,6 +442,8 @@ Updating Linear...
 ✓ PERDIX-142 → In Review
 
 Done! 🚀
+
+When you get review feedback, run /bruhs peep to address comments.
 ```
 
 ### Multiple Changes (Interactive)
