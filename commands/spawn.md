@@ -146,7 +146,7 @@ AskUserQuestion({
       multiSelect: true,
       options: [
         { label: "Tailwind CSS", description: "Utility-first CSS framework" },
-        { label: "shadcn/ui", description: "Re-usable components built with Radix + Tailwind" },
+        { label: "shadcn/ui", description: "Re-usable components (base-mira style by default)" },
       ]
     },
     {
@@ -466,6 +466,18 @@ For monorepo additions:
 - Apps go in `apps/<name>`
 - Packages go in `packages/<name>`
 - Update `turbo.json` pipeline if needed
+
+**If shadcn/ui was selected, initialize with base-mira style:**
+
+```bash
+# Initialize shadcn with base-mira style (default)
+pnpm dlx shadcn@latest init --style base-mira --base-color neutral --css-variables
+
+# Or for monorepo, run from the app directory
+cd apps/web && pnpm dlx shadcn@latest init --style base-mira --base-color neutral --css-variables
+```
+
+The `base-mira` style provides a clean, modern aesthetic. If user wants a different style, they can specify via "Other" in the styling selection.
 
 ### Step 7: Create/Update bruhs.json
 
