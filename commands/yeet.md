@@ -148,16 +148,29 @@ const mcpName = linearConfig.mcpServer    // e.g., "linear-sonner"
 
 // Load Linear tools
 ToolSearch(`select:mcp__${mcpName}__linear_create_issue`)
+ToolSearch(`select:mcp__${mcpName}__linear_get_teams`)
+ToolSearch(`select:mcp__${mcpName}__linear_get_user`)
 
-// Get the label name from config (e.g., "feat" -> "Feature")
-labelName = linearConfig.labels[changeType]
+// Get current user ID for assignment
+const user = call(`mcp__${mcpName}__linear_get_user`)
+const assigneeId = user.viewer.id
 
-// Create issue (auto-assigns to current user)
+// Get the label name from config (e.g., "feat" -> "Feature", "chore" -> "Chore")
+const labelName = linearConfig.labels[changeType]
+
+// Get team labels to find the matching label ID
+const teamsData = call(`mcp__${mcpName}__linear_get_teams`)
+const team = teamsData.teams.nodes.find(t => t.id === linearConfig.team)
+const label = team?.labels?.nodes?.find(l => l.name.toLowerCase() === labelName?.toLowerCase())
+const labelIds = label ? [label.id] : []
+
+// Create issue with project, assignee, and labels
 issue = call(`mcp__${mcpName}__linear_create_issue`, {
   title: generatedTitle,
   teamId: linearConfig.team,
   projectId: linearConfig.project,
-  assigneeId: "me"
+  assigneeId: assigneeId,
+  labelIds: labelIds
 })
 
 // Capture the branch name Linear generates
