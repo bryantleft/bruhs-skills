@@ -81,24 +81,36 @@ If user chooses to continue without config:
 
 Clarify what we're building:
 
-**If input looks like a ticket ID** (e.g., `PERDIX-123`, `LIN-456`):
+**If input looks like a ticket ID** (e.g., `PERDIX-123`, `SON-456`):
 
 ```javascript
-// Load Linear MCP and fetch the ticket
-ToolSearch("select:mcp__linear__get_issue")
+// Get Linear config from bruhs.json
+config = readJson(".claude/bruhs.json")
+linearConfig = config.integrations?.linear
 
-issue = mcp__linear__get_issue({ id: ticketId })
+if (!linearConfig?.mcpServer) {
+  console.log("Linear not configured. Cannot fetch ticket.")
+  // Fall back to treating input as feature description
+} else {
+  const mcpName = linearConfig.mcpServer    // e.g., "linear-sonner"
+  const prefix = linearConfig.toolPrefix    // e.g., "sonner"
 
-// Store ticket context for yeet
-ticketContext = {
-  id: issue.id,
-  identifier: issue.identifier,      // "PERDIX-123"
-  title: issue.title,
-  description: issue.description,
-  branchName: issue.gitBranchName,   // "perdix-123-add-feature"
+  // Load Linear MCP and fetch the ticket
+  ToolSearch(`select:mcp__${mcpName}__${prefix}_get_issue`)
+
+  issue = call(`mcp__${mcpName}__${prefix}_get_issue`, { id: ticketId })
+
+  // Store ticket context for yeet
+  ticketContext = {
+    id: issue.id,
+    identifier: issue.identifier,      // "SON-123"
+    title: issue.title,
+    description: issue.description,
+    branchName: issue.gitBranchName,   // "son-123-add-feature"
+  }
+
+  // Output what we're working on
 }
-
-// Output what we're working on
 ```
 
 Output:

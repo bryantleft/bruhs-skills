@@ -72,26 +72,63 @@ Auto-detect what's possible:
 - **testing**: vitest.config.* → vitest, jest.config.* → jest
 - **tooling**: biome.json → biome, .eslintrc → eslint
 
-### Step 3: Check Linear MCP
+### Step 3: Detect Linear MCP Servers
 
 ```javascript
-// Attempt to use Linear MCP
-try {
-  ToolSearch("select:mcp__linear__list_teams")
-  teams = mcp__linear__list_teams()
-  linearAvailable = true
-} catch {
-  console.log("Linear MCP not configured (optional).")
+// Read MCP server config to find all Linear instances
+// Uses mcp-server-linear with TOOL_PREFIX for multi-workspace support
+const mcpConfig = JSON.parse(Bash("cat ~/.claude/settings.json")).mcpServers
+const linearServers = Object.entries(mcpConfig)
+  .filter(([name, config]) => name.startsWith('linear'))
+  .map(([name, config]) => ({
+    name,
+    prefix: config.env?.TOOL_PREFIX || name.replace('linear-', '')
+  }))
+
+if (linearServers.length === 0) {
+  console.log("No Linear MCP configured (optional).")
+  console.log("To add: edit ~/.claude/settings.json with mcp-server-linear")
   linearAvailable = false
+} else {
+  linearAvailable = true
 }
 ```
 
 ### Step 4: Gather Linear Config (if available)
 
-If Linear is available, use `AskUserQuestion` for team and project selection:
+If Linear is available, first select workspace (if multiple), then team and project:
 
 ```javascript
-ToolSearch("select:mcp__linear__list_projects")
+let selectedServer = linearServers[0]  // default to first
+
+// If multiple workspaces, ask which one
+if (linearServers.length > 1) {
+  const workspaceOptions = linearServers.slice(0, 4).map(server => ({
+    label: server.prefix,
+    description: `Use ${server.name} MCP server`
+  }))
+
+  AskUserQuestion({
+    questions: [{
+      question: "Which Linear workspace?",
+      header: "Workspace",
+      multiSelect: false,
+      options: workspaceOptions
+    }]
+  })
+
+  selectedServer = linearServers.find(s => s.prefix === userSelection)
+}
+
+const mcpName = selectedServer.name    // e.g., "linear-sonner"
+const prefix = selectedServer.prefix   // e.g., "sonner"
+
+// Load tools for selected workspace
+ToolSearch(`select:mcp__${mcpName}__${prefix}_list_teams`)
+ToolSearch(`select:mcp__${mcpName}__${prefix}_list_projects`)
+
+// Fetch teams
+teams = call(`mcp__${mcpName}__${prefix}_list_teams`)
 
 // Build team options dynamically
 const teamOptions = teams.slice(0, 4).map(t => ({
@@ -109,7 +146,7 @@ AskUserQuestion({
 })
 
 // After team selected, get projects and ask
-projects = mcp__linear__list_projects({ teamId: selectedTeam.id })
+projects = call(`mcp__${mcpName}__${prefix}_list_projects`, { teamId: selectedTeam.id })
 
 const projectOptions = projects.slice(0, 4).map(p => ({
   label: p.name,
@@ -215,8 +252,12 @@ Create `.claude/bruhs.json`:
 {
   "integrations": {
     "linear": {
-      "team": "<selected-team>",
-      "project": "<selected-project>",
+      "mcpServer": "<selected-mcp-server>",  // e.g., "linear-sonner"
+      "toolPrefix": "<tool-prefix>",          // e.g., "sonner"
+      "team": "<selected-team-id>",
+      "teamName": "<selected-team-name>",
+      "project": "<selected-project-id>",
+      "projectName": "<selected-project-name>",
       "labels": {
         "feat": "Feature",
         "fix": "Bug",

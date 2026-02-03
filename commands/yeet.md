@@ -83,25 +83,40 @@ Generate:
 ### Step 3: Check Linear MCP
 
 ```javascript
-// Attempt to use Linear MCP
-try {
-  mcp__linear__list_teams()
-  linearAvailable = true
-} catch {
-  console.log("Linear MCP not configured.")
+// Read Linear config from bruhs.json
+config = readJson(".claude/bruhs.json")
+linearConfig = config.integrations?.linear
 
-  // Ask user with AskUserQuestion
-  AskUserQuestion({
-    questions: [{
-      question: "Linear MCP not configured. Continue without Linear?",
-      header: "Linear",
-      multiSelect: false,
-      options: [
-        { label: "Yes, git-only mode", description: "Commit and PR without Linear tickets" },
-        { label: "No, abort", description: "Stop and configure Linear first" },
-      ]
-    }]
-  })
+if (!linearConfig?.mcpServer) {
+  console.log("Linear not configured in bruhs.json.")
+  linearAvailable = false
+} else {
+  // Build tool names using the prefix
+  // Tool format: mcp__<mcpServer>__<prefix>_<method>
+  const mcpName = linearConfig.mcpServer    // e.g., "linear-sonner"
+  const prefix = linearConfig.toolPrefix    // e.g., "sonner"
+
+  try {
+    // Load the tools for this workspace
+    ToolSearch(`select:mcp__${mcpName}__${prefix}_list_teams`)
+    call(`mcp__${mcpName}__${prefix}_list_teams`)
+    linearAvailable = true
+  } catch {
+    console.log("Linear MCP not connected.")
+
+    // Ask user with AskUserQuestion
+    AskUserQuestion({
+      questions: [{
+        question: "Linear MCP not connected. Continue without Linear?",
+        header: "Linear",
+        multiSelect: false,
+        options: [
+          { label: "Yes, git-only mode", description: "Commit and PR without Linear tickets" },
+          { label: "No, abort", description: "Stop and configure Linear first" },
+        ]
+      }]
+    })
+  }
 }
 ```
 
@@ -130,31 +145,35 @@ if (ticketContext) {
 **If no existing ticket, create one:**
 
 ```javascript
-// Load Linear tools
-ToolSearch("select:mcp__linear__create_issue")
-ToolSearch("select:mcp__linear__list_issue_labels")
+// Get Linear config from bruhs.json
+const mcpName = linearConfig.mcpServer    // e.g., "linear-sonner"
+const prefix = linearConfig.toolPrefix    // e.g., "sonner"
+
+// Load Linear tools (prefixed with workspace)
+ToolSearch(`select:mcp__${mcpName}__${prefix}_create_issue`)
+ToolSearch(`select:mcp__${mcpName}__${prefix}_list_issue_labels`)
 
 // Fetch available labels from Linear (dynamic)
-availableLabels = mcp__linear__list_issue_labels({ teamId: config.integrations.linear.team })
+availableLabels = call(`mcp__${mcpName}__${prefix}_list_issue_labels`, { teamId: linearConfig.team })
 
 // Get the label name from config (e.g., "feat" -> "Feature")
-labelName = config.integrations.linear.labels[changeType]
+labelName = linearConfig.labels[changeType]
 
 // Find matching label in available labels (case-insensitive)
 labelId = availableLabels.find(l => l.name.toLowerCase() === labelName.toLowerCase())?.id
 
 // Create issue (auto-assigns to current user)
-issue = mcp__linear__create_issue({
+issue = call(`mcp__${mcpName}__${prefix}_create_issue`, {
   title: generatedTitle,
-  teamId: config.integrations.linear.team,
-  projectId: config.integrations.linear.project,
+  teamId: linearConfig.team,
+  projectId: linearConfig.project,
   labelIds: labelId ? [labelId] : [],
   assigneeId: "me"
 })
 
 // Capture the branch name Linear generates
-branchName = issue.gitBranchName  // e.g., "perdix-140-improve-game-state-validation"
-ticketId = issue.identifier  // e.g., "PERDIX-140"
+branchName = issue.gitBranchName  // e.g., "sonner-140-improve-toast-animation"
+ticketId = issue.identifier  // e.g., "SON-140"
 issueId = issue.id
 ```
 
@@ -261,9 +280,10 @@ EOF
 ### Step 9: Update Linear Status (if available)
 
 ```javascript
-ToolSearch("select:mcp__linear__update_issue")
+// Load and call update_issue with workspace prefix
+ToolSearch(`select:mcp__${mcpName}__${prefix}_update_issue`)
 
-mcp__linear__update_issue({
+call(`mcp__${mcpName}__${prefix}_update_issue`, {
   issueId: issue.id,
   stateId: "in-review"  // Or find the "In Review" state ID
 })
@@ -329,8 +349,12 @@ Reads `.claude/bruhs.json`:
 {
   "integrations": {
     "linear": {
-      "team": "Perdix Labs",
-      "project": "Gambit",
+      "mcpServer": "linear-sonner",     // MCP server name from settings.json
+      "toolPrefix": "sonner",            // TOOL_PREFIX for this workspace
+      "team": "<team-id>",
+      "teamName": "Sonner",
+      "project": "<project-id>",
+      "projectName": "Sonner Core",
       "labels": {
         "feat": "Feature",
         "fix": "Bug",
@@ -343,6 +367,8 @@ Reads `.claude/bruhs.json`:
 ```
 
 The `labels` map commit types to Linear label names. At runtime, yeet fetches available labels from Linear and matches by name.
+
+**Multi-workspace setup:** Each project's bruhs.json points to its specific Linear workspace via `mcpServer` and `toolPrefix`. Tool names are dynamically constructed as `mcp__<mcpServer>__<toolPrefix>_<method>`.
 
 ## Git-Only Mode
 
