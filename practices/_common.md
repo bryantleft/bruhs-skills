@@ -347,11 +347,11 @@ When using `WebSearch` or `WebFetch` for documentation, best practices, or any e
 
 ```javascript
 // ✅ Include current date for fresh results
-const currentYear = new Date().getFullYear(); // e.g., 2026
+const currentYear = new Date().getFullYear();
 
 WebSearch({ query: `React Server Components best practices ${currentYear}` })
-WebSearch({ query: `Next.js 15 app router documentation ${currentYear}` })
-WebSearch({ query: `TypeScript 5 features ${currentYear}` })
+WebSearch({ query: `Next.js app router documentation ${currentYear}` })
+WebSearch({ query: `TypeScript latest features ${currentYear}` })
 
 // ✅ For WebFetch prompts, mention recency
 WebFetch({
