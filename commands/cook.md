@@ -42,7 +42,7 @@ All code produced by cook follows the patterns defined in:
 - **Explicit return types** on all public functions
 - **Errors in return types** - not hidden throws
 - **`readonly` parameters** - signal no mutation
-- No `any`, `!`, or `as` for external data
+- No **any**, **!**, or **as** for external data
 - Union types for state machines (not multiple booleans)
 
 For TypeScript + React, key highlights:

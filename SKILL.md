@@ -34,8 +34,8 @@ description: Opinionated development lifecycle - spawn projects, cook features, 
 ### Priority Hierarchy (fix in this order)
 1. **Missing/wrong type signatures** - Types ARE documentation
 2. **Hidden side effects** - Signature lies about behavior
-3. **`any` types** - Type system disabled
-4. **`!` or `as` on external data** - Compiler trust violated
+3. **any** types - Type system disabled
+4. **!** or **as** on external data - Compiler trust violated
 5. **Implementation issues** - Secondary to type correctness
 
 ### Checklist

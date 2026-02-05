@@ -39,7 +39,7 @@ When reviewing code, type signatures are the **#1 priority**. Fix these before a
 | **1** | Missing/wrong type signatures | Types ARE the documentation |
 | **2** | Side effects not in signature | Signature lies about behavior |
 | **3** | Overly permissive types (`any`) | Type system disabled |
-| **4** | Unsafe type operations (`as`, `!`) | Compiler trust violated |
+| **4** | Unsafe type operations (**as**, **!**) | Compiler trust violated |
 | **5** | Implementation issues | Secondary to type correctness |
 
 ---
