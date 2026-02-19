@@ -582,6 +582,12 @@ npx knip --no-exit-code 2>/dev/null || echo "knip not installed"
 npx depcheck --json 2>/dev/null || echo "depcheck not installed"
 ```
 
+**React Health Check (if React project):**
+```bash
+# Run react-doctor for React-specific diagnostics
+npx -y react-doctor@latest .
+```
+
 **Security Scan:**
 ```bash
 # Check for hardcoded secrets patterns
