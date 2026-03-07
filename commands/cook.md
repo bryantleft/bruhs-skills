@@ -20,6 +20,7 @@ All code produced by cook follows the patterns defined in:
 - **`practices/_common.md`** - Universal patterns (naming, git, errors, testing)
 - **`practices/typescript-react.md`** - TypeScript + React specific patterns
 - **`practices/effect-ts.md`** - Effect-TS specific patterns (loaded when `effect` in `stack.libraries`)
+- **`practices/ui-design.md`** - UI design quality via impeccable skills (loaded for UI features)
 
 **Key principles:**
 
@@ -152,6 +153,12 @@ config = readJson(".claude/bruhs.json")
 if (config.stack?.libraries?.includes('effect')) {
   effectPractices = Read('practices/effect-ts.md');
   console.log("✓ Loaded Effect-TS practices")
+}
+
+// Load UI design practices if feature involves visible UI changes
+if (featureInvolvesUI) {
+  uiPractices = Read('practices/ui-design.md');
+  console.log("✓ Loaded UI design practices (impeccable skills)")
 }
 ```
 
@@ -327,6 +334,34 @@ if (!testSuiteExists && tempTestFiles.length > 0) {
 
 **For UI/non-testable code:**
 
+**If UI design practices are loaded**, invoke impeccable skills during build.
+See `practices/ui-design.md` for the full skill map and selection heuristic.
+
+```javascript
+// 1. Check for design context (one-time project setup)
+if (!CLAUDE_MD.includes('## Design Context')) {
+  AskUserQuestion: "No Design Context in CLAUDE.md. Run /teach-impeccable?"
+  if (yes) Skill("teach-impeccable")
+}
+
+// 2. Foundation — always load first (other skills depend on it)
+Skill("frontend-design")
+
+// 3. Primary build skills
+if (hasDesignSystem) Skill("normalize")     // match existing tokens/patterns
+if (buildingOnboarding) Skill("onboard")    // empty states, first-time UX
+if (needsMotion) Skill("animate")           // entrances, micro-interactions
+if (multiDevice) Skill("adapt")             // responsive, touch targets
+if (hasUserFacingCopy) Skill("clarify")     // labels, errors, CTAs
+
+// 4. Adjustment skills — only if result needs tuning
+// Skill("bolder")    // design too safe/generic
+// Skill("quieter")   // design too aggressive/noisy
+// Skill("colorize")  // design too monochromatic
+// Skill("delight")   // design too dry/functional
+// Skill("distill")   // design too complex/cluttered
+```
+
 First, check if dev server is running (for UI changes):
 
 ```javascript
@@ -423,6 +458,27 @@ Use the Task tool with `subagent_type: "feature-dev:code-reviewer"` to:
 Reviewing code...
 ✓ No high-confidence issues found
 ```
+
+**UI Design Review (for UI changes):**
+
+If UI design practices are loaded, run design review before visual verification.
+See `practices/ui-design.md` for the full skill map.
+
+```javascript
+// 1. Diagnose — these produce reports, not code changes
+Skill("critique")    // design director evaluation: hierarchy, IA, AI slop, emotion
+Skill("audit")       // systematic scan: a11y, perf, theming, responsive, anti-patterns
+
+// 2. Fix — based on what critique/audit found
+Skill("polish")      // always: alignment, spacing, states, transitions, code cleanup
+if (edgeCasesFound) Skill("harden")    // i18n, overflow, error handling, edge cases
+if (perfIssuesFound) Skill("optimize") // CWV, images, bundle, rendering, animations
+
+// 3. Post-build (optional)
+if (reusablePatternsEmerged) Skill("extract") // pull into design system
+```
+
+Fix all issues found before proceeding to visual verification.
 
 **Visual Verification (for UI changes):**
 
@@ -604,7 +660,9 @@ Ready to ship! Run /bruhs yeet to create PR.
 |-------|----------------|
 | Plan | `superpowers:brainstorming` patterns |
 | Build | `feature-dev:feature-dev` patterns |
+| Build (UI) | `practices/ui-design.md` — impeccable skills (`frontend-design`, `normalize`, `onboard`, `animate`, `adapt`, `clarify`, + adjustment skills) |
 | Review | `superpowers:requesting-code-review` patterns |
+| Review (UI) | `practices/ui-design.md` — diagnostic (`critique`, `audit`) then fix (`polish`, `harden`, `optimize`, `extract`) |
 
 Cook implements its own workflow but draws on these established patterns.
 
