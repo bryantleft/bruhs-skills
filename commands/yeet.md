@@ -8,8 +8,8 @@ Ship code that's ready to go. Creates Linear ticket, commits, pushes, and opens 
 
 ## Invocation
 
-- `/bruhs yeet` - Ship current changes
-- `/bruhs yeet` after `/bruhs cook` - Complete the cooking workflow (uses existing ticket if cook started from one)
+- `/bruhs:yeet` - Ship current changes
+- `/bruhs:yeet` after `/bruhs:cook` - Complete the cooking workflow (uses existing ticket if cook started from one)
 
 ## Prerequisites
 
@@ -34,7 +34,7 @@ AskUserQuestion({
     header: "Config",
     multiSelect: false,
     options: [
-      { label: "Run /bruhs claim (Recommended)", description: "Full setup with Linear integration" },
+      { label: "Run /bruhs:claim (Recommended)", description: "Full setup with Linear integration" },
       { label: "Continue in git-only mode", description: "Commit and PR without Linear tickets" },
     ]
   }]
@@ -44,7 +44,7 @@ If user chooses git-only mode:
 - Skip all Linear steps (ticket creation, status updates)
 - Generate branch names from change type: `<type>/<short-description>`
 - Commit without ticket reference
-- Remind user at end: "Run /bruhs claim to enable Linear integration"
+- Remind user at end: "Run /bruhs:claim to enable Linear integration"
 
 ### Step 1: Check for Changes
 
@@ -315,7 +315,7 @@ Updating Linear...
 
 Done! 🚀
 
-When you get review feedback, run /bruhs peep to address comments.
+When you get review feedback, run /bruhs:peep to address comments.
 ```
 
 **If using existing ticket (from cook):**
@@ -340,7 +340,7 @@ Updating Linear...
 
 Done! 🚀
 
-When you get review feedback, run /bruhs peep to address comments.
+When you get review feedback, run /bruhs:peep to address comments.
 ```
 
 ## Configuration
@@ -399,15 +399,15 @@ Pushing & creating PR...
 
 Done! 🚀
 
-When you get review feedback, run /bruhs peep to address comments.
+When you get review feedback, run /bruhs:peep to address comments.
 ```
 
 ## Examples
 
-### After /bruhs cook (from feature description)
+### After /bruhs:cook (from feature description)
 
 ```
-> /bruhs yeet
+> /bruhs:yeet
 
 Analyzing changes...
 - 2 files created
@@ -431,13 +431,13 @@ Updating Linear...
 
 Done! 🚀
 
-When you get review feedback, run /bruhs peep to address comments.
+When you get review feedback, run /bruhs:peep to address comments.
 ```
 
-### After /bruhs cook PERDIX-145 (from ticket)
+### After /bruhs:cook PERDIX-145 (from ticket)
 
 ```
-> /bruhs yeet
+> /bruhs:yeet
 
 Analyzing changes...
 - 2 files modified
@@ -460,7 +460,7 @@ Updating Linear...
 
 Done! 🚀
 
-When you get review feedback, run /bruhs peep to address comments.
+When you get review feedback, run /bruhs:peep to address comments.
 ```
 
 ### Bug Fix
@@ -489,7 +489,7 @@ Updating Linear...
 
 Done! 🚀
 
-When you get review feedback, run /bruhs peep to address comments.
+When you get review feedback, run /bruhs:peep to address comments.
 ```
 
 ### Multiple Changes (Interactive)

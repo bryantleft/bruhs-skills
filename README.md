@@ -12,18 +12,18 @@ npx skills add bryantleft/bruhs-skills
 
 ```bash
 /bruhs              # Interactive selection
-/bruhs spawn        # Create new project or add to monorepo
-/bruhs claim        # Initialize config for existing project
-/bruhs cook         # Plan + Build a feature end-to-end
-/bruhs yeet         # Ship: Linear ticket → Branch → Commit → PR
-/bruhs peep         # Address PR review comments and merge
-/bruhs dip          # Clean up after merge and switch to base branch
-/bruhs slop         # Clean up AI slop (senior engineer review)
+/bruhs:spawn        # Create new project or add to monorepo
+/bruhs:claim        # Initialize config for existing project
+/bruhs:cook         # Plan + Build a feature end-to-end
+/bruhs:yeet         # Ship: Linear ticket → Branch → Commit → PR
+/bruhs:peep         # Address PR review comments and merge
+/bruhs:dip          # Clean up after merge and switch to base branch
+/bruhs:slop         # Clean up AI slop (senior engineer review)
 ```
 
 ## Commands
 
-### `/bruhs claim`
+### `/bruhs:claim`
 
 Claim an existing project for bruhs.
 
@@ -33,9 +33,9 @@ Claim an existing project for bruhs.
 - Detects installed MCPs and plugins from Claude settings
 - Creates `.claude/bruhs.json`
 
-Use this when you have a project that wasn't created with `/bruhs spawn`.
+Use this when you have a project that wasn't created with `/bruhs:spawn`.
 
-### `/bruhs spawn`
+### `/bruhs:spawn`
 
 Create a new project from scratch or add an app/package to an existing monorepo.
 
@@ -56,7 +56,7 @@ Create a new project from scratch or add an app/package to an existing monorepo.
 - **CLI:** Node, uv, cargo
 - **Roblox:** Rojo
 
-### `/bruhs cook`
+### `/bruhs:cook`
 
 Plan and build a feature end-to-end.
 
@@ -67,11 +67,11 @@ Plan and build a feature end-to-end.
 4. **Setup** - Stash unrelated changes if needed
 5. **Build** - Implement with TDD where applicable
 6. **Review** - Use code-reviewer agents
-7. **Ready** - Prompt user to `/bruhs yeet`
+7. **Ready** - Prompt user to `/bruhs:yeet`
 
 **Full lifecycle:** cook → yeet → peep → dip
 
-### `/bruhs yeet`
+### `/bruhs:yeet`
 
 Ship code with Linear integration.
 
@@ -85,7 +85,7 @@ Ship code with Linear integration.
 
 **Git-only mode:** Works without Linear - just skips ticket management.
 
-### `/bruhs peep`
+### `/bruhs:peep`
 
 Address PR review comments and optionally merge.
 
@@ -99,11 +99,11 @@ Address PR review comments and optionally merge.
 7. Auto-transition to dip workflow after merge
 
 **Invocation:**
-- `/bruhs peep` - Current branch's PR
-- `/bruhs peep 42` - Specific PR number
-- `/bruhs peep PERDIX-145` - Find PR by Linear ticket
+- `/bruhs:peep` - Current branch's PR
+- `/bruhs:peep 42` - Specific PR number
+- `/bruhs:peep PERDIX-145` - Find PR by Linear ticket
 
-### `/bruhs dip`
+### `/bruhs:dip`
 
 Clean up after merging and switch to base branch.
 
@@ -115,7 +115,7 @@ Clean up after merging and switch to base branch.
 
 Use this after your PR is merged to start fresh for the next feature.
 
-### `/bruhs slop`
+### `/bruhs:slop`
 
 Deep codebase analysis and AI slop cleanup. Acts as a nitpicky senior engineer.
 
@@ -151,10 +151,10 @@ Deep codebase analysis and AI slop cleanup. Acts as a nitpicky senior engineer.
 6. Verify with tsc, lint, tests
 
 **Invocation:**
-- `/bruhs slop` - Full codebase scan
-- `/bruhs slop src/components` - Target specific directory
-- `/bruhs slop --fix` - Auto-fix safe issues, prompt for others
-- `/bruhs slop --report` - Report only, no fixes
+- `/bruhs:slop` - Full codebase scan
+- `/bruhs:slop src/components` - Target specific directory
+- `/bruhs:slop --fix` - Auto-fix safe issues, prompt for others
+- `/bruhs:slop --report` - Report only, no fixes
 
 **Severity levels** (configurable in bruhs.json):
 - `relaxed` - Critical only

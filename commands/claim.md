@@ -4,11 +4,11 @@ description: Claim an existing project for bruhs
 
 # claim - Claim Existing Project
 
-Set up `.claude/bruhs.json` for an existing project. Use this when you have a project that wasn't created with `/bruhs spawn`.
+Set up `.claude/bruhs.json` for an existing project. Use this when you have a project that wasn't created with `/bruhs:spawn`.
 
 ## Invocation
 
-- `/bruhs claim` - Claim current project for bruhs
+- `/bruhs:claim` - Claim current project for bruhs
 
 ## Prerequisites
 
@@ -339,7 +339,7 @@ Tooling:
   ✓ MCPs: linear, notion, context7
   ✓ Skills: superpowers, feature-dev, commit-commands, shadcn, vercel-react-best-practices
 
-Ready! You can now use /bruhs cook and /bruhs yeet.
+Ready! You can now use /bruhs:cook and /bruhs:yeet.
 ```
 
 ## Stack Detection Reference
@@ -398,7 +398,7 @@ For **monorepos**, scan all `apps/*/` directories → `frameworks: ["Next.js", "
 ### Single Project
 
 ```
-> /bruhs claim
+> /bruhs:claim
 
 Checking for existing config...
 ✓ No existing config found
@@ -426,13 +426,13 @@ Confirm detected stack? [Y/n] Y
 Creating config...
 ✓ Created .claude/bruhs.json
 
-Ready! You can now use /bruhs cook and /bruhs yeet.
+Ready! You can now use /bruhs:cook and /bruhs:yeet.
 ```
 
 ### Monorepo
 
 ```
-> /bruhs claim
+> /bruhs:claim
 
 Checking for existing config...
 ✓ No existing config found
@@ -460,5 +460,5 @@ Confirm detected stack? [Y/n] Y
 Creating config...
 ✓ Created .claude/bruhs.json
 
-Ready! You can now use /bruhs cook and /bruhs yeet.
+Ready! You can now use /bruhs:cook and /bruhs:yeet.
 ```

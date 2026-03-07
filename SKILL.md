@@ -21,9 +21,9 @@ description: Opinionated development lifecycle - spawn projects, cook features, 
 
 ## Invocation
 - `/bruhs` → Interactive menu (AskUserQuestion)
-- `/bruhs <command>` → Direct to command
-- `/bruhs cook <feature>` or `/bruhs cook TICKET-123` → With argument
-- `/bruhs slop [path] [--fix|--report]` → Codebase analysis
+- `/bruhs:<command>` → Direct to command
+- `/bruhs:cook <feature>` or `/bruhs:cook TICKET-123` → With argument
+- `/bruhs:slop [path] [--fix|--report]` → Codebase analysis
 
 ---
 
@@ -133,14 +133,14 @@ For full guidelines → `practices/_common.md`
 
 ### cook - Plan + Build Feature
 ```
-1. CONFIG: Check .claude/bruhs.json exists (offer /bruhs claim if not)
+1. CONFIG: Check .claude/bruhs.json exists (offer /bruhs:claim if not)
 2. UNDERSTAND: Parse feature or fetch Linear ticket (TICKET-123 format)
 3. EXPLORE: Load project skills from bruhs.json, find-skills for new ones, code-explorer agents
 4. PLAN: Design 2-3 approaches → AskUserQuestion for selection
 5. SETUP: Stash unrelated changes if needed (git stash push -m "bruhs: ...")
 6. BUILD: TDD if test suite exists, else temp tests → cleanup after
 7. REVIEW: code-reviewer agents, browser verification for UI
-8. READY: "Run /bruhs yeet to ship" (ticket context in memory for yeet)
+8. READY: "Run /bruhs:yeet to ship" (ticket context in memory for yeet)
 ```
 Detail → `commands/cook.md`
 
@@ -242,7 +242,7 @@ AskUserQuestion({
 })
 ```
 
-Note: `slop` excluded from menu (specialized tool - invoke directly with `/bruhs slop`)
+Note: `slop` excluded from menu (specialized tool - invoke directly with `/bruhs:slop`)
 
 After selection, execute the corresponding workflow above. Only read detail files for edge cases.
 

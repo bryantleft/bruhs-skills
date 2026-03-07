@@ -8,9 +8,9 @@ Combined planning and building workflow. Wraps brainstorming and feature develop
 
 ## Invocation
 
-- `/bruhs cook <feature>` - Start cooking a specific feature
-- `/bruhs cook <TICKET-ID>` - Fetch Linear ticket and start working on it (e.g., `PERDIX-123`)
-- `/bruhs cook` - Interactive mode, will ask what to build
+- `/bruhs:cook <feature>` - Start cooking a specific feature
+- `/bruhs:cook <TICKET-ID>` - Fetch Linear ticket and start working on it (e.g., `PERDIX-123`)
+- `/bruhs:cook` - Interactive mode, will ask what to build
 
 ## Best Practices
 
@@ -68,7 +68,7 @@ AskUserQuestion({
     header: "Config",
     multiSelect: false,
     options: [
-      { label: "Run /bruhs claim (Recommended)", description: "Full setup with stack detection" },
+      { label: "Run /bruhs:claim (Recommended)", description: "Full setup with stack detection" },
       { label: "Continue without config", description: "Will skip Linear integration" },
     ]
   }]
@@ -77,7 +77,7 @@ AskUserQuestion({
 If user chooses to continue without config:
 - Skip Linear-related features
 - Use sensible defaults for stack detection
-- Remind user at end: "Run /bruhs claim to enable full features"
+- Remind user at end: "Run /bruhs:claim to enable full features"
 
 ### Step 1: Understand
 
@@ -536,13 +536,13 @@ Signal completion and prompt for shipping:
 
 **If started from a Linear ticket:**
 ```
-Ready to ship! Run /bruhs yeet to create PR.
+Ready to ship! Run /bruhs:yeet to create PR.
 📋 Using existing ticket: PERDIX-123
 ```
 
 **If started from feature description:**
 ```
-Ready to ship! Run /bruhs yeet to create ticket and PR.
+Ready to ship! Run /bruhs:yeet to create ticket and PR.
 ```
 
 If we stashed changes:
@@ -559,7 +559,7 @@ If the user starts a new conversation before running yeet, the context is lost a
 ### From Feature Description
 
 ```
-> /bruhs cook add leaderboard to game page
+> /bruhs:cook add leaderboard to game page
 
 Understanding...
 Feature: Leaderboard
@@ -606,13 +606,13 @@ Building...
 Reviewing...
 ✓ No high-confidence issues found
 
-Ready to ship! Run /bruhs yeet to create ticket and PR.
+Ready to ship! Run /bruhs:yeet to create ticket and PR.
 ```
 
 ### From Linear Ticket
 
 ```
-> /bruhs cook PERDIX-145
+> /bruhs:cook PERDIX-145
 
 Working on Linear ticket...
 ✓ PERDIX-145: Add dark mode toggle to settings page
@@ -650,7 +650,7 @@ Building...
 Reviewing...
 ✓ No high-confidence issues found
 
-Ready to ship! Run /bruhs yeet to create PR.
+Ready to ship! Run /bruhs:yeet to create PR.
 📋 Using existing ticket: PERDIX-145
 ```
 

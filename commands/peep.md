@@ -8,9 +8,9 @@ Review and address PR feedback, push fixes, and optionally merge when ready.
 
 ## Invocation
 
-- `/bruhs peep` - Address comments on current branch's PR
-- `/bruhs peep 42` - Address comments on PR #42 (switches branch if needed)
-- `/bruhs peep PERDIX-145` - Find PR by Linear ticket ID
+- `/bruhs:peep` - Address comments on current branch's PR
+- `/bruhs:peep 42` - Address comments on PR #42 (switches branch if needed)
+- `/bruhs:peep PERDIX-145` - Find PR by Linear ticket ID
 
 ## Prerequisites
 
@@ -535,7 +535,7 @@ Then automatically run the dip workflow:
 ✓ Pulled latest (includes your merged changes)
 ✓ Deleted local branch: perdix-140-add-leaderboard
 
-Ready for your next feature! Run /bruhs cook to start.
+Ready for your next feature! Run /bruhs:cook to start.
 ```
 
 ### Step 12: Update Linear (if available)
@@ -577,7 +577,7 @@ Committed and pushed:
 
 Requested re-review from @reviewer1
 
-Run /bruhs peep again after re-review, or wait for approval to merge.
+Run /bruhs:peep again after re-review, or wait for approval to merge.
 ```
 
 **After addressing and merging:**
@@ -603,7 +603,7 @@ Cleaned up:
 Linear:
 ✓ PERDIX-140 → Done
 
-Ready for your next feature! Run /bruhs cook to start.
+Ready for your next feature! Run /bruhs:cook to start.
 ```
 
 ## Examples
@@ -611,7 +611,7 @@ Ready for your next feature! Run /bruhs cook to start.
 ### Simple Review - All Approved
 
 ```
-> /bruhs peep
+> /bruhs:peep
 
 PR #42: Add leaderboard to game page
 Branch: perdix-140-add-leaderboard
@@ -637,13 +637,13 @@ Merging...
 ✓ Deleted branch perdix-140-add-leaderboard
 ✓ PERDIX-140 → Done
 
-Ready for your next feature! Run /bruhs cook to start.
+Ready for your next feature! Run /bruhs:cook to start.
 ```
 
 ### Multiple Rounds of Review
 
 ```
-> /bruhs peep
+> /bruhs:peep
 
 PR #42: Add leaderboard to game page
 
@@ -663,7 +663,7 @@ Requested re-review from @reviewer1
 
 [Later, after re-review]
 
-> /bruhs peep
+> /bruhs:peep
 
 PR #42: Add leaderboard to game page
 
@@ -680,13 +680,13 @@ Ready to merge?
 ✓ Switched to main
 ✓ PERDIX-140 → Done
 
-Ready for your next feature! Run /bruhs cook to start.
+Ready for your next feature! Run /bruhs:cook to start.
 ```
 
 ### Switching Branches
 
 ```
-> /bruhs peep 42
+> /bruhs:peep 42
 
 Currently on: main
 PR #42 is on branch: perdix-140-add-leaderboard

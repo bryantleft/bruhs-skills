@@ -8,10 +8,10 @@ Thoroughly analyze the entire codebase and clean up AI-generated code patterns. 
 
 ## Invocation
 
-- `/bruhs slop` - Full codebase analysis
-- `/bruhs slop src/components` - Analyze specific directory
-- `/bruhs slop --fix` - Auto-fix safe issues, prompt for others
-- `/bruhs slop --report` - Generate report only, no fixes
+- `/bruhs:slop` - Full codebase analysis
+- `/bruhs:slop src/components` - Analyze specific directory
+- `/bruhs:slop --fix` - Auto-fix safe issues, prompt for others
+- `/bruhs:slop --report` - Generate report only, no fixes
 
 ## Philosophy
 
@@ -822,7 +822,7 @@ pnpm build
 2. Add knip to CI for dead code detection
 3. Consider extracting src/lib/utils.ts patterns into shared package
 
-Ready to commit? Run /bruhs yeet
+Ready to commit? Run /bruhs:yeet
 ```
 
 ## Configuration
@@ -860,7 +860,7 @@ Add slop settings to `.claude/bruhs.json`:
 ### Full Codebase Scan
 
 ```
-> /bruhs slop
+> /bruhs:slop
 
 Scanning codebase...
 ├── src/app/ (24 files)
@@ -906,7 +906,7 @@ AskUserQuestion({
 ### Targeted Directory
 
 ```
-> /bruhs slop src/components
+> /bruhs:slop src/components
 
 Scanning src/components/ (45 files)...
 
@@ -937,7 +937,7 @@ AskUserQuestion({
 ### Auto-Fix Mode
 
 ```
-> /bruhs slop --fix
+> /bruhs:slop --fix
 
 Auto-fixing safe issues...
 ✓ Removed 23 unused imports

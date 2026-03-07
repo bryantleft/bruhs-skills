@@ -8,7 +8,7 @@ Clean up your feature branch after merging and switch back to the base branch to
 
 ## Invocation
 
-- `/bruhs dip` - Clean up current branch and switch to base
+- `/bruhs:dip` - Clean up current branch and switch to base
 
 ## Prerequisites
 
@@ -154,7 +154,7 @@ Cleaning up...
 ✓ Deleted local branch: perdix-139-make-model-form-image-upload-fully-rounded
 ✓ Deleted remote branch: origin/perdix-139-make-model-form-image-upload-fully-rounded
 
-Ready for your next feature! Run /bruhs cook to start.
+Ready for your next feature! Run /bruhs:cook to start.
 ```
 
 ## Examples
@@ -162,7 +162,7 @@ Ready for your next feature! Run /bruhs cook to start.
 ### After Merging PR
 
 ```
-> /bruhs dip
+> /bruhs:dip
 
 Switching to main...
 ✓ Switched to main
@@ -174,13 +174,13 @@ Cleaning up...
 ✓ Deleted local branch: perdix-139-make-model-form-image-upload-fully-rounded
 ✓ Deleted remote branch: origin/perdix-139-make-model-form-image-upload-fully-rounded
 
-Ready for your next feature! Run /bruhs cook to start.
+Ready for your next feature! Run /bruhs:cook to start.
 ```
 
 ### With Stashed Changes
 
 ```
-> /bruhs dip
+> /bruhs:dip
 
 Switching to main...
 ✓ Switched to main
@@ -200,13 +200,13 @@ Would you like to restore them?
 Restoring stash...
 ✓ Applied stash@{0}
 
-Ready for your next feature! Run /bruhs cook to start.
+Ready for your next feature! Run /bruhs:cook to start.
 ```
 
 ### With Uncommitted Changes
 
 ```
-> /bruhs dip
+> /bruhs:dip
 
 ⚠ You have uncommitted changes:
   - components/ui/button.tsx (modified)
@@ -228,13 +228,13 @@ Cleaning up...
 
 💡 You have stashed changes. Run `git stash pop` when ready.
 
-Ready for your next feature! Run /bruhs cook to start.
+Ready for your next feature! Run /bruhs:cook to start.
 ```
 
 ### Unmerged Branch
 
 ```
-> /bruhs dip
+> /bruhs:dip
 
 Switching to main...
 ✓ Switched to main
@@ -250,7 +250,7 @@ Delete anyway?
 
 Keeping branch 'feat/experimental'.
 
-Ready for your next feature! Run /bruhs cook to start.
+Ready for your next feature! Run /bruhs:cook to start.
 ```
 
 ## Git Best Practices
