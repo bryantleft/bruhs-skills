@@ -186,9 +186,9 @@ function Reviews({ reviewsPromise }: { reviewsPromise: Promise<Review[]> }) {
 }
 ```
 
-### useEffect: When NOT to Use It
+### useEffect: Treat It as Obsolete
 
-**useEffect is not deprecated, but it's rarely the right choice.**
+**useEffect is an escape hatch for edge cases. In modern React, virtually every common use has a better alternative. Default to never using it.**
 
 | You want to... | Use instead |
 |----------------|-------------|
@@ -200,6 +200,8 @@ function Reviews({ reviewsPromise }: { reviewsPromise: Promise<Review[]> }) {
 | Subscribe to external store | `useSyncExternalStore` |
 | Run code once on mount | Ref flag or module-level code |
 | Sync with URL params | `useSearchParams` or `nuqs` |
+| Animate on mount/unmount | CSS transitions, Framer Motion lifecycle |
+| Compute initial state | `useState` lazy initializer `useState(() => compute())` |
 
 ```tsx
 // ❌ useEffect for derived state (causes double render)
@@ -268,11 +270,12 @@ useEffect(() => {
 const [filter] = useQueryState('filter');
 ```
 
-**When useEffect IS appropriate:**
-- Synchronizing with external systems (WebSocket, third-party widgets)
-- Setting up/cleaning up subscriptions
-- Logging/analytics on mount
-- Focus management after render
+**The only remaining valid uses of useEffect:**
+- Imperative sync with DOM-coupled third-party libraries (e.g. a non-React chart widget that needs a DOM node)
+- WebSocket / EventSource connections that need cleanup
+- `useSyncExternalStore` is unavailable and you must manually subscribe to an external store
+
+If none of these apply, there's a better pattern. See the table above.
 
 ### State Anti-Patterns
 
@@ -645,9 +648,9 @@ const redStyle = { color: 'red' };
 
 ### React Checklist
 - [ ] Server Components by default
-- [ ] No useEffect for derived state
-- [ ] No useEffect for data fetching
-- [ ] No useEffect for event responses
+- [ ] No useEffect (treat as obsolete — use the alternatives table)
+- [ ] If useEffect appears, justify it against the 3 valid use cases
+- [ ] No useEffect for derived state, data fetching, or event responses
 - [ ] Union types for state machines
 - [ ] TanStack Query for server state
 - [ ] URL state with useSearchParams/nuqs
