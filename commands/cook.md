@@ -414,6 +414,37 @@ Then:
 2. Verify in browser (see Step 6)
 3. Refactor
 
+**For training/fine-tuning tasks (RunPod, Lambda, Modal):**
+
+When the feature involves training or fine-tuning a custom model, create and maintain a `learnings.md` at the project or app root to document all iterations:
+
+```javascript
+// Detect if this is a training task
+isTrainingTask = featureDescription.match(/train|fine-?tune|finetune|lora|rlhf|dpo|sft|checkpoint/)
+  || config.stack?.gpu?.some(g => ["runpod", "lambda"].includes(g))
+
+if (isTrainingTask) {
+  // Create learnings.md if it doesn't exist
+  if (!exists("learnings.md")) {
+    Write("learnings.md", `# Training Learnings\n\nDocuments iterations, hyperparameters, results, and insights across training runs.\n\n---\n`)
+  }
+}
+```
+
+**After each training run or significant iteration**, append to `learnings.md`:
+
+```markdown
+## Run <N> — <date> — <short description>
+
+**Config:** <model, dataset, hyperparams>
+**Result:** <metrics — loss, accuracy, eval scores>
+**What worked:** <insights>
+**What didn't:** <failures, unexpected behavior>
+**Next:** <what to try next based on this run>
+```
+
+This file persists across sessions so future training work can reference past iterations without re-discovering what was already tried.
+
 Use feature-dev patterns:
 - Follow existing code conventions
 - Apply atomic design for components

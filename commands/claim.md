@@ -280,6 +280,7 @@ Create `.claude/bruhs.json`:
     "testing": ["<detected>"],
     "tooling": ["<detected>"],
     "infra": ["<detected>"],
+    "gpu": ["<detected>"],
     "observability": [],
     "llmObservability": null
   }
@@ -307,6 +308,7 @@ Create `.claude/bruhs.json`:
     "testing": ["<detected>"],
     "tooling": ["Turborepo"],
     "infra": ["<detected>"],
+    "gpu": ["<detected>"],
     "observability": [],
     "llmObservability": null
   }
@@ -384,6 +386,9 @@ For **monorepos**, scan all `apps/*/` directories → `frameworks: ["Next.js", "
 | `zustand` in deps | state: zustand |
 | `jotai` in deps | state: jotai |
 | `@ai-sdk/*` in deps | ai: vercel-ai-sdk |
+| `modal` in deps / `modal.toml` | gpu: modal |
+| `runpod` in deps / `runpod.toml` | gpu: runpod |
+| `lambdalabs` in deps | gpu: lambda |
 | `framer-motion` in deps | animation: framer-motion |
 | `zod` in deps | libraries: zod |
 | `@tanstack/react-query` in deps | libraries: tanstack-query |

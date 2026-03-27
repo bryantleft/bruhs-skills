@@ -272,7 +272,8 @@ After selection, execute the corresponding workflow above. Only read detail file
     "framework": "nextjs|tanstack-start|astro|hono|...",
     "styling": ["tailwind", "shadcn"],
     "database": ["drizzle-postgres", "convex", "..."],
-    "auth": "better-auth|clerk|..."
+    "auth": "better-auth|clerk|...",
+    "gpu": ["modal", "runpod", "lambda"]
   }
 }
 ```

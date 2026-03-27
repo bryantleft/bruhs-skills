@@ -314,6 +314,23 @@ AskUserQuestion({
 })
 ```
 
+**For AI/ML projects - GPU Providers:**
+
+```javascript
+AskUserQuestion({
+  questions: [{
+    question: "Which GPU providers do you want?",
+    header: "GPU",
+    multiSelect: true,
+    options: [
+      { label: "Modal", description: "Serverless GPU inference" },
+      { label: "RunPod", description: "Training and fine-tuning custom models" },
+      { label: "Lambda", description: "Training at scale" },
+    ]
+  }]
+})
+```
+
 **For Web/API - Infrastructure:**
 
 ```javascript
@@ -738,7 +755,8 @@ Create `.claude/bruhs.json` with selected configuration:
     "state": "<selected-state>",
     "testing": ["<selected-testing>"],
     "tooling": ["<selected-tooling>"],
-    "infra": ["<selected-infra>"]
+    "infra": ["<selected-infra>"],
+    "gpu": ["<selected-gpu>"]
   }
 }
 ```
@@ -947,7 +965,7 @@ Done! 🚀
 | **State** | Zustand, Jotai | Web, Desktop, Mobile |
 | **Animation** | Framer Motion, GSAP | Web, Desktop, Mobile |
 | **AI/ML** | Vercel AI SDK, LangChain | TypeScript, Python |
-| **GPU** | Modal | Python, API |
+| **GPU** | Modal (inference), RunPod (training/fine-tuning), Lambda (training at scale) | Python, API |
 | **Workers** | Inngest | Web, API |
 | **Payments** | Stripe, Polar | Web, API |
 | **Email** | Resend | Web, API |
