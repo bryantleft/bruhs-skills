@@ -6,6 +6,8 @@ description: Address PR review comments and optionally merge
 
 Review and address PR feedback, push fixes, and optionally merge when ready.
 
+Uses **isolated subagents** per comment thread to prevent context bleed. Each comment is analyzed independently — findings from one thread never influence analysis of another.
+
 ## Invocation
 
 - `/bruhs:peep` - Address comments on current branch's PR
@@ -17,6 +19,26 @@ Review and address PR feedback, push fixes, and optionally merge when ready.
 - GitHub CLI (`gh`) authenticated
 - Open PR with review comments
 - Linear MCP configured (optional, for ticket ID lookup)
+
+## Architecture: Subagent Review Model
+
+```
+Main Agent (orchestrator)
+├── Fetches PR metadata + comment threads
+├── Spawns N subagents in parallel (one per comment thread)
+│   ├── Subagent 1: reads file, analyzes comment, proposes fix
+│   ├── Subagent 2: reads file, analyzes comment, proposes fix
+│   └── Subagent N: reads file, analyzes comment, proposes fix
+├── Aggregates results, filters by confidence
+├── Presents to user for approval
+└── Applies approved fixes, commits, pushes
+```
+
+**Why subagents?**
+- **No context bleed**: Each comment is analyzed in a fresh context. Analysis of a type error in `queries.ts` doesn't bias the review of a naming suggestion in `leaderboard-card.tsx`.
+- **Parallel execution**: All comments analyzed concurrently, not sequentially.
+- **Dynamic context discovery**: Each subagent reads what it needs (the file, imports, related types) instead of front-loading everything into one prompt.
+- **Aggressive analysis + natural filtering**: Subagents investigate thoroughly. Their tool use (reading files, checking types) naturally filters false positives — no need for conservative prompting.
 
 ## Workflow
 
@@ -43,6 +65,7 @@ AskUserQuestion({
     ]
   }]
 })
+```
 
 **If PR number provided:**
 
@@ -114,18 +137,196 @@ gh api graphql -f query='
 gh pr view <number> --json reviews --jq '.reviews[] | {user: .author.login, state: .state, body: .body}'
 ```
 
-### Step 3: Categorize Comments
+### Step 3: Zero Comments? Offer AI Discovery Review
 
-Parse and categorize each unresolved comment thread:
+If there are **0 unresolved comment threads**, offer an AI review pass before skipping to merge readiness. This catches issues that human reviewers missed or haven't gotten to yet.
 
-| Category | Indicators | Action |
-|----------|------------|--------|
-| **must-fix** | "please fix", "this will break", "bug", "security", blocking review | Address immediately |
-| **suggestion** | "consider", "might be better", "nit:", "optional" | Evaluate and decide |
-| **question** | "why", "what does", "can you explain", "?" | Respond with explanation |
-| **approval** | "lgtm", "looks good", "nice", ":+1:" | No action needed |
+```javascript
+AskUserQuestion({
+  questions: [{
+    question: "No review comments found. Want an AI review before merging?",
+    header: "AI Review",
+    multiSelect: false,
+    options: [
+      { label: "Yes - full review", description: "Subagent per changed file (thorough)" },
+      { label: "Yes - quick scan", description: "Single subagent over the full diff (fast)" },
+      { label: "Skip to merge", description: "No review needed" },
+    ]
+  }]
+})
+```
+
+**If "Yes - full review":**
+
+Get the list of changed files, then spawn one `feature-dev:code-reviewer` subagent per file, all in parallel:
+
+```bash
+# Get changed files
+gh pr diff <number> --name-only
+```
+
+```javascript
+// For each changed file, spawn in parallel:
+Agent({
+  subagent_type: "feature-dev:code-reviewer",
+  description: `Review ${file}`,
+  prompt: `
+You are reviewing a single file from PR #${number}: "${pr.title}".
+${pr.description ? `PR description: "${pr.description}"` : ""}
+
+Your job is to find bugs, security issues, logic errors, and performance problems in this file's changes. Do NOT comment on style, formatting, or naming — those are handled by linters.
+
+## Your Task
+
+1. **Read the file** at \`${file}\`.
+2. **Read the PR diff for this file** to understand what changed vs what was already there.
+3. **Read imports, types, and related files** as needed to verify correctness.
+4. **Investigate aggressively** — check every suspicious pattern. Your tool use is the false-positive filter. If you read the code and confirm it's fine, don't report it.
+5. **Only report issues you verified are real** after reading the surrounding code.
+
+## What to look for (priority order)
+1. Bugs and logic errors (off-by-one, null deref, race conditions, missing error handling)
+2. Security issues (injection, XSS, hardcoded secrets, improper auth)
+3. Performance (N+1 queries, unnecessary re-renders, missing indexes)
+4. Missing edge cases (empty input, null, overflow)
+5. API contract violations (breaking backward compat)
+
+## Output Format (STRICT)
+
+For each issue found, output:
+
+ISSUE: <one-line summary>
+SEVERITY: <critical|warning|suggestion>
+FILE: ${file}
+LINE: <line number>
+CONFIDENCE: <1-5>
+ANALYSIS: <2-3 sentence explanation, what you verified>
+FIX_OLD_STRING: |
+  <exact string to replace>
+FIX_NEW_STRING: |
+  <replacement string>
+
+If no issues found, output:
+NO_ISSUES_FOUND: true
+FILES_READ: <list of files you read to verify>
+`
+})
+```
+
+After all subagents return, aggregate and present findings the same way as comment-thread reviews (Step 4), but labeled as "AI-discovered issues" rather than reviewer comments.
+
+**If "Yes - quick scan":**
+
+Spawn a single subagent with the full diff:
+
+```bash
+diff=$(gh pr diff <number>)
+```
+
+```javascript
+Agent({
+  subagent_type: "feature-dev:code-reviewer",
+  description: "Quick scan PR diff",
+  prompt: `
+Quick review of PR #${number}: "${pr.title}".
+
+## Diff
+\`\`\`
+${diff}
+\`\`\`
+
+Scan for critical bugs, security issues, and logic errors only.
+Skip style, naming, and minor suggestions. Only report high-confidence (4+) issues.
+
+For each issue:
+ISSUE: <summary>
+SEVERITY: <critical|warning>
+FILE: <path>
+LINE: <number>
+CONFIDENCE: <1-5>
+FIX_OLD_STRING: | ...
+FIX_NEW_STRING: | ...
+
+If clean, output: NO_ISSUES_FOUND: true
+`
+})
+```
+
+**If "Skip to merge":** Jump directly to Step 12 (Check Merge Readiness).
+
+### Step 4: Fan Out — Spawn Subagents Per Comment Thread (if comments exist)
+
+For each **unresolved** comment thread, spawn an Agent subagent **in parallel**. All subagents launch in a single tool-call message for maximum concurrency.
+
+**CRITICAL: Launch ALL subagents in one message.** Do not await one before spawning the next.
+
+Each subagent receives a self-contained prompt with:
+- The comment body and reviewer username
+- The file path and line number
+- The PR title and description (for intent context)
+- Instructions to read the file, analyze, categorize, and propose a fix
+
+```javascript
+// For each unresolved thread, spawn in parallel:
+Agent({
+  subagent_type: "feature-dev:code-reviewer",
+  description: `Review ${thread.path}:${thread.line}`,
+  prompt: `
+You are analyzing a single PR review comment in isolation. Do NOT search for or analyze other comments.
+
+## PR Context
+- Title: "${pr.title}"
+- Description: "${pr.description}"
+
+## Review Comment
+- Reviewer: @${thread.comments[0].author.login}
+- File: ${thread.path}
+- Line: ${thread.line}
+- Comment: "${thread.comments.map(c => c.body).join('\n> ')}"
+
+## Your Task
+
+1. **Read the file** at \`${thread.path}\` to understand the full context around line ${thread.line}.
+2. **Read imports and related files** if needed to understand types, dependencies, or contracts.
+3. **Categorize** the comment as one of:
+   - \`must-fix\`: Bug, security issue, will break, blocking review ("please fix", "this will break", "bug", "security")
+   - \`suggestion\`: Optional improvement ("consider", "might be better", "nit:", "optional")
+   - \`question\`: Needs explanation ("why", "what does", "can you explain", "?")
+   - \`approval\`: Positive feedback ("lgtm", "looks good", "nice", ":+1:") — no action needed
+4. **Assess confidence** (1-5) that your categorization and proposed action are correct.
+5. **If must-fix or suggestion**: Propose a concrete fix. Show the exact \`old_string\` and \`new_string\` for an Edit tool call. Verify your fix compiles by checking types and imports.
+6. **If question**: Draft a response that explains the reasoning, referencing the code context you discovered.
+
+## Output Format (STRICT)
+
+Respond with ONLY this structured format:
+
+CATEGORY: <must-fix|suggestion|question|approval>
+CONFIDENCE: <1-5>
+ANALYSIS: <1-2 sentence explanation of what the reviewer is asking for and whether it's valid>
+PROPOSED_ACTION: <fix|respond|skip>
+FIX_OLD_STRING: |
+  <exact string to replace, or "N/A" if not a fix>
+FIX_NEW_STRING: |
+  <replacement string, or "N/A" if not a fix>
+RESPONSE_DRAFT: |
+  <suggested reply to post on the thread, or "N/A" if not responding>
+REASONING: <why this fix/response is correct, what you verified>
+`
+})
+```
+
+### Step 5: Aggregate and Present Results
+
+Collect all subagent results. Filter and sort:
+
+1. **Drop approval-category results** (no action needed)
+2. **Sort by**: must-fix first, then suggestion, then question
+3. **Within each category**: sort by confidence (highest first)
+4. **Flag low-confidence items** (confidence <= 2) for manual review
 
 Display summary:
+
 ```
 PR #42: Add leaderboard to game page
 Branch: perdix-140-add-leaderboard
@@ -134,14 +335,14 @@ Review Status:
 - @reviewer1: Changes Requested
 - @reviewer2: Approved
 
-Comments (4 unresolved):
-┌─────────────┬──────┬─────────────────────────────────────┐
-│ Category    │ Count│ Files                               │
-├─────────────┼──────┼─────────────────────────────────────┤
-│ must-fix    │ 1    │ lib/db/queries.ts                   │
-│ suggestion  │ 2    │ components/game/leaderboard-card.tsx│
-│ question    │ 1    │ lib/hooks/use-leaderboard.ts        │
-└─────────────┴──────┴─────────────────────────────────────┘
+Comments analyzed by isolated subagents (4 threads, 0 context bleed):
+┌─────────────┬──────┬───────────┬─────────────────────────────────────┐
+│ Category    │ Count│ Confidence│ Files                               │
+├─────────────┼──────┼───────────┼─────────────────────────────────────┤
+│ must-fix    │ 1    │ 5/5       │ lib/db/queries.ts                   │
+│ suggestion  │ 2    │ 4/5, 3/5  │ components/game/leaderboard-card.tsx│
+│ question    │ 1    │ 4/5       │ lib/hooks/use-leaderboard.ts        │
+└─────────────┴──────┴───────────┴─────────────────────────────────────┘
 ```
 
 Then use `AskUserQuestion`:
@@ -153,32 +354,41 @@ AskUserQuestion({
     header: "Review",
     multiSelect: false,
     options: [
-      { label: "Yes", description: "Go through each comment" },
-      { label: "View all first", description: "See all comments before addressing" },
+      { label: "Yes", description: "Go through each comment with AI suggestions" },
+      { label: "View all first", description: "See all subagent analyses before addressing" },
+      { label: "Auto-apply high confidence", description: "Apply all fixes with confidence >= 4, review the rest" },
       { label: "Abort", description: "Exit without addressing" },
     ]
   }]
 })
+```
 
-### Step 4: Address Each Comment
+### Step 6: Address Each Comment (with Subagent Analysis)
 
-For each unresolved comment thread, in order of priority (must-fix first):
+For each comment, present the subagent's analysis alongside the original comment.
+
+**Must-fix example:**
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-[1/4] must-fix | lib/db/queries.ts:45
+[1/4] must-fix | lib/db/queries.ts:45 | confidence: 5/5
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 @reviewer1:
 > This query isn't using an index. Add .orderBy(desc(agentStats.winRate))
 > before the limit to use the existing index.
 
-Current code:
-```typescript
-export async function getTopAgents(limit = 10) {
-  return db.select().from(agentStats).limit(limit);
-}
-```
+Subagent analysis:
+  Category: must-fix (confidence 5/5)
+  The reviewer is correct — the query returns arbitrary rows without ordering.
+  The agentStats table has an index on winRate. Adding orderBy ensures index
+  usage and deterministic results.
+
+  Proposed fix:
+  - return db.select().from(agentStats).limit(limit);
+  + return db.select().from(agentStats).orderBy(desc(agentStats.winRate)).limit(limit);
+
+  Verified: desc import exists from drizzle-orm, agentStats.winRate column confirmed.
 ```
 
 Then use `AskUserQuestion`:
@@ -190,19 +400,18 @@ AskUserQuestion({
     header: "Action",
     multiSelect: false,
     options: [
-      { label: "Apply fix", description: "Add orderBy clause" },
+      { label: "Apply fix", description: "Apply the subagent's proposed fix" },
+      { label: "Custom fix", description: "Write a different fix" },
       { label: "Skip", description: "Address later" },
       { label: "Discuss", description: "Need clarification from reviewer" },
     ]
   }]
 })
+```
 
 **If "Apply fix":**
 
-1. Read the file for full context
-2. Apply the fix using Edit tool
-3. Show the diff
-4. Confirm the change addresses the comment
+Apply the fix using the Edit tool with the subagent's exact `old_string` and `new_string`. Show the diff and confirm:
 
 ```
 Applying fix...
@@ -228,6 +437,7 @@ AskUserQuestion({
     ]
   }]
 })
+```
 
 **If "Skip":**
 
@@ -245,22 +455,26 @@ Posting reply...
 ✓ Replied to @reviewer1's comment
 ```
 
-### Step 5: Handle Suggestions
-
-For suggestions, provide more nuanced options:
+### Step 7: Handle Suggestions (with Subagent Context)
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-[2/4] suggestion | components/game/leaderboard-card.tsx:23
+[2/4] suggestion | components/game/leaderboard-card.tsx:23 | confidence: 4/5
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 @reviewer2:
 > nit: Consider using a constant for the max items instead of magic number 10
 
-Current code:
-```typescript
-const topAgents = agents.slice(0, 10);
-```
+Subagent analysis:
+  Category: suggestion (confidence 4/5)
+  Valid nit — the value 10 appears here and in the getTopAgents query default.
+  Extracting a constant would keep them in sync. However, the query default
+  already parameterizes this, so it's low-risk as-is.
+
+  Proposed fix:
+  + const LEADERBOARD_LIMIT = 10;
+  - const topAgents = agents.slice(0, 10);
+  + const topAgents = agents.slice(0, LEADERBOARD_LIMIT);
 ```
 
 Then use `AskUserQuestion`:
@@ -272,17 +486,18 @@ AskUserQuestion({
     header: "Suggestion",
     multiSelect: false,
     options: [
-      { label: "Apply", description: "Use constant as suggested" },
+      { label: "Apply", description: "Apply subagent's proposed fix" },
       { label: "Acknowledge", description: "Good idea, will do later" },
       { label: "Decline", description: "Explain why not needed" },
       { label: "Skip", description: "Address later" },
     ]
   }]
 })
+```
 
 **If "Decline":**
 
-First, output the suggested response:
+First, output the suggested response (drafted by the subagent):
 ```
 Suggested response:
 "Thanks for the suggestion! I'm keeping it as-is because this is only used
@@ -304,32 +519,28 @@ AskUserQuestion({
     ]
   }]
 })
+```
 
-### Step 6: Handle Questions
-
-For questions, help formulate a response:
+### Step 8: Handle Questions (with Subagent Context)
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-[4/4] question | lib/hooks/use-leaderboard.ts:12
+[4/4] question | lib/hooks/use-leaderboard.ts:12 | confidence: 4/5
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 @reviewer1:
 > Why refetch every 5 seconds? Seems aggressive for a leaderboard.
 
-Current code:
-```typescript
-const { data } = useQuery({
-  queryKey: ['leaderboard'],
-  queryFn: getTopAgents,
-  refetchInterval: 5000,
-});
-```
+Subagent analysis:
+  Category: question (confidence 4/5)
+  The 5-second interval matches the game state polling interval used in
+  useGameState (same file, line 28). During active games, matches complete
+  frequently. The reviewer may not have seen the game state context.
 
-Suggested response based on context:
-"The 5-second interval matches our game state polling. During active games,
-the leaderboard can change frequently as matches complete. Happy to make
-this configurable if you think it's too aggressive."
+  Suggested response:
+  "The 5-second interval matches our game state polling. During active games,
+  the leaderboard can change frequently as matches complete. Happy to make
+  this configurable if you think it's too aggressive."
 ```
 
 Then use `AskUserQuestion`:
@@ -341,14 +552,34 @@ AskUserQuestion({
     header: "Question",
     multiSelect: false,
     options: [
-      { label: "Post suggested", description: "Post the suggested response" },
+      { label: "Post suggested", description: "Post the subagent's drafted response" },
       { label: "Edit and post", description: "Modify before posting" },
       { label: "Skip", description: "Address later" },
     ]
   }]
 })
+```
 
-### Step 7: Commit and Push Fixes
+### Step 9: Auto-Apply Mode (Optional)
+
+If the user selected "Auto-apply high confidence" in Step 4:
+
+1. Apply all fixes with confidence >= 4 automatically
+2. Show a summary of what was applied
+3. Present remaining low-confidence items for manual review
+
+```
+Auto-applied (confidence >= 4):
+✓ [must-fix] lib/db/queries.ts:45 - Added orderBy clause (5/5)
+✓ [suggestion] components/game/leaderboard-card.tsx:23 - Added constant (4/5)
+
+Needs manual review (confidence < 4):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[1/1] suggestion | components/game/leaderboard-card.tsx:45 | confidence: 2/5
+...
+```
+
+### Step 10: Commit and Push Fixes
 
 After addressing all comments:
 
@@ -387,6 +618,7 @@ AskUserQuestion({
     ]
   }]
 })
+```
 
 ```bash
 git add -A
@@ -400,7 +632,7 @@ EOF
 git push
 ```
 
-### Step 8: Resolve Threads (Optional)
+### Step 11: Resolve Threads (Optional)
 
 ```javascript
 // For comments that were addressed with code changes
@@ -427,8 +659,9 @@ AskUserQuestion({
     ]
   }]
 })
+```
 
-### Step 9: Check Merge Readiness
+### Step 12: Check Merge Readiness
 
 ```bash
 # Refresh PR status
@@ -441,7 +674,7 @@ Evaluate:
 - `mergeStateStatus`: CLEAN, UNSTABLE, DIRTY
 - `statusCheckRollup`: All checks passing?
 
-### Step 10: Offer to Merge
+### Step 13: Offer to Merge
 
 **If ready to merge:**
 
@@ -468,6 +701,7 @@ AskUserQuestion({
     ]
   }]
 })
+```
 
 **If merge blocked:**
 
@@ -495,13 +729,14 @@ AskUserQuestion({
     ]
   }]
 })
+```
 
 ```bash
 # Request re-review
 gh pr edit <number> --add-reviewer reviewer1
 ```
 
-### Step 11: Merge and Transition
+### Step 14: Merge and Transition
 
 If user chooses to merge:
 
@@ -538,7 +773,7 @@ Then automatically run the dip workflow:
 Ready for your next feature! Run /bruhs:cook to start.
 ```
 
-### Step 12: Update Linear (if available)
+### Step 15: Update Linear (if available)
 
 If Linear MCP is configured and PR was merged:
 
@@ -564,13 +799,15 @@ Updating Linear...
 ```
 PR #42: Add leaderboard to game page
 
+Subagent Review (4 threads analyzed in parallel, 0 context bleed):
+
 Addressed:
-✓ [must-fix] lib/db/queries.ts:45 - Added orderBy clause
-✓ [suggestion] components/game/leaderboard-card.tsx:23 - Added constant
-✓ [question] lib/hooks/use-leaderboard.ts:12 - Replied
+✓ [must-fix] lib/db/queries.ts:45 - Added orderBy clause (5/5)
+✓ [suggestion] components/game/leaderboard-card.tsx:23 - Added constant (4/5)
+✓ [question] lib/hooks/use-leaderboard.ts:12 - Replied (4/5)
 
 Skipped:
-- [suggestion] components/game/leaderboard-card.tsx:45 - Will address later
+- [suggestion] components/game/leaderboard-card.tsx:45 - Will address later (2/5)
 
 Committed and pushed:
 ✓ fix: address PR review feedback (abc1234)
@@ -585,10 +822,12 @@ Run /bruhs:peep again after re-review, or wait for approval to merge.
 ```
 PR #42: Add leaderboard to game page
 
+Subagent Review (4 threads analyzed in parallel, 0 context bleed):
+
 Addressed:
-✓ [must-fix] lib/db/queries.ts:45 - Added orderBy clause
-✓ [suggestion] components/game/leaderboard-card.tsx:23 - Added constant
-✓ [question] lib/hooks/use-leaderboard.ts:12 - Replied
+✓ [must-fix] lib/db/queries.ts:45 - Added orderBy clause (5/5)
+✓ [suggestion] components/game/leaderboard-card.tsx:23 - Added constant (4/5)
+✓ [question] lib/hooks/use-leaderboard.ts:12 - Replied (4/5)
 
 Committed and pushed:
 ✓ fix: address PR review feedback (abc1234)
@@ -606,103 +845,31 @@ Linear:
 Ready for your next feature! Run /bruhs:cook to start.
 ```
 
-## Examples
+## Design Decisions (from BugBot + Code Review Research)
 
-### Simple Review - All Approved
+### Why subagents over single-context review?
 
-```
-> /bruhs:peep
+| Approach | Pros | Cons |
+|----------|------|------|
+| Single context (old) | Simple, sees all comments at once | Context bleed between comments, biased analysis, context window pressure |
+| **Subagent per thread (new)** | **Isolated analysis, parallel, no bias** | More API calls, slightly more orchestration |
+| Multi-pass with voting (BugBot v1) | Good false positive reduction | Overkill for addressing known comments |
 
-PR #42: Add leaderboard to game page
-Branch: perdix-140-add-leaderboard
+For **addressing existing review comments** (not discovering new bugs), subagent-per-thread is the sweet spot. We're not doing discovery — we're analyzing known feedback — so multi-pass voting is unnecessary overhead.
 
-Review Status:
-- @reviewer1: Approved
-- @reviewer2: Approved ("LGTM!")
+### Key learnings applied from Cursor's BugBot:
 
-Comments (0 unresolved)
-
-✓ All reviews approved
-✓ CI passing
-✓ No merge conflicts
-
-Ready to merge?
-○ Squash and merge ← selected
-
-Merging...
-✓ PR #42 merged!
-
-✓ Switched to main
-✓ Pulled latest
-✓ Deleted branch perdix-140-add-leaderboard
-✓ PERDIX-140 → Done
-
-Ready for your next feature! Run /bruhs:cook to start.
-```
-
-### Multiple Rounds of Review
-
-```
-> /bruhs:peep
-
-PR #42: Add leaderboard to game page
-
-Comments (3 unresolved):
-- 1 must-fix
-- 2 suggestions
-
-[... addresses comments ...]
-
-✓ Pushed fixes
-
-⚠ Cannot merge yet - waiting for re-review
-
-Requested re-review from @reviewer1
-
----
-
-[Later, after re-review]
-
-> /bruhs:peep
-
-PR #42: Add leaderboard to game page
-
-Review Status:
-- @reviewer1: Approved
-- @reviewer2: Approved
-
-Comments (0 unresolved)
-
-Ready to merge?
-○ Squash and merge ← selected
-
-✓ PR #42 merged!
-✓ Switched to main
-✓ PERDIX-140 → Done
-
-Ready for your next feature! Run /bruhs:cook to start.
-```
-
-### Switching Branches
-
-```
-> /bruhs:peep 42
-
-Currently on: main
-PR #42 is on branch: perdix-140-add-leaderboard
-
-Switching branches...
-✓ Fetched origin/perdix-140-add-leaderboard
-✓ Switched to perdix-140-add-leaderboard
-✓ Pulled latest
-
-[... continues with review ...]
-```
+1. **Aggressive prompting + tool-based verification** — Subagents investigate thoroughly and verify their own findings by reading files. Conservative prompting caused under-reporting in BugBot's agentic system.
+2. **Dynamic context discovery** — Each subagent reads the file and related imports on its own, rather than us pre-loading all context. BugBot found this consistently outperformed pre-computed context.
+3. **Confidence scoring** — Self-rated confidence (1-5) enables auto-apply mode for high-confidence fixes and flags uncertain items for manual review.
+4. **Iterate on tool design** — "Even small changes in tool design had outsized impact on outcomes." The structured output format and explicit verification instructions matter more than prompt length.
 
 ## Tips
 
-- **Run early, run often** - Don't wait for all reviews; address feedback as it comes
-- **Must-fix first** - Always prioritize blocking feedback
-- **Decline gracefully** - It's okay to push back on suggestions with good reasoning
-- **Re-request reviews** - After pushing fixes, explicitly request re-review
-- **Let reviewers resolve** - Some teams prefer reviewers mark their own threads resolved
+- **Run early, run often** — Don't wait for all reviews; address feedback as it comes
+- **Must-fix first** — Always prioritize blocking feedback
+- **Use auto-apply** — For PRs with many comments, auto-apply high-confidence fixes saves time
+- **Decline gracefully** — It's okay to push back on suggestions with good reasoning
+- **Re-request reviews** — After pushing fixes, explicitly request re-review
+- **Let reviewers resolve** — Some teams prefer reviewers mark their own threads resolved
+- **Trust confidence scores** — Scores >= 4 are reliable; scores <= 2 need human judgment
