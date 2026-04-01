@@ -245,10 +245,28 @@ git push -u origin <branchName>
 
 ### Step 8: Create PR
 
+The PR description should be a **historical record** — useful to someone reading `git blame` in 2 years. Lead with *why*, not *what* (the diff already shows what). Scale detail to the size and risk of the change.
+
+**Adapt the template by change type:**
+
+#### Feature PRs
+
 ```bash
 gh pr create --title "<title>" --body "$(cat <<'EOF'
-## Summary
-<bullet points of changes>
+## Why
+<1-2 sentences: what problem this solves or what capability it adds, and for whom>
+
+## What changed
+- <bullet points of the key changes — high-level, not restating the diff>
+
+## Design decisions
+- <any non-obvious choices: "Used X over Y because Z">
+- <omit this section entirely for straightforward changes>
+
+<!-- Include for UI changes only -->
+## Screenshots
+<before/after screenshots with captions explaining what to look at>
+<!-- End UI section -->
 
 ## Linear
 <TICKET-ID>
@@ -260,21 +278,110 @@ EOF
 )"
 ```
 
-Example:
+#### Bug Fix PRs
+
+```bash
+gh pr create --title "<title>" --body "$(cat <<'EOF'
+## Problem
+<what was broken, who was affected, how it manifested>
+
+## Root cause
+<why it was broken — the actual underlying issue, not just "the code was wrong">
+
+## Fix
+<what the fix does and why this approach>
+
+## Linear
+<TICKET-ID>
+
+## Test plan
+- [ ] <how you verified the fix>
+- [ ] <regression test or edge case coverage>
+EOF
+)"
+```
+
+#### Refactor / Chore PRs
+
+```bash
+gh pr create --title "<title>" --body "$(cat <<'EOF'
+## Why now
+<what motivated this refactor — tech debt, upcoming feature needs it, performance>
+
+## What changed
+- <bullet points>
+
+## Reviewer guide
+- <where to start reading, what to skip (e.g., auto-generated files)>
+- <omit for small/obvious changes>
+
+## Linear
+<TICKET-ID>
+
+## Test plan
+- [ ] <proof of no behavior change, or what was verified>
+EOF
+)"
+```
+
+**Guidelines for writing each section:**
+
+- **Why / Problem**: This is the most important section. A reviewer should understand the motivation before reading a single line of code. Write it for someone with no context.
+- **What changed**: High-level bullets only. Don't restate the diff ("changed line 42 from X to Y"). Focus on *what's different about the system now*.
+- **Design decisions**: Only include when the choice isn't obvious. "Used batch query instead of N+1 loop" — yes. "Created a React component" — no.
+- **Screenshots**: Required for any UI change. Always include a caption: "Before: button overflows on mobile. After: wraps correctly." For interactions, use a screen recording.
+- **Reviewer guide**: For PRs touching 5+ files. Tell the reviewer where to start and what to skip. "Start with `schema.ts`, then `handler.ts`. The migration file is auto-generated."
+- **Test plan**: Every PR, every time. Not "added tests" — specific verification steps.
+- **Scale to risk**: A one-line typo fix gets a one-line description. A schema migration gets paragraphs.
+
+**Example — Feature PR:**
+
 ```bash
 gh pr create --title "feat: add leaderboard to game page" --body "$(cat <<'EOF'
-## Summary
-- Added LeaderboardCard component showing top agents by win rate
+## Why
+Players had no way to see how they rank against other agents. The leaderboard gives visibility into top performers and adds a competitive loop to the game page.
+
+## What changed
+- Added `LeaderboardCard` component showing top agents by win rate
 - Integrated leaderboard into game page sidebar
-- Added getTopAgents query function
+- Added `getTopAgents` query with pagination support
+
+## Screenshots
+**Game page with leaderboard sidebar**
+<screenshot>
 
 ## Linear
 PERDIX-140
 
 ## Test plan
-- [ ] Verify leaderboard displays on game page
-- [ ] Verify agents are sorted by win rate
-- [ ] Verify loading state works correctly
+- [ ] Verify leaderboard displays on game page with real data
+- [ ] Verify agents are sorted by win rate descending
+- [ ] Verify empty state when no agents exist
+- [ ] Verify loading skeleton renders during fetch
+EOF
+)"
+```
+
+**Example — Bug Fix PR:**
+
+```bash
+gh pr create --title "fix: validate card draw against deck state" --body "$(cat <<'EOF'
+## Problem
+Players could draw cards from an empty deck, causing a crash in the game engine. This happened when a game went past 40 turns.
+
+## Root cause
+`drawCard()` didn't check remaining deck size before popping. The deck array underflowed, returning `undefined`, which cascaded into a type error in `evaluateHand()`.
+
+## Fix
+Added a deck size check in `drawCard()` that triggers a reshuffle from the discard pile when the deck is empty. This matches standard card game rules and prevents the underflow.
+
+## Linear
+PERDIX-142
+
+## Test plan
+- [ ] Verify drawing from empty deck triggers reshuffle
+- [ ] Verify game can go past 40 turns without crashing
+- [ ] Added unit test for empty deck edge case
 EOF
 )"
 ```
