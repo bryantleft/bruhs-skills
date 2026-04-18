@@ -42,6 +42,7 @@ All code produced by cook follows the patterns defined in:
 | **Types as Documentation** | Signatures should tell the full story |
 | **Explicit Errors** | Errors visible in return types, not hidden throws |
 | **Immutability** | Prefer readonly, don't mutate parameters |
+| **Fast Path by Default** | When patterns are equivalent in correctness, pick the faster one. Anti-patterns (N+1, await-in-loop, sync-in-async, per-request clients) are bugs, not optimizations |
 | **KISS** | Keep It Simple, Stupid |
 | **YAGNI** | You Ain't Gonna Need It |
 | **Single Source of Truth** | One authoritative source for each piece of data |
@@ -247,15 +248,28 @@ Planning...
 **Approach 1: <name>**
 - Description: <how it works>
 - Files to modify: <list>
+- Data path: <where data flows — any N+1, waterfall, or fan-out hotspots?>
+- Performance notes: <which fast-path patterns apply; any hot-path concerns>
 - Pros: <benefits>
 - Cons: <tradeoffs>
 
 **Approach 2: <name>**
 - Description: <how it works>
 - Files to modify: <list>
+- Data path: <where data flows — any N+1, waterfall, or fan-out hotspots?>
+- Performance notes: <which fast-path patterns apply; any hot-path concerns>
 - Pros: <benefits>
 - Cons: <tradeoffs>
 ```
+
+**Performance checklist during planning** (don't ship an approach that fails these):
+- [ ] No `await` in loops over independent work — use `Promise.all` / `asyncio.gather` / `try_join!`
+- [ ] No N+1 ORM access — plan eager loading up front
+- [ ] Concurrency bounded when driven by user input
+- [ ] Clients (DB, HTTP, Redis) reused, not constructed per request
+- [ ] Streaming vs buffering decided for large payloads
+- [ ] Sync I/O / crypto kept off the event loop
+- [ ] Cache layer identified (edge cache, app cache, none) with justification
 
 Then use `AskUserQuestion` for selection:
 
@@ -513,10 +527,12 @@ Use the Task tool with `subagent_type: "feature-dev:code-reviewer"` to:
 - Look for security issues
 - Ensure code quality
 - Check adherence to project conventions
+- **Fast-path audit**: scan for N+1 queries, `await` in loops, sync-in-async, per-request client construction, unbounded concurrency on user input, fetch waterfalls, unstable references passed to memoized children, defensive `useMemo`, full-body logging in hot paths
 
 ```
 Reviewing code...
 ✓ No high-confidence issues found
+✓ Fast-path audit: no anti-patterns detected
 ```
 
 **UI Design Review (for UI changes):**

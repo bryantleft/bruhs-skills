@@ -43,17 +43,19 @@ Slop detects violations of the patterns defined in:
 
 ## The Priority Hierarchy
 
-**Type signatures are the #1 priority.** Fix type issues before anything else.
+**Type signatures are #1. Performance anti-patterns are real bugs, not style nits** — they rank above architecture and style because they're cheap to fix and expensive to leave in.
 
 | Priority | Category | Why |
 |----------|----------|-----|
 | **1** | Type Signatures | Types ARE the documentation |
-| **2** | Error Handling | Errors hidden from types = signature lies |
-| **3** | Immutability | Mutations hidden from types = surprise side effects |
-| **4** | Security | Can cause real damage |
+| **2** | Security | Can cause real damage |
+| **3** | Performance Anti-Patterns | N+1, `await`-in-loop, sync-in-async, per-request clients — they're bugs, not optimizations |
+| **4** | Error Handling | Errors hidden from types = signature lies |
 | **5** | Architecture | Structural issues compound |
-| **6** | Performance | Usually matters less than correctness |
+| **6** | Immutability | Mutations hidden from types = surprise side effects |
 | **7** | Code Style | Nitpicks, but they add up |
+
+> **Performance note**: slop flags *anti-patterns* aggressively (no benchmark required — they're just wrong). Slop flags *speculative optimizations* skeptically — "I refactored for performance" without measurement is slop of a different kind.
 
 ## The Analysis Pillars
 
@@ -62,11 +64,11 @@ Slop analyzes code through these lenses, **in priority order**:
 | Pillar | Focus |
 |--------|-------|
 | **Type Signatures** | Do signatures tell the full story? Are errors explicit? |
-| **Immutability** | Are mutations visible? Is state predictable? |
+| **Security** | SQL injection, XSS, hardcoded secrets, unbounded input? |
+| **Performance** | N+1 queries, `await`-in-loop, sync-in-async, per-request clients, unbounded concurrency, missing cache headers, render waterfalls |
 | **Error Handling** | Graceful failures? Errors in return types? |
-| **Security** | SQL injection, XSS, hardcoded secrets? |
 | **Architecture** | Does it fit the system, or fight it? |
-| **Performance** | N+1 queries, unnecessary re-renders, bundle size? |
+| **Immutability** | Are mutations visible? Is state predictable? |
 | **Readability** | Can a human understand this in 30 seconds? |
 | **Standards** | Consistent with codebase conventions? |
 
@@ -459,6 +461,8 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 ### Category 7: Performance Anti-Patterns
 
+These are **bugs, not optimizations.** Flag them regardless of benchmark — the fast path is the correct path.
+
 **7.1 N+1 Queries**
 ```typescript
 // SLOP
@@ -471,24 +475,98 @@ for (const user of users) {
 const users = await db.getUsersWithOrders();
 ```
 
-**7.2 Unnecessary Re-renders**
+**7.2 `await` Inside a Loop Over Independent Items**
+```typescript
+// SLOP: Serial I/O dressed as async
+const results = [];
+for (const id of ids) {
+  results.push(await fetchOne(id));
+}
+
+// CLEAN: Parallel with bounded concurrency
+import pLimit from "p-limit";
+const limit = pLimit(20);
+const results = await Promise.all(ids.map(id => limit(() => fetchOne(id))));
+```
+
+**7.3 Per-Request Client Construction**
+```typescript
+// SLOP: No connection pool, new TLS every call
+app.get("/users", async () => {
+  const client = new PrismaClient();
+  return client.user.findMany();
+});
+
+// CLEAN: Singleton at module scope
+const db = new PrismaClient();
+app.get("/users", async () => db.user.findMany());
+```
+
+**7.4 Sync I/O in Async Handlers**
+```typescript
+// SLOP: Blocks the entire event loop
+const data = fs.readFileSync(path);
+
+// CLEAN
+const data = await fs.promises.readFile(path);
+```
+
+**7.5 Unbounded Concurrency on User Input**
+```typescript
+// SLOP: User sends 10,000 ids → 10,000 concurrent connections → OOM
+await Promise.all(ids.map(fetchOne));
+
+// CLEAN: Bounded
+const limit = pLimit(20);
+await Promise.all(ids.map(id => limit(() => fetchOne(id))));
+```
+
+**7.6 Fetch Waterfall Instead of Parallel**
+```typescript
+// SLOP: 2× the latency
+const user = await getUser(id);
+const posts = await getPosts(id);
+
+// CLEAN
+const [user, posts] = await Promise.all([getUser(id), getPosts(id)]);
+```
+
+**7.7 Unstable References → Unnecessary Re-renders**
 ```typescript
 // SLOP: New object reference every render
 <Component style={{ color: 'red' }} />
-<Component data={data.filter(x => x.active)} />
 
-// CLEAN: Stable references
-const style = { color: 'red' }; // outside component or useMemo
-const activeData = useMemo(() => data.filter(x => x.active), [data]);
+// CLEAN: Hoist static values out
+const RED = { color: 'red' };
+<Component style={RED} />
 ```
 
-**7.3 Blocking Operations**
+**7.8 Defensive Memoization**
 ```typescript
-// SLOP: Sync file operations in request handler
-const data = fs.readFileSync(path);
+// SLOP: Memoizing primitives or cheap expressions (pure overhead)
+const value = useMemo(() => items.length, [items]);
+const handleClick = useCallback(() => onClick(), [onClick]);
 
-// CLEAN: Async
-const data = await fs.promises.readFile(path);
+// CLEAN: Just compute. Memoize only with measured re-render problem.
+const value = items.length;
+```
+
+**7.9 N+1 HTTP / Fetch-In-Map**
+```typescript
+// SLOP: Per-item API call
+const enriched = await Promise.all(ids.map(id => fetch(`/api/user/${id}`)));
+
+// CLEAN: Batch endpoint
+const enriched = await fetch("/api/users", { method: "POST", body: JSON.stringify({ ids }) });
+```
+
+**7.10 Full-Body Request/Response Logging**
+```typescript
+// SLOP: JSON.stringify dominates CPU under load
+logger.info({ req: JSON.stringify(req), res: JSON.stringify(res) });
+
+// CLEAN: Structured fields, sampled bodies
+logger.info({ path: req.path, status: res.status, durationMs });
 ```
 
 ### Category 8: Architectural Violations

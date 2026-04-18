@@ -40,7 +40,10 @@ When reviewing code, type signatures are the **#1 priority**. Fix these before a
 | **2** | Side effects not in signature | Signature lies about behavior |
 | **3** | Overly permissive types (`any`) | Type system disabled |
 | **4** | Unsafe type operations (**as**, **!**) | Compiler trust violated |
-| **5** | Implementation issues | Secondary to type correctness |
+| **5** | Fast-path violations | `await`-in-loop, N+1, sync-in-async, per-request clients — anti-patterns, not optimizations |
+| **6** | Other implementation issues | Secondary to type correctness |
+
+> **Note on performance**: we treat anti-patterns (5) as first-class bugs. Picking a fast-path pattern when it's equally correct is not "premature optimization" — it's just competent. Measurement is required to *claim* a speedup, not to *avoid* an anti-pattern. See `practices/_common.md` Performance section.
 
 ---
 

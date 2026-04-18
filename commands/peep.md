@@ -192,7 +192,17 @@ Your job is to find bugs, security issues, logic errors, and performance problem
 ## What to look for (priority order)
 1. Bugs and logic errors (off-by-one, null deref, race conditions, missing error handling)
 2. Security issues (injection, XSS, hardcoded secrets, improper auth)
-3. Performance (N+1 queries, unnecessary re-renders, missing indexes)
+3. Performance anti-patterns — these are bugs, not optimizations. Flag aggressively:
+   - N+1 queries (ORM lazy loads, fetch-in-map)
+   - `await` inside a loop over independent work
+   - Per-request client construction (`new PrismaClient()`, `httpx.AsyncClient()`, `reqwest::Client::new()`)
+   - Sync I/O / crypto / hashing inside async handlers
+   - Unbounded `Promise.all` / recursion / `Vec::with_capacity` on user input
+   - Fetch waterfalls where `Promise.all` would work
+   - Unstable references passed to memoized children
+   - Full-body JSON logging in hot paths
+   - Missing database indexes on queried columns
+   - Missing cache headers on cacheable GETs
 4. Missing edge cases (empty input, null, overflow)
 5. API contract violations (breaking backward compat)
 

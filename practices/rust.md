@@ -604,3 +604,162 @@ When the project uses these frameworks, also load the corresponding reference:
 - [ ] `# Errors` and `# Panics` sections where applicable
 - [ ] `// SAFETY:` on every `unsafe` block
 - [ ] TODOs reference a ticket
+
+---
+
+## Performance
+
+> **Rust's ownership model is a performance feature.** Borrow by default, own when the type needs it, clone last.
+
+### Parallel awaits, never `await` in a loop
+
+```rust
+// ❌ Serial I/O
+let user = fetch_user(id).await?;
+let orders = fetch_orders(id).await?;
+
+// ✅ Parallel
+let (user, orders) = tokio::try_join!(fetch_user(id), fetch_orders(id))?;
+
+// ❌ Serialized loop over independent I/O
+let mut results = vec![];
+for id in ids { results.push(fetch_one(id).await?); }
+
+// ✅ Bounded-concurrency stream
+use futures::stream::{self, StreamExt};
+let results: Vec<_> = stream::iter(ids)
+    .map(|id| fetch_one(id))
+    .buffer_unordered(16)
+    .collect()
+    .await;
+```
+
+### Never hold `std::sync::Mutex` across `.await`
+
+```rust
+// ❌ Deadlock-prone; also blocks the Tokio worker
+let guard = state.lock().unwrap();
+do_async_work().await;  // holding the lock this entire time
+
+// ✅ Drop the guard before awaiting
+let value = {
+    let guard = state.lock().unwrap();
+    guard.snapshot()
+};  // guard dropped here
+do_async_work(value).await;
+
+// ✅ Or use tokio's Mutex if the lock must span an await
+let guard = state.lock().await;
+```
+
+### Singleton clients (pooled connections are the point)
+
+```rust
+// ❌ New client per request — no pool, new TLS every call
+let client = reqwest::Client::new();
+
+// ✅ Shared client
+static HTTP: OnceLock<reqwest::Client> = OnceLock::new();
+fn http() -> &'static reqwest::Client {
+    HTTP.get_or_init(|| reqwest::Client::builder().build().unwrap())
+}
+```
+
+Same for `sqlx::PgPool` / `deadpool` / `bb8` — one pool per app, cloned cheaply (it's an `Arc` inside).
+
+### Release profile with LTO + `codegen-units=1`
+
+```toml
+# Cargo.toml — deploy/release profile
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+```
+
+Typically 10–30% faster binaries at the cost of build time. Cheap to add; measure on your workload.
+
+### `Bytes` / `BytesMut` for network buffers
+
+`Vec<u8>` is fine for owned data. For buffers that get sliced, cloned, or passed across tasks, `bytes::Bytes` is reference-counted — cheap `Clone`, zero-copy slicing.
+
+### Cheap wins on hashing / small collections
+
+```rust
+// ❌ SipHash (DoS-resistant but slow) on internal maps where the keys aren't adversarial
+use std::collections::HashMap;
+
+// ✅ Faster hasher for internal-only maps
+use rustc_hash::FxHashMap;       // or ahash::AHashMap / foldhash
+let mut m: FxHashMap<u64, Value> = FxHashMap::default();
+
+// ✅ Stack-allocated for known-small collections
+use smallvec::SmallVec;
+let mut v: SmallVec<[u32; 8]> = SmallVec::new();  // no heap alloc until 9th element
+```
+
+(Keep `std::HashMap` for anything that takes external input — HashDoS is real.)
+
+### Iterator chains, not intermediate `.collect()`s
+
+```rust
+// ❌ Two allocations
+let active: Vec<_> = users.iter().filter(|u| u.active).collect();
+let names: Vec<_> = active.iter().map(|u| &u.name).collect();
+
+// ✅ Single pass, single allocation
+let names: Vec<_> = users.iter().filter(|u| u.active).map(|u| &u.name).collect();
+```
+
+Clippy's `needless_collect` catches most of these.
+
+### `Cow<'_, T>` when sometimes you own, sometimes you borrow
+
+```rust
+use std::borrow::Cow;
+
+fn normalize(input: &str) -> Cow<'_, str> {
+    if input.chars().all(|c| c.is_ascii_lowercase()) {
+        Cow::Borrowed(input)           // already normalized — no alloc
+    } else {
+        Cow::Owned(input.to_lowercase())
+    }
+}
+```
+
+Beats "always allocate, always return `String`."
+
+### Bound user-driven allocations
+
+```rust
+// ❌ DoS vector — user-controlled capacity
+let mut v = Vec::with_capacity(user_input);
+
+// ✅ Clamp
+const MAX: usize = 10_000;
+let cap = user_input.min(MAX);
+let mut v = Vec::with_capacity(cap);
+```
+
+### Traps
+
+- **`.await` inside a `for` loop.** Use `try_join!` / `FuturesUnordered` / `buffer_unordered(n)`.
+- **Holding `std::sync::Mutex` across `.await`.** Deadlock + blocks the worker.
+- **`.clone()` to dodge the borrow checker on hot paths.** Usually `Arc`, `&`, or `Cow` is what you want.
+- **Unbounded `Vec::with_capacity(user_input)`.** Clamp.
+- **`reqwest::Client::new()` per call.** Singleton.
+- **Sync crypto / hashing (bcrypt, argon2) inside `async fn`.** Use `spawn_blocking`.
+- **JSON hot paths with default `serde_json`.** `simd-json` / `sonic-rs` on measured hot paths only.
+
+### Performance Checklist
+
+- [ ] `tokio::try_join!` / `buffer_unordered` for parallel I/O; no `.await` in loops over independent work
+- [ ] No `std::sync::Mutex` held across `.await`
+- [ ] HTTP / DB clients as singletons (`OnceLock` / app state), not per call
+- [ ] Release profile with `lto = "thin"`, `codegen-units = 1`, `strip`
+- [ ] `Bytes` / `BytesMut` for network buffers; `Arc` for shared read; `Cow` for maybe-owned
+- [ ] `FxHashMap` / `ahash` on internal maps (not external input)
+- [ ] `SmallVec` / `ArrayVec` for known-small collections
+- [ ] Iterator chains without intermediate `.collect()`s
+- [ ] No user-unbounded `Vec::with_capacity` / recursion
+- [ ] CPU-bound work in `spawn_blocking`, not on the Tokio worker

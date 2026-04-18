@@ -422,6 +422,126 @@ WebSearch({ query: `Next.js app router documentation` })
 
 ---
 
+## Performance
+
+> Pick the fast path by default. Obvious perf wins don't need a benchmark to justify.
+
+### Philosophy
+
+Performance is a first-class concern, not "premature optimization." The canonical Knuth quote has a caveat most people skip: *"Yet we should not pass up our opportunities in that critical 3%."* Anti-patterns like N+1 queries, `await`-in-loop, and per-request client construction are in the 3% — they're not optimizations, they're mistakes.
+
+- **Correctness first, but when two patterns are equally correct, pick the faster one.**
+- **Benchmarks are required to claim a win, not to avoid an anti-pattern.**
+- **Measure at boundaries** (ingress/egress p50/p95/p99). Internal timers lie about contention.
+- **Complexity budget**: if the fast path costs significant readability, fall back to the clear path and note the tradeoff. If costs are comparable, fast wins.
+
+### Universal Fast-Path Defaults
+
+```typescript
+// ❌ Sequential I/O pretending to be async
+for (const id of ids) {
+  await processUser(id);
+}
+
+// ✅ Parallel with bounded concurrency
+import pLimit from "p-limit";
+const limit = pLimit(10);
+await Promise.all(ids.map(id => limit(() => processUser(id))));
+```
+
+```typescript
+// ❌ Per-request client construction — no pooling, cold TLS every call
+app.get("/users", async () => {
+  const db = new PrismaClient();
+  return db.user.findMany();
+});
+
+// ✅ Singleton, initialized once at boot
+const db = new PrismaClient();
+app.get("/users", async () => db.user.findMany());
+```
+
+```typescript
+// ❌ N+1 — one query per user
+const users = await db.user.findMany();
+for (const u of users) {
+  u.posts = await db.post.findMany({ where: { userId: u.id } });
+}
+
+// ✅ One query with eager load
+const users = await db.user.findMany({ include: { posts: true } });
+```
+
+### Batch at Boundaries
+
+One round-trip of N items beats N round-trips. Applies to DB, HTTP, IPC, queue publishes, GPU dispatch.
+
+```typescript
+// ❌ One insert per record
+for (const row of rows) await db.insert(table).values(row);
+
+// ✅ Batched insert
+await db.insert(table).values(rows);
+```
+
+### Stream, Don't Buffer
+
+Start bytes moving before you have them all — SSR, JSON, file I/O, LLM tokens. Especially important at the edge where memory is tight.
+
+### Don't Block the Hot Loop
+
+- Event loop / render thread / request handler: push CPU work off, I/O async, never sync-in-async.
+- Sync crypto (bcrypt, big hashes) in the request path → worker / threadpool.
+- Full-body logging in hot paths → structured fields, sampled.
+
+### Bound Concurrency on User Input
+
+```typescript
+// ❌ DoS vector — user can send 1M ids
+await Promise.all(ids.map(fetchOne));
+
+// ✅ Bounded
+const limit = pLimit(20);
+await Promise.all(ids.map(id => limit(() => fetchOne(id))));
+```
+
+### Common LLM Traps
+
+Patterns that *look* clean but quietly destroy performance — flag these in review:
+
+1. `await` inside a `for` loop over independent items → `Promise.all` / `asyncio.gather` / `try_join!`
+2. `.map().filter().reduce()` chains over large arrays → one pass or lazy iterator
+3. N+1 ORM access dressed as idiomatic code → eager loading / `selectinload` / `include`
+4. `useMemo` / `useCallback` on primitives or cheap expressions
+5. `JSON.parse(JSON.stringify(x))` for deep clone → `structuredClone`
+6. Unbounded `Promise.all` / recursion over user input
+7. Synchronous hashing/crypto in request path
+8. Per-request client construction (`new PrismaClient()`, `httpx.AsyncClient()`, `reqwest::Client::new()`)
+9. Full-body JSON logging in hot paths
+10. Parsing config / reading env per request instead of once at boot
+
+### Measurement Discipline
+
+You need evidence to claim *"this is X% faster"*. You do not need evidence to fix an anti-pattern.
+
+```
+✅ "Removed N+1 — reduced 50 queries per request to 2."       (anti-pattern — obvious)
+✅ "Added prepared statement — p95 dropped 40ms → 12ms."       (claim — measured)
+❌ "Refactored for performance."                               (vague, unmeasured, likely no-op)
+❌ "Memoized for performance."                                 (without evidence, probably pure overhead)
+```
+
+### Per-Stack Playbooks
+
+For concrete patterns in your stack → see the Performance section of:
+- `practices/typescript-react.md`
+- `practices/typescript-hono.md`
+- `practices/python.md` / `practices/python-fastapi.md`
+- `practices/rust.md`
+- `practices/effect-ts.md`
+
+---
+
 ## Quick Reference
 
 ### Universal Checklist
@@ -435,3 +555,13 @@ WebSearch({ query: `Next.js app router documentation` })
 - [ ] No TODO without ticket reference
 - [ ] Dependencies audited
 - [ ] Lockfile committed
+
+### Performance Checklist
+- [ ] No `await` in loops over independent items
+- [ ] No N+1 ORM access
+- [ ] Clients (DB, HTTP, Redis) constructed once, not per request
+- [ ] Concurrency bounded when driven by user input
+- [ ] No sync I/O on async event loop
+- [ ] Streaming over buffering for large payloads
+- [ ] Batched writes at boundaries (DB, HTTP, queue)
+- [ ] Config/env loaded once at boot

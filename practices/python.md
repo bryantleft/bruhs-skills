@@ -665,6 +665,150 @@ For framework-specific patterns (FastAPI, Django, etc.) → `practices/python-fa
 
 ---
 
+## Performance
+
+> **Async-by-default, batch at boundaries, never block the loop.** These are defaults, not optimizations.
+
+### `asyncio.gather` / `TaskGroup` over serial awaits
+
+```python
+# ❌ Serial I/O — 3× the latency
+user = await fetch_user(user_id)
+orders = await fetch_orders(user_id)
+prefs = await fetch_prefs(user_id)
+
+# ✅ Parallel — 1× the latency
+async with asyncio.TaskGroup() as tg:
+    user_t = tg.create_task(fetch_user(user_id))
+    orders_t = tg.create_task(fetch_orders(user_id))
+    prefs_t = tg.create_task(fetch_prefs(user_id))
+user, orders, prefs = user_t.result(), orders_t.result(), prefs_t.result()
+```
+
+### Never block the event loop
+
+```python
+# ❌ Sync I/O inside async — blocks the entire loop
+@router.get("/file")
+async def get_file() -> bytes:
+    return open("/data/big.bin", "rb").read()
+
+# ❌ time.sleep / requests / bcrypt inside async — same problem
+await asyncio.sleep(0)  # this yields; time.sleep does NOT
+
+# ✅ aiofiles / httpx.AsyncClient / asyncio.to_thread for unavoidable sync work
+async with aiofiles.open("/data/big.bin", "rb") as f:
+    data = await f.read()
+
+# ✅ Threadpool for CPU-bound / blocking libs
+hash = await asyncio.to_thread(bcrypt.hashpw, password, salt)
+```
+
+### `httpx.AsyncClient` / DB clients as singletons
+
+```python
+# ❌ Per-request client — no connection pooling, new TLS every call
+async def fetch_user(id: str):
+    async with httpx.AsyncClient() as client:
+        return await client.get(f"/users/{id}")
+
+# ✅ Singleton initialized at app startup
+_client: httpx.AsyncClient | None = None
+
+def get_client() -> httpx.AsyncClient:
+    global _client
+    if _client is None:
+        _client = httpx.AsyncClient(timeout=10.0, limits=httpx.Limits(max_connections=100))
+    return _client
+```
+
+Same pattern for SQLAlchemy engines, Redis, anything with a pool.
+
+### Bound concurrency on user input
+
+```python
+# ❌ User passes 10k ids → opens 10k connections → OOM / DoS
+results = await asyncio.gather(*(fetch_one(id) for id in ids))
+
+# ✅ Bounded with Semaphore
+sem = asyncio.Semaphore(20)
+async def bounded_fetch(id):
+    async with sem:
+        return await fetch_one(id)
+results = await asyncio.gather(*(bounded_fetch(id) for id in ids))
+```
+
+### Prefer generators / iterators over materializing lists
+
+```python
+# ❌ Materializes the whole list in memory
+def read_lines(path: Path) -> list[str]:
+    return [line for line in path.open()]
+
+# ✅ Streams lazily
+def read_lines(path: Path) -> Iterator[str]:
+    with path.open() as f:
+        yield from f
+```
+
+### `orjson` / `msgspec` on hot paths
+
+Stdlib `json` is 2–5× slower than `orjson`. For internal serialization where Pydantic's validation isn't needed, `msgspec` is faster still.
+
+```python
+import orjson
+# Drop-in replacement — returns bytes, not str
+data = orjson.loads(payload)
+out = orjson.dumps(obj, option=orjson.OPT_SERIALIZE_NUMPY)
+```
+
+### Pydantic v2 is the Rust core — keep it
+
+Don't drop Pydantic on the grounds of "validation overhead" — v2's Rust core is 10–50× faster than v1. Only reach for `msgspec`/`attrs` when you're in a measured hot path that doesn't need Pydantic's feature set.
+
+### `uvloop` / `httptools` under uvicorn
+
+```bash
+# uvicorn auto-detects uvloop and httptools if installed
+uv add uvloop httptools
+```
+
+Free 20–30% throughput win on any Linux async app.
+
+### Batch database writes
+
+```python
+# ❌ One insert per row — N round trips
+for row in rows:
+    await session.execute(insert(Users).values(**row))
+
+# ✅ One round trip
+await session.execute(insert(Users), rows)
+```
+
+### Traps
+
+- **`await` inside a `for` loop over independent items.** Use `asyncio.gather` / `TaskGroup` with bounded concurrency.
+- **List comprehension that triggers N+1 on ORM relationships** — `[u.posts for u in users]` with lazy loading.
+- **Pydantic model re-creation per request** — build schemas once at import, reuse.
+- **Logging full request/response bodies** — JSON serialization dominates CPU in log-heavy apps. Structured fields + sampling.
+- **Reading env vars per request.** Load once at boot; use `BaseSettings` with `@lru_cache`.
+
+### Performance Checklist
+
+- [ ] No sync I/O / `time.sleep` / `requests` / sync crypto inside async code
+- [ ] `asyncio.TaskGroup` or `gather` for independent awaits; no `await` in loop
+- [ ] Concurrency bounded via `Semaphore` when driven by user input
+- [ ] HTTP / DB / Redis clients constructed once, not per request
+- [ ] `orjson` / `msgspec` on serialization hot paths
+- [ ] Pydantic v2, not v1 shims
+- [ ] `uvloop` + `httptools` under uvicorn
+- [ ] DB writes batched; no row-by-row inserts
+- [ ] Generators / `Iterator` for large-to-huge sequences instead of `list`
+- [ ] Settings loaded once via `BaseSettings` + `lru_cache`
+
+---
+
 ## References
 
 - [PEP 695 — Type Parameter Syntax](https://peps.python.org/pep-0695/)

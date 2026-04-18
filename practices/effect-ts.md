@@ -356,6 +356,85 @@ When `slop` runs on Effect code, it checks for:
 
 ---
 
+## Performance
+
+> **Effect gives you structured concurrency for free — use it.** Sequential `yield*` over independent effects is the same bug as `await`-in-loop.
+
+### Parallel over sequential
+
+```typescript
+// ❌ Sequential — each effect waits for the last
+const program = Effect.gen(function* () {
+  const user = yield* fetchUser(id)
+  const orders = yield* fetchOrders(id)   // waits for user unnecessarily
+  const prefs = yield* fetchPrefs(id)
+  return { user, orders, prefs }
+})
+
+// ✅ Parallel via Effect.all
+const program = Effect.all(
+  { user: fetchUser(id), orders: fetchOrders(id), prefs: fetchPrefs(id) },
+  { concurrency: "unbounded" }
+)
+
+// ✅ Bounded concurrency for user-driven fan-out
+const results = Effect.all(
+  ids.map(fetchOne),
+  { concurrency: 10 }
+)
+```
+
+### `RequestResolver` for automatic batching / N+1 elimination
+
+Effect's `RequestResolver` is Dataloader-shaped — multiple requests for the same resource in the same fiber window collapse into a single batched call.
+
+### Cache expensive effects
+
+```typescript
+// ✅ Memoize an effect — runs once, caches forever
+const config = Effect.cached(loadConfig)
+
+// ✅ TTL-bounded cache
+const rates = Effect.cachedWithTTL(fetchRates, "5 minutes")
+```
+
+### `Stream` for backpressured pipelines
+
+Don't materialize arrays when you're piping DB → transform → HTTP. Use `Stream` for native backpressure and memory bounds.
+
+### Build layers once, not per request
+
+```typescript
+// ❌ Layer rebuilt per request — destroys the DI caching win
+app.get("/", (req) => {
+  const layer = Layer.mergeAll(DbLive, RedisLive)
+  return program.pipe(Effect.provide(layer), Effect.runPromise)
+})
+
+// ✅ Layer built once at app boot
+const AppLayer = Layer.mergeAll(DbLive, RedisLive)
+const runtime = ManagedRuntime.make(AppLayer)
+app.get("/", (req) => runtime.runPromise(program))
+```
+
+### Traps
+
+- **Sequential `yield*` over independent effects** — same class of bug as `await`-in-loop.
+- **Rebuilding `Layer`s per request.**
+- **`Effect.runPromise` buried inside business logic** — keep runtime boundaries at app edges.
+- **Unbounded `concurrency: "unbounded"` on user input.** Pick a number.
+
+### Performance Checklist
+
+- [ ] `Effect.all` with explicit `concurrency` for independent effects
+- [ ] `RequestResolver` where the same data is requested by many fibers
+- [ ] `Effect.cached` / `cachedWithTTL` for expensive, reusable computations
+- [ ] `Stream` over arrays for large pipelines
+- [ ] Layers built once; `ManagedRuntime` reused across requests
+- [ ] Bounded concurrency on user-driven fan-out
+
+---
+
 ## Detailed Reference Files
 
 For in-depth patterns and examples, see the reference files in `effect-references/`:

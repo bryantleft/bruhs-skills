@@ -292,9 +292,20 @@ Pattern adopted at Stripe, Shopify, GitHub: an AI reviewer runs first and posts 
 
 ### Performance changes
 
-- Is there a benchmark showing the improvement?
+Distinguish **anti-pattern fixes** from **claimed optimizations**:
+
+**Anti-pattern fixes** (N+1 → eager load, `await`-in-loop → `Promise.all`, per-request client → singleton, sync I/O → async, missing index, unbounded concurrency → bounded). These don't need a benchmark — they're correctness-adjacent. Review checklist:
+- Is the change a recognized anti-pattern → fast-path swap?
+- Is correctness preserved?
+- Are edge cases (empty input, single item, errors mid-batch) handled?
+
+**Claimed optimizations** ("this is X% faster", "I rewrote this for speed"). These *do* need evidence:
+- Is there a benchmark showing the improvement? (e.g. before/after p95, not a single timing)
 - Is the optimization targeting a measured bottleneck?
-- Is correctness preserved? (Optimizations love to introduce subtle bugs)
+- Is correctness preserved? Optimizations love to introduce subtle bugs.
+- Is the complexity cost worth the gain? A 3% speedup that doubles code complexity usually isn't.
+
+> The Knuth quote has a caveat: *"Yet we should not pass up our opportunities in that critical 3%."* Anti-pattern fixes are the 3%. Flag them aggressively; don't gate them behind benchmarks.
 
 ### Dependency updates
 

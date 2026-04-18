@@ -38,7 +38,8 @@ description: Opinionated development lifecycle - spawn projects, cook features, 
 2. **Hidden side effects** - Signature lies about behavior
 3. **any** types - Type system disabled
 4. **!** or **as** on external data - Compiler trust violated
-5. **Implementation issues** - Secondary to type correctness
+5. **Fast-path violations** - `await` in loops, N+1 queries, sync-in-async, per-request client construction (see Performance below)
+6. **Other implementation issues** - Secondary to type correctness
 
 ### Checklist
 **Signatures:**
@@ -128,6 +129,41 @@ Branch: `<type>/<ticket-id>-<short-description>`
 Always include current year in WebSearch queries for fresh results.
 
 For full guidelines → `practices/_common.md`
+
+---
+
+## Performance (Fast-Path-By-Default)
+
+> Pick the fast path by default. You don't need a benchmark to avoid an anti-pattern.
+
+### Philosophy
+- **Correctness first, but equivalent-correctness patterns are not equivalent.** When two patterns solve the same problem, pick the faster one — even without a measurement.
+- **Obvious perf wins don't require benchmarks.** N+1 queries, `await` in a loop, sync I/O on the event loop, per-request client construction — these are anti-patterns, not "premature optimization."
+- **Measure when the tradeoff is real** (readability cost, complexity cost, risk of regression). Don't measure to justify avoiding an anti-pattern.
+- **Measure at boundaries, not inside** — p50/p95/p99 at ingress/egress; internal timers lie about contention.
+
+### Universal Defaults
+- **Batch at boundaries.** One round-trip of N beats N round-trips (DB, HTTP, IPC, GPU, syscalls).
+- **Stream, don't buffer.** Start bytes moving before you have them all — SSR, JSON, file I/O, LLM tokens.
+- **Don't block the hot loop.** Event loop, render thread, request handler — push CPU off, I/O async, never sync-in-async.
+- **Colocate data with consumer.** Query next to its route, fetch next to its RSC, cache next to its reader.
+- **Built-ins beat rewrites.** `Array.prototype`, `itertools`, `std::collections`, platform `fetch`.
+- **Bound concurrency on user input.** `p-limit`, `asyncio.Semaphore`, `buffer_unordered(n)` — unbounded `Promise.all` over user data is a DoS.
+- **Singleton clients.** Never `new Client()` per request — it defeats connection pooling.
+
+### LLM-Common Traps (flag these in review)
+1. `await` in a `for` loop over independent items → `Promise.all` / `gather` / `join!`
+2. `.map().filter().reduce()` chains over large arrays → one pass or lazy iterator
+3. N+1 ORM access in "clean" code → eager/join loading
+4. `useMemo`/`useCallback` sprinkled without a measured re-render problem
+5. `JSON.parse(JSON.stringify(x))` for deep clone → `structuredClone` or targeted copy
+6. Unbounded `Promise.all` / recursion over user input → clamp concurrency
+7. Sync hashing/crypto in request path → worker / threadpool
+8. Per-request client construction (`new PrismaClient`, `httpx.AsyncClient()`, `reqwest::Client::new()`) → singleton
+9. Full-body logging in hot paths → structured log fields
+10. Parsing config / reading env per request → load once at boot
+
+Per-stack performance patterns → `practices/<stack>.md` (Performance section in each)
 
 ---
 
@@ -222,7 +258,7 @@ Detail → `commands/claim.md`
 
 ### slop - Codebase Analysis
 ```
-Priority: Types(1) → Errors(2) → Immutability(3) → Security(4) → Architecture(5) → Performance(6) → Style(7)
+Priority: Types(1) → Security(2) → Performance(3) → Errors(4) → Architecture(5) → Immutability(6) → Style(7)
 
 1. CONTEXT: Load stack from bruhs.json
 2. STATIC: Run tsc, security scan, dead code detection

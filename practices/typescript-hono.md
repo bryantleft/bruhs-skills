@@ -407,9 +407,11 @@ const res = await app.request("/protected", {}, {
 
 ## Pillar 10: Performance
 
-Hono is already fast. The patterns that matter:
+> **Edge is pointless without caching, streaming, and `waitUntil`.** These aren't optimizations — they're the defaults.
 
-- **Don't await sequentially** when you can parallelize:
+Hono is already fast. What matters is not defeating it.
+
+### Parallelize Independent Awaits
 
 ```typescript
 // ❌ Two roundtrips
@@ -420,7 +422,9 @@ const orders = await db.getOrders(id);
 const [user, orders] = await Promise.all([db.getUser(id), db.getOrders(id)]);
 ```
 
-- **Cache at the edge** — Cloudflare's `caches.default` is free and global:
+### Cache at the Edge
+
+Cloudflare's `caches.default` is free, global, and per-colo:
 
 ```typescript
 app.get("/popular", async (c) => {
@@ -431,13 +435,15 @@ app.get("/popular", async (c) => {
 
   const data = await expensiveLookup();
   const res = c.json(data);
-  res.headers.set("cache-control", "max-age=60");
+  res.headers.set("cache-control", "public, max-age=60, s-maxage=300, stale-while-revalidate=60");
   c.executionCtx.waitUntil(cache.put(cacheKey, res.clone()));
   return res;
 });
 ```
 
-- **`waitUntil` for after-response work** — same as FastAPI's `BackgroundTasks`, but truly serverless-safe:
+Always set `Cache-Control` with `s-maxage` + `stale-while-revalidate` on cacheable routes. On Workers, use `fetch(url, { cf: { cacheTtl, cacheEverything } })` for upstream caching.
+
+### `waitUntil` for After-Response Work
 
 ```typescript
 app.post("/event", async (c) => {
@@ -446,6 +452,87 @@ app.post("/event", async (c) => {
   return c.json({ ok: true });
 });
 ```
+
+Use for: analytics, cache warming, audit logging, webhook fanout. Never `await` these before returning.
+
+### Stream Large / LLM Responses
+
+```typescript
+import { streamSSE } from "hono/streaming";
+
+app.get("/chat", (c) =>
+  streamSSE(c, async (stream) => {
+    for await (const chunk of llm.stream(prompt)) {
+      await stream.writeSSE({ data: chunk });
+    }
+  })
+);
+```
+
+Never buffer large responses — memory is tight at the edge, and time-to-first-byte is a user-visible metric.
+
+### Small Response Shapes
+
+```typescript
+// ❌ Returning the whole ORM object — includes hydration metadata, relation keys
+return c.json(await db.user.findFirst({ where: { id } }));
+
+// ✅ Project to the shape the client needs
+const user = await db.user.findFirst({ where: { id }, select: { id: true, name: true, avatarUrl: true } });
+return c.json(user);
+```
+
+### Route-Level Middleware, Not Global
+
+```typescript
+// ❌ Runs on every request, including static + health checks
+app.use(heavyAuthMiddleware);
+
+// ✅ Only where it matters
+app.use("/api/*", heavyAuthMiddleware);
+```
+
+### Keep Bundles Small (Cold Start Dominates at the Edge)
+
+- Prefer **Valibot** over Zod where size matters (Hono supports both via `@hono/valibot-validator`)
+- Use `hono/tiny` if you're bundle-budget sensitive
+- Avoid Node-only deps (`fs`, `Buffer`, `crypto.createHash` old form) — they break on Workers/Deno and bloat bundles
+
+### Singleton Clients
+
+```typescript
+// ❌ New client per request — no connection reuse
+app.get("/users", async (c) => {
+  const db = new Database(c.env.DATABASE_URL);
+  return c.json(await db.query(...));
+});
+
+// ✅ Initialize once at module scope (or middleware with cache)
+let db: Database | null = null;
+app.use(async (c, next) => {
+  if (!db) db = new Database(c.env.DATABASE_URL);
+  c.set("db", db);
+  await next();
+});
+```
+
+### Traps
+
+- **Awaiting analytics before returning.** Always `waitUntil`.
+- **Global mutable state for caching** — per-isolate, not shared across the fleet. Use KV / D1 / Durable Objects.
+- **Exotic route patterns** that defeat Hono's `RegExpRouter` / `TrieRouter` selection.
+
+### Performance Checklist
+
+- [ ] `Promise.all` for independent awaits
+- [ ] `Cache-Control` + `s-maxage` + `stale-while-revalidate` on cacheable GETs
+- [ ] `caches.default.match` / `put` for edge caching
+- [ ] `c.executionCtx.waitUntil(...)` for logging, analytics, cache warming
+- [ ] `streamSSE` / `stream` for LLM, long queries, large payloads
+- [ ] Response shapes projected to what the client needs (no whole ORM objects)
+- [ ] Middleware scoped to routes that need it
+- [ ] No Node-only deps on Workers/Deno targets
+- [ ] DB / Redis / upstream clients initialized once, not per request
 
 ---
 

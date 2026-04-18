@@ -630,34 +630,40 @@ const [user, posts] = await Promise.all([getUser(id), getPosts(id)]);
 // ✅ Pass only needed props to client components
 <ClientComponent name={user.name} />  // Not the whole user object
 
-// ✅ Use Suspense boundaries strategically
+// ✅ Stream slow data with Suspense — shell renders instantly
 <Suspense fallback={<Skeleton />}>
   <SlowComponent />
 </Suspense>
 
-// ✅ Stable references for objects/arrays passed to children
+// ✅ Stable references for objects/arrays passed to memoized children
 const style = useMemo(() => ({ color: 'red' }), []);
-const activeItems = useMemo(() => items.filter(i => i.active), [items]);
 ```
 
-### DON'T: Unnecessary Memoization
+### Memoization Posture
+
+React Compiler (when enabled) handles most memoization automatically — don't pre-empt it with manual `useMemo`/`useCallback` on cheap expressions. Without the compiler, **memoize when a measurable re-render problem exists**, not defensively.
 
 ```tsx
-// ❌ Memoizing primitives or cheap operations
+// ❌ Memoizing primitives or cheap operations — pure overhead
 const value = useMemo(() => items.length, [items]);
 const doubled = useMemo(() => count * 2, [count]);
-
-// ❌ useCallback for functions that don't need stable identity
 const handleClick = useCallback(() => onClick(), [onClick]);
 
-// ✅ Just compute it
+// ✅ Just compute
 const value = items.length;
 const doubled = count * 2;
+```
 
-// ✅ Only memoize when:
-// - Passed to memoized child components
-// - Used as useEffect dependency
-// - Actually expensive to compute
+**Memoize when:**
+- Passed as prop to `React.memo`'d or deeply-rendered children (stable identity matters)
+- Used in `useEffect` / `useMemo` dependency lists (unstable deps cause loops)
+- The computation itself is genuinely expensive (>1ms, or over large data)
+
+**Hoist static values out of the component entirely** — no memo needed:
+
+```tsx
+const RED_STYLE = { color: 'red' };  // defined once at module load
+function Card() { return <div style={RED_STYLE} />; }
 ```
 
 ---
@@ -836,43 +842,156 @@ const user = await db.query.users.findFirst({
 
 ## Performance
 
-### DON'T: N+1 Queries
+> **Pick the fast path by default.** These aren't optimizations — they're the defaults. You don't need a benchmark to avoid an anti-pattern.
+
+### DO: RSC by Default, Client at Interactive Leaves
+
+```tsx
+// ✅ RSC fetches on the server — zero JS shipped for this tree
+async function UserProfile({ id }: { id: string }) {
+  const user = await db.user.findUnique({ where: { id } });
+  return <Profile user={user} />;  // RSC
+}
+
+// ✅ "use client" only on the interactive leaf
+"use client";
+function LikeButton({ initial }: { initial: number }) {
+  const [count, setCount] = useState(initial);
+  return <button onClick={() => setCount(c => c + 1)}>{count}</button>;
+}
+```
+
+**Traps:** `"use client"` at a layout root nukes RSC for the whole subtree. Fetching in a client parent then prop-drilling data kills streaming and grows the bundle.
+
+### DO: Parallel Fetches, Never Waterfalls
+
+```tsx
+// ❌ Waterfall — 2× the latency
+async function Page({ id }: { id: string }) {
+  const user = await getUser(id);
+  const posts = await getPosts(id);  // waits for user unnecessarily
+  return <Layout user={user} posts={posts} />;
+}
+
+// ✅ Parallel
+async function Page({ id }: { id: string }) {
+  const [user, posts] = await Promise.all([getUser(id), getPosts(id)]);
+  return <Layout user={user} posts={posts} />;
+}
+```
+
+### DO: Stream Slow Data with Suspense
+
+```tsx
+// ✅ Shell renders instantly; slow data streams in
+export default function Page() {
+  return (
+    <>
+      <Header />  {/* instant */}
+      <Suspense fallback={<FeedSkeleton />}>
+        <Feed />  {/* awaits a slow DB query, streams when ready */}
+      </Suspense>
+    </>
+  );
+}
+```
+
+### DO: Server Actions Over Client Fetch
+
+Server Actions eliminate the API layer, the round trip is single-hop, and `revalidatePath` / `revalidateTag` invalidates cache automatically. Prefer them for mutations.
+
+### DO: `next/image` with AVIF/WebP + Explicit `sizes`
+
+Free LCP and CLS win. Always set `sizes` for responsive images and `priority` for the LCP image. Use `fetchpriority="high"` on non-Next images that are above the fold.
+
+### DO: N+1 Prevention
 
 ```typescript
-// ❌ Query per item
+// ❌ Query per user
 const users = await db.getUsers();
 for (const user of users) {
   user.orders = await db.getOrders(user.id);
 }
 
-// ✅ Single query with join
-const users = await db.query.users.findMany({
-  with: { orders: true },
-});
+// ✅ Single query with relation
+const users = await db.query.users.findMany({ with: { orders: true } });
 ```
 
-### DON'T: Blocking Operations
+### DO: Non-Blocking I/O Only
 
 ```typescript
-// ❌ Sync file operations in request handler
+// ❌ Blocks the Node.js event loop
 const data = fs.readFileSync(path);
 
 // ✅ Async
 const data = await fs.promises.readFile(path);
 ```
 
-### DON'T: Unstable References
+### DO: Bound Concurrency on User Input
+
+```typescript
+import pLimit from "p-limit";
+
+// ❌ User can DoS by passing 10,000 ids
+const results = await Promise.all(ids.map(fetchOne));
+
+// ✅ Bounded concurrency
+const limit = pLimit(20);
+const results = await Promise.all(ids.map(id => limit(() => fetchOne(id))));
+```
+
+### DO: Virtualize Lists Above ~100 Rows
+
+Use TanStack Virtual or `react-window`. Rendering 1000 DOM nodes when 20 are visible is pure waste.
+
+### DO: Code-Split Heavy Leaf Components
 
 ```tsx
-// ❌ New object every render
-<Component style={{ color: 'red' }} />
-<Component data={data.filter(x => x.active)} />
-
-// ✅ Stable references
-const style = useMemo(() => ({ color: 'red' }), []);
-// or define outside component if truly static
-const redStyle = { color: 'red' };
+// ✅ Editor ships only when the user opens it
+const RichEditor = dynamic(() => import("./RichEditor"), { ssr: false });
 ```
+
+### DO: After-Response Work with `after()` / `waitUntil`
+
+```tsx
+import { after } from "next/server";
+
+export async function POST(req: Request) {
+  const result = await handleRequest(req);
+  after(() => logAnalytics(result));  // runs after response flushes
+  return Response.json(result);
+}
+```
+
+### DO: Stable References for Memoized Children
+
+```tsx
+// ❌ New object every render — breaks React.memo
+<Component style={{ color: 'red' }} />
+
+// ✅ Stable — hoisted outside the component
+const RED_STYLE = { color: 'red' };
+<Component style={RED_STYLE} />
+```
+
+### DON'T: Defensive Memoization
+
+See "Memoization Posture" above. React Compiler handles most cases. Without it, memoize only when there's a measurable re-render problem or an unstable dep chain.
+
+### Performance Checklist
+
+- [ ] Server Components by default; `"use client"` at leaves only
+- [ ] Parallel `Promise.all` for independent fetches; no waterfalls
+- [ ] `<Suspense>` around slow data so shell streams first
+- [ ] Server Actions for mutations (not client `fetch` + API route)
+- [ ] `next/image` with AVIF/WebP + `sizes`; `priority` on LCP image
+- [ ] No N+1 in ORM access; eager load relations
+- [ ] No sync I/O / sync crypto in request path
+- [ ] Concurrency bounded on user-driven fan-out
+- [ ] DB/Redis/fetch clients as singletons, not per-request
+- [ ] Lists >100 items virtualized
+- [ ] Heavy leaf components code-split (`dynamic`, `React.lazy`)
+- [ ] Analytics/logging via `after()` / `waitUntil`, not blocking the response
 
 ---
 

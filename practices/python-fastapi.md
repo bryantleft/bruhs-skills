@@ -547,6 +547,135 @@ SQLAlchemyInstrumentor().instrument(engine=engine)
 
 ---
 
+## Performance Defaults
+
+> **Fast path is the default path.** These aren't optimizations — they're the starting point.
+
+### `ORJSONResponse` as the app default
+
+Stdlib JSON is 2–5× slower than orjson. Make it the app-wide default, not a per-route opt-in:
+
+```python
+from fastapi.responses import ORJSONResponse
+
+app = FastAPI(default_response_class=ORJSONResponse)
+```
+
+### Eager-load by default; catch lazy loads in dev
+
+Set `lazy="raise"` (or `lazy="raise_on_sql"`) on relationships in the async context, so accidental lazy loads scream instead of N+1ing silently:
+
+```python
+class User(Base):
+    posts: Mapped[list["Post"]] = relationship(lazy="raise")
+```
+
+Then you *must* use `selectinload` / `joinedload` — the compiler does the enforcement.
+
+### Async driver + correctly sized pool
+
+```python
+engine = create_async_engine(
+    settings.database_url,       # postgresql+asyncpg://...
+    pool_size=20,                # default 5 is too low for most apps
+    max_overflow=10,
+    pool_pre_ping=True,          # drops dead connections
+)
+```
+
+Size: **`CPU × 2–4`** per worker for I/O-heavy APIs. Too small = queueing. Too large = Postgres gets unhappy around 100-200 connections total.
+
+### `BackgroundTasks` for post-response work
+
+```python
+@router.post("/signup")
+async def signup(data: SignupIn, bg: BackgroundTasks) -> UserOut:
+    user = await create_user(data)
+    bg.add_task(send_welcome_email, user.email)  # after response flushes
+    return UserOut.model_validate(user)
+```
+
+**But**: `BackgroundTasks` runs in the same process. Use Celery / RQ / ARQ for work that *must* succeed or survive a crash.
+
+### `StreamingResponse` for large / NDJSON / SSE
+
+```python
+from fastapi.responses import StreamingResponse
+
+@router.get("/export")
+async def export_users() -> StreamingResponse:
+    async def gen():
+        async for user in stream_users():
+            yield orjson.dumps(user) + b"\n"
+    return StreamingResponse(gen(), media_type="application/x-ndjson")
+```
+
+Never buffer large exports into memory.
+
+### Batch database writes
+
+```python
+# ❌ N round trips
+for row in rows:
+    session.add(User(**row))
+await session.commit()
+
+# ✅ One round trip
+await session.execute(insert(User), rows)
+await session.commit()
+```
+
+### HTTP client singleton
+
+```python
+# app state pattern
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.http = httpx.AsyncClient(timeout=10.0, limits=httpx.Limits(max_connections=100))
+    yield
+    await app.state.http.aclose()
+
+app = FastAPI(lifespan=lifespan, default_response_class=ORJSONResponse)
+```
+
+### Cache read-heavy endpoints
+
+```python
+from fastapi import Response
+
+@router.get("/stats")
+async def stats(response: Response) -> StatsOut:
+    response.headers["Cache-Control"] = "public, max-age=30, stale-while-revalidate=60"
+    return await compute_stats()
+```
+
+For app-level caching, `aiocache` with Redis backend, keyed deterministically by query params.
+
+### Performance Traps
+
+- **Sync libs in async handlers** — `requests`, `bcrypt.hashpw` direct, `time.sleep`, sync SDKs. Use `asyncio.to_thread` or async equivalents.
+- **`await` in a `for` loop over independent IDs** — `asyncio.gather` with bounded `Semaphore`.
+- **Default `lazy="select"` on async sessions** — raises at access time or N+1s silently. Use `lazy="raise"` + explicit `selectinload`.
+- **Creating a new `httpx.AsyncClient` per request.** Lifespan-scoped singleton.
+- **Heavy Pydantic validation on internal-only hot paths** — use `msgspec` where you don't need Pydantic's ecosystem features.
+- **Full-body request/response logging.** JSON serialization dominates CPU under load. Log structured fields + sample bodies.
+
+### Performance Checklist
+
+- [ ] `ORJSONResponse` as app default
+- [ ] Relations `lazy="raise"`; all ORM paths use `selectinload`/`joinedload`
+- [ ] Async driver (`asyncpg`); `pool_size` tuned above default 5
+- [ ] `StreamingResponse` for exports / NDJSON / SSE
+- [ ] `BackgroundTasks` for fire-and-forget post-response work
+- [ ] Batched inserts/updates; no row-by-row writes
+- [ ] `httpx.AsyncClient` as lifespan singleton
+- [ ] Cache-Control headers on cacheable GETs
+- [ ] No sync I/O inside async handlers
+- [ ] Bounded concurrency on user-driven fan-out
+- [ ] `uvloop` + `httptools` under uvicorn
+
+---
+
 ## Quick Reference
 
 ### Always
@@ -559,6 +688,7 @@ SQLAlchemyInstrumentor().instrument(engine=engine)
 - [ ] Domain exceptions + global handler — no `HTTPException` in services
 - [ ] `Pydantic Settings` for config, exposed as a dep with `@lru_cache`
 - [ ] Structured logging (`structlog`); request-id middleware
+- [ ] `ORJSONResponse` as app default; lazy=`raise` on relationships
 
 ### Avoid
 - [ ] Same model for request + response
@@ -567,6 +697,7 @@ SQLAlchemyInstrumentor().instrument(engine=engine)
 - [ ] `BackgroundTasks` for anything that must succeed
 - [ ] Catching exceptions just to re-raise as `HTTPException`
 - [ ] CORS `*` in production
+- [ ] Sync libs inside async handlers; per-request HTTP client construction
 
 ### Tooling
 - [ ] `uv` for env + deps
