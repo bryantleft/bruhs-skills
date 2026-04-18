@@ -8,6 +8,11 @@ Review and address PR feedback, push fixes, and optionally merge when ready.
 
 Uses **isolated subagents** per comment thread to prevent context bleed. Each comment is analyzed independently — findings from one thread never influence analysis of another.
 
+## Best Practices
+
+- **`practices/pr-review.md`** — primary lens. Conventional Comments labels (`nit`, `suggestion`, `issue`, `praise`, decorations like `(blocking)` / `(non-blocking)`), reviewer/author etiquette, anti-patterns. Loaded by every subagent so categorization stays consistent.
+- **Stack practices** — same as `cook` and `slop`. Use the project's stack to inform what counts as a real issue vs preference.
+
 ## Invocation
 
 - `/bruhs:peep` - Address comments on current branch's PR

@@ -18,10 +18,14 @@ All code produced by cook follows the patterns defined in:
 
 - **`practices/type-driven-design.md`** - **PRIMARY** - Type signatures, explicit errors, immutability
 - **`practices/_common.md`** - Universal patterns (naming, git, errors, testing)
-- **`practices/typescript-react.md`** - TypeScript + React specific patterns
+- **`practices/pr-review.md`** - PR authoring, reviewer etiquette, Conventional Comments (used by peep)
+- **`practices/typescript-react.md`** - TypeScript + React (incl. TS 5.4+ patterns + Next.js 16 Cache Components)
+- **`practices/typescript-hono.md`** - Hono framework (edge-native, RPC, type-safe middleware)
+- **`practices/python.md`** - Modern Python 3.13+ (uv/ruff/ty, Pydantic v2, PEP 695 generics)
+- **`practices/python-fastapi.md`** - FastAPI specifics (Annotated DI, async SQLAlchemy 2.0, error handling)
 - **`practices/effect-ts.md`** - Effect-TS specific patterns (loaded when `effect` in `stack.libraries`)
 - **`practices/rust.md`** - Idiomatic Rust patterns (loaded when `language: rust` or Rust framework in stack)
-- **`practices/rust-references/`** - Deep refs (ownership, errors, async, type-state, leptos, gpui) — loaded conditionally
+- **`practices/rust-references/`** - Deep refs (ownership, errors, async, type-state, leptos, gpui, axum) — loaded conditionally
 - **`practices/ui-design.md`** - UI design quality via impeccable skills (loaded for UI features)
 
 **Optional integrations** (auto-detected from MCPs available):

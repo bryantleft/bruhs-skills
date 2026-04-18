@@ -7,7 +7,7 @@ description: Opinionated development lifecycle - spawn projects, cook features, 
 
 ## Index
 |commands|spawn,claim,cook,yeet,peep,dip,slop,doodle
-|practices|type-driven-design,_common,typescript-react,ui-design,rust,rust-references/*
+|practices|type-driven-design,_common,pr-review,typescript-react,typescript-hono,python,python-fastapi,effect-ts,rust,rust-references/*,ui-design
 |config|.claude/bruhs.json
 
 ## Commands Quick Reference

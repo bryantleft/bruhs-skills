@@ -31,10 +31,13 @@ Slop detects violations of the patterns defined in:
 
 - **`practices/type-driven-design.md`** - **PRIMARY** - Type signatures, explicit errors, immutability
 - **`practices/_common.md`** - Universal patterns (naming, git, errors, testing)
-- **`practices/typescript-react.md`** - TypeScript + React specific patterns
+- **`practices/typescript-react.md`** - TypeScript + React (incl. TS 5.4+ + Next.js 16)
+- **`practices/typescript-hono.md`** - Hono framework patterns (loaded when `framework: hono`)
+- **`practices/python.md`** - Modern Python 3.13+ (loaded when `language: python` or Python framework)
+- **`practices/python-fastapi.md`** - FastAPI specifics (loaded when `framework: fastapi`)
 - **`practices/effect-ts.md`** - Effect-TS specific patterns (loaded when `effect` in `stack.libraries`)
 - **`practices/rust.md`** - Idiomatic Rust patterns (loaded when `language: rust` or Rust framework in stack)
-- **`practices/rust-references/`** - Deep refs (ownership, errors, async, type-state, leptos, gpui) — loaded conditionally
+- **`practices/rust-references/`** - Deep refs (ownership, errors, async, type-state, leptos, gpui, axum) — loaded conditionally
 
 **Read these files for the full pattern catalog.** The sections below summarize what slop detects.
 
@@ -620,12 +623,17 @@ const stack = config.stack?.framework || 'typescript';
 const language = config.stack?.language;
 const libs = config.stack?.libraries || [];
 
-if (['nextjs', 'react-native', 'tauri', 'electron'].includes(stack)) {
+if (['nextjs', 'next.js', 'react-native', 'tauri', 'electron'].includes(stack)) {
   stackPractices = Read('practices/typescript-react.md');
-} else if (stack === 'fastapi') {
-  stackPractices = Read('practices/python-fastapi.md');
 } else if (stack === 'hono') {
   stackPractices = Read('practices/typescript-hono.md');
+} else if (language === 'python' || ['fastapi', 'django', 'flask', 'starlette'].includes(stack)) {
+  // Always load the Python base
+  stackPractices = Read('practices/python.md');
+  // Load framework-specific on top
+  if (stack === 'fastapi') {
+    stackPractices += Read('practices/python-fastapi.md');
+  }
 } else if (
   language === 'rust' ||
   ['leptos', 'axum', 'actix', 'rocket', 'tauri-rust', 'gpui'].includes(stack)
@@ -642,6 +650,9 @@ if (['nextjs', 'react-native', 'tauri', 'electron'].includes(stack)) {
   }
   if (stack === 'gpui') {
     rustRefs.push(Read('practices/rust-references/gpui-patterns.md'));
+  }
+  if (stack === 'axum') {
+    rustRefs.push(Read('practices/rust-references/axum-patterns.md'));
   }
   // Always-useful refs for Rust work
   rustRefs.push(Read('practices/rust-references/ownership-and-borrowing.md'));

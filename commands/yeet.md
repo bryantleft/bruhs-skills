@@ -11,6 +11,16 @@ Ship code that's ready to go. Creates Linear ticket, commits, pushes, and opens 
 - `/bruhs:yeet` - Ship current changes
 - `/bruhs:yeet` after `/bruhs:cook` - Complete the cooking workflow (uses existing ticket if cook started from one)
 
+## Best Practices
+
+PR description + commit + reviewer-assignment quality is governed by **`practices/pr-review.md`**. Key applications in this command:
+
+- **PR title:** Conventional Commits format (`feat(scope):`, `fix(scope):`, etc.) — see `_common.md`
+- **PR description template:** *What / Why / How / Test plan / Screenshots* — derived from the diff and Linear ticket context
+- **Size discipline:** if the diff is > 400 LOC, warn the user and suggest splitting (or accept with a justification noted in the PR body)
+- **CODEOWNERS:** if `.github/CODEOWNERS` exists, GitHub auto-requests reviewers; don't manually re-request
+- **Diagram:** for non-trivial architectural changes, suggest `/bruhs:doodle pr` after the PR opens to attach a visualization comment
+
 ## Prerequisites
 
 - Changes ready to commit (staged or unstaged)
