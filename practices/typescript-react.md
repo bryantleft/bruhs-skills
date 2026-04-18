@@ -130,6 +130,150 @@ enum HttpStatus {
 
 ---
 
+## Modern TypeScript Patterns (TS 5.4+ / 5.9)
+
+### `satisfies` — type-check without widening
+
+```typescript
+// ❌ Annotation widens — `theme.primary` is now `string`, not the literal
+const theme: Record<string, string> = {
+  primary: "#3b82f6",
+  danger: "#ef4444",
+};
+
+// ❌ Bare object — no checking that values are valid colors
+const theme = {
+  primary: "#3b82f6",
+  danger: "#ef4444",
+};
+
+// ✅ satisfies — checks the constraint AND keeps literal types
+const theme = {
+  primary: "#3b82f6",
+  danger: "#ef4444",
+} satisfies Record<string, `#${string}`>;
+
+theme.primary;  // typed as "#3b82f6" — autocomplete works
+theme.danger;   // typed as "#ef4444"
+```
+
+### `const` type parameters (TS 5.0+) — preserve literals through generics
+
+```typescript
+// ❌ Caller's literal narrows to string
+function pick<T>(values: readonly T[]) { return values[0]; }
+const choice = pick(["red", "green", "blue"]);  // string
+
+// ✅ const T preserves the literal union
+function pick<const T>(values: readonly T[]) { return values[0]; }
+const choice = pick(["red", "green", "blue"]);  // "red" | "green" | "blue"
+```
+
+### `NoInfer<T>` (TS 5.4+) — control which type parameter drives inference
+
+```typescript
+// ❌ TS infers T from BOTH `initial` and `states` — easy to slip past type errors
+function createMachine<T extends string>(opts: { initial: T; states: T[] }) {}
+createMachine({ initial: "idle", states: ["loading", "error"] });  // T = "idle" | "loading" | "error" — initial is now technically valid
+
+// ✅ NoInfer blocks inference from `initial`, forcing it to be one of `states`
+function createMachine<T extends string>(opts: { initial: NoInfer<T>; states: T[] }) {}
+createMachine({ initial: "idle", states: ["loading", "error"] });  // ❌ compile error: "idle" is not in states
+```
+
+### Branded types — make domain IDs distinct
+
+```typescript
+// ❌ Both are strings — easy to swap arguments
+function transfer(from: string, to: string, amount: number) {}
+transfer("usr_42", "usr_99", 100);   // OK
+transfer("usr_99", "usr_42", 100);   // Also OK — but maybe wrong direction
+
+// ✅ Branded — UserId and OrderId are distinct types at compile time, free at runtime
+type Brand<T, B> = T & { readonly __brand: B };
+type UserId = Brand<string, "UserId">;
+type OrderId = Brand<string, "OrderId">;
+
+function transfer(from: UserId, to: UserId, amount: number) {}
+
+const u1 = "usr_42" as UserId;
+const o1 = "ord_99" as OrderId;
+transfer(u1, u1, 100);   // ✅
+transfer(u1, o1, 100);   // ❌ compile error
+```
+
+For richer ergonomics, a `parseUserId(raw: string): UserId` constructor that validates is preferred over `as UserId` casting.
+
+### Discriminated unions over flag soup
+
+```typescript
+// ❌ Every combination is representable — most are illegal
+type State = {
+  isLoading: boolean;
+  isError: boolean;
+  data: User | null;
+  error: string | null;
+};
+// State { isLoading: true, isError: true, data: someUser, error: "..." } — what does this mean?
+
+// ✅ Each variant carries exactly its data
+type State =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "success"; data: User }
+  | { status: "error"; error: string };
+
+// Exhaustive matching with assertNever
+function render(s: State) {
+  switch (s.status) {
+    case "idle":    return null;
+    case "loading": return <Spinner />;
+    case "success": return <Profile user={s.data} />;
+    case "error":   return <Error msg={s.error} />;
+    default:        assertNever(s);   // compile error if a case is added
+  }
+}
+
+function assertNever(x: never): never { throw new Error(`Unhandled: ${x}`); }
+```
+
+### Type predicates with `asserts`
+
+```typescript
+// ✅ Asserts narrows the caller's type after the call
+function assertIsUser(value: unknown): asserts value is User {
+  if (!value || typeof value !== "object" || !("id" in value)) {
+    throw new Error("not a user");
+  }
+}
+
+const data: unknown = await fetch("/api/me").then(r => r.json());
+assertIsUser(data);
+data.id;   // ✅ typed as User
+```
+
+### `using` for resource cleanup (TS 5.2+, ES2024)
+
+```typescript
+// ✅ Disposable — runs cleanup even on throw, no try/finally needed
+function openDb() {
+  const conn = db.connect();
+  return {
+    query: (sql: string) => conn.query(sql),
+    [Symbol.dispose]: () => conn.close(),
+  };
+}
+
+function loadConfig() {
+  using db = openDb();
+  return db.query("SELECT * FROM config");   // db.[Symbol.dispose]() runs at scope exit
+}
+```
+
+For async resources: `await using` + `[Symbol.asyncDispose]`.
+
+---
+
 ## React Patterns
 
 ### Server Components First (Next.js 13+)
@@ -154,13 +298,109 @@ function LikeButton() {
 }
 ```
 
+### Next.js 16 — Cache Components & PPR
+
+Next.js 16 (Q1 2026) introduces **Cache Components** built on Partial Pre-Rendering. The mental model: every page is split into a **static shell** that prerenders + a **dynamic island** that streams in. The `use cache` directive marks the cacheable parts.
+
+```tsx
+// app/products/[id]/page.tsx
+import { Suspense } from "react";
+
+export default async function Page({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  return (
+    <div>
+      <ProductDetails id={id} />                          {/* cached, in static shell */}
+      <Suspense fallback={<Skeleton />}>
+        <UserSpecific id={id} />                          {/* dynamic, streamed */}
+      </Suspense>
+    </div>
+  );
+}
+
+async function ProductDetails({ id }: { id: string }) {
+  "use cache";                                            // entire fn is cacheable
+  cacheLife("hours");
+  cacheTag(`product:${id}`);
+  const product = await db.products.findById(id);
+  return <h1>{product.name}</h1>;
+}
+
+async function UserSpecific({ id }: { id: string }) {
+  // No "use cache" → dynamic, streams per request
+  const session = await getSession();
+  const inCart = await db.carts.has(session.userId, id);
+  return inCart ? <p>In your cart</p> : <AddToCartButton id={id} />;
+}
+```
+
+**Where to put `use cache`:**
+
+- ✅ At the **leaf** — the function that fetches data, not the layout
+- ✅ Combined with `cacheLife()` and `cacheTag()` for control
+- ❌ At the page level — too coarse; nothing dynamic can render
+
+**Cache lifetimes** (`cacheLife("seconds" | "minutes" | "hours" | "days" | custom)`) are budget hints — Next.js may keep them longer if memory allows.
+
+**Invalidation** via `revalidateTag("product:42")` from a Server Action:
+
+```tsx
+"use server";
+export async function updateProduct(id: string, data: ProductInput) {
+  await db.products.update(id, data);
+  revalidateTag(`product:${id}`);   // every cached fn with this tag is invalidated
+}
+```
+
+### Server Actions (stable since 15)
+
+```tsx
+// actions.ts
+"use server";
+import { z } from "zod";
+
+const Schema = z.object({
+  email: z.string().email(),
+  name: z.string().min(1),
+});
+
+export async function updateProfile(formData: FormData) {
+  const session = await requireSession();
+  const parsed = Schema.parse(Object.fromEntries(formData));
+  await db.users.update(session.userId, parsed);
+  revalidateTag(`user:${session.userId}`);
+  return { ok: true };
+}
+
+// component
+"use client";
+import { useActionState } from "react";
+import { updateProfile } from "./actions";
+
+export function ProfileForm() {
+  const [state, action, pending] = useActionState(updateProfile, null);
+  return (
+    <form action={action}>
+      <input name="name" />
+      <input name="email" type="email" />
+      <button disabled={pending}>{pending ? "Saving..." : "Save"}</button>
+      {state?.ok && <p>Saved!</p>}
+    </form>
+  );
+}
+```
+
+**Limits (Next.js 16.2):** server action arguments are capped at 1,000 per request to prevent abuse. If you need more, accept a single object/array argument.
+
 ### Data Fetching Hierarchy
 
 | Layer | Tool | When |
 |-------|------|------|
-| Server Components | `async/await` | Initial page data, SEO-critical content |
-| Client (streaming) | `use()` hook | Non-critical data passed as promise from server |
+| Server Component, cached | `async/await` + `"use cache"` | Most page data — long-lived, shareable across users |
+| Server Component, dynamic | `async/await` (no `use cache`) | Per-user / per-request data |
+| Client (streaming) | `use()` hook | Non-critical data passed as a Promise from server |
 | Client (interactive) | TanStack Query | Mutations, polling, user-triggered fetches |
+| Form submissions | Server Actions + `useActionState` | Mutations from forms |
 
 ```tsx
 // Server Component - fetch critical data
