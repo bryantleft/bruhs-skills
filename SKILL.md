@@ -6,8 +6,8 @@ description: Opinionated development lifecycle - spawn projects, cook features, 
 # bruhs
 
 ## Index
-|commands|spawn,claim,cook,yeet,peep,dip,slop
-|practices|type-driven-design,_common,typescript-react,ui-design
+|commands|spawn,claim,cook,yeet,peep,dip,slop,doodle
+|practices|type-driven-design,_common,typescript-react,ui-design,rust,rust-references/*
 |config|.claude/bruhs.json
 
 ## Commands Quick Reference
@@ -18,12 +18,14 @@ description: Opinionated development lifecycle - spawn projects, cook features, 
 |peep|Address PR review comments and merge|commands/peep.md
 |dip|Clean up after merge, switch to base branch|commands/dip.md
 |slop|Deep codebase analysis, AI slop cleanup|commands/slop.md
+|doodle|Visualize architecture as tldraw diagrams (PRs, modules, deps, compare, map, freeform)|commands/doodle.md
 
 ## Invocation
 - `/bruhs` → Interactive menu (AskUserQuestion)
 - `/bruhs:<command>` → Direct to command
 - `/bruhs:cook <feature>` or `/bruhs:cook TICKET-123` → With argument
 - `/bruhs:slop [path] [--fix|--report]` → Codebase analysis
+- `/bruhs:doodle <mode> [args] [--out|--gist|--commit|--pr-comment|--format|--depth]` → Render diagram (modes: pr, module, deps, dependents, compare, map, freeform)
 
 ---
 
@@ -182,6 +184,21 @@ Detail → `commands/peep.md`
 ```
 Detail → `commands/dip.md`
 
+### doodle - Architecture Visualization
+```
+Modes: pr | module | deps | dependents | compare | map | freeform
+
+1. MODE: Resolve from arg, or AskUserQuestion if interactive
+2. MCP: Verify tldraw render MCP available (else print install hint, abort)
+3. GATHER: Mode-specific data (gh pr / git diff / rg imports / module discovery)
+4. SHAPES: Build tldraw shape JSON (frames=modules, geo=files, arrows=edges)
+   - Layout: layered (pr/compare/map), grid (module), radial (deps/dependents)
+   - Colors: green=added, yellow=modified, red=deleted, grey=unchanged
+5. RENDER: mcp__tldraw__create_diagram { shapes, format } → local image
+6. OUTPUT: --pr-comment | --gist | --commit | --out (defaults: pr→pr-comment, else local)
+```
+Detail → `commands/doodle.md`
+
 ### spawn - Create Project
 ```
 1. DETECT: Monorepo context (pnpm-workspace.yaml, turbo.json)
@@ -236,6 +253,7 @@ AskUserQuestion({
       { label: "cook", description: "Plan + Build a feature end-to-end" },
       { label: "yeet", description: "Ship: Linear ticket → Branch → Commit → PR" },
       { label: "peep", description: "Address PR review comments and merge" },
+      { label: "doodle", description: "Render architecture diagrams (PR, module, deps, compare, map, freeform)" },
       { label: "dip", description: "Clean up after merge and switch to base branch" },
     ]
   }]

@@ -20,7 +20,16 @@ All code produced by cook follows the patterns defined in:
 - **`practices/_common.md`** - Universal patterns (naming, git, errors, testing)
 - **`practices/typescript-react.md`** - TypeScript + React specific patterns
 - **`practices/effect-ts.md`** - Effect-TS specific patterns (loaded when `effect` in `stack.libraries`)
+- **`practices/rust.md`** - Idiomatic Rust patterns (loaded when `language: rust` or Rust framework in stack)
+- **`practices/rust-references/`** - Deep refs (ownership, errors, async, type-state, leptos, gpui) — loaded conditionally
 - **`practices/ui-design.md`** - UI design quality via impeccable skills (loaded for UI features)
+
+**Optional integrations** (auto-detected from MCPs available):
+
+| MCP | Used for | Triggers |
+|-----|----------|----------|
+| `paper.design` | UI prototyping in real HTML/CSS — generate component shells before coding them | `featureInvolvesUI` AND `mcp__paper__*` tools available |
+| `tldraw render` | Sketch proposed architecture before building | Complex/multi-module features (manual opt-in) |
 
 **Key principles:**
 
@@ -338,6 +347,22 @@ if (!testSuiteExists && tempTestFiles.length > 0) {
 See `practices/ui-design.md` for the full skill map and selection heuristic.
 
 ```javascript
+// 0. (Optional) Prototype in paper.design before coding — if MCP available
+//    Use this for genuinely new UI surfaces, not for tweaks to existing components.
+const paperAvailable = ToolSearch("select:mcp__paper__create_artboard");
+if (paperAvailable && featureIsNewUiSurface) {
+  AskUserQuestion: "Prototype this UI in paper.design first? (generates HTML/CSS shell to iterate on visually before bringing into the codebase)"
+  if (yes) {
+    // Create artboard, get_jsx, screenshot for review
+    mcp__paper__create_artboard({ name: featureName });
+    mcp__paper__write_html({ html: initialMarkup });
+    const screenshot = mcp__paper__get_screenshot();
+    // Show screenshot, iterate. Once approved:
+    const jsx = mcp__paper__get_jsx();
+    // Hand jsx to frontend-design skill as the starting structure
+  }
+}
+
 // 1. Check for design context (one-time project setup)
 if (!CLAUDE_MD.includes('## Design Context')) {
   AskUserQuestion: "No Design Context in CLAUDE.md. Run /teach-impeccable?"

@@ -33,6 +33,8 @@ Slop detects violations of the patterns defined in:
 - **`practices/_common.md`** - Universal patterns (naming, git, errors, testing)
 - **`practices/typescript-react.md`** - TypeScript + React specific patterns
 - **`practices/effect-ts.md`** - Effect-TS specific patterns (loaded when `effect` in `stack.libraries`)
+- **`practices/rust.md`** - Idiomatic Rust patterns (loaded when `language: rust` or Rust framework in stack)
+- **`practices/rust-references/`** - Deep refs (ownership, errors, async, type-state, leptos, gpui) — loaded conditionally
 
 **Read these files for the full pattern catalog.** The sections below summarize what slop detects.
 
@@ -615,6 +617,8 @@ commonPractices = Read('practices/_common.md');
 
 // Determine stack from bruhs.json and load stack-specific practices
 const stack = config.stack?.framework || 'typescript';
+const language = config.stack?.language;
+const libs = config.stack?.libraries || [];
 
 if (['nextjs', 'react-native', 'tauri', 'electron'].includes(stack)) {
   stackPractices = Read('practices/typescript-react.md');
@@ -622,6 +626,27 @@ if (['nextjs', 'react-native', 'tauri', 'electron'].includes(stack)) {
   stackPractices = Read('practices/python-fastapi.md');
 } else if (stack === 'hono') {
   stackPractices = Read('practices/typescript-hono.md');
+} else if (
+  language === 'rust' ||
+  ['leptos', 'axum', 'actix', 'rocket', 'tauri-rust', 'gpui'].includes(stack)
+) {
+  stackPractices = Read('practices/rust.md');
+
+  // Load deep refs only for the frameworks/runtimes actually in use
+  rustRefs = [];
+  if (libs.includes('tokio') || libs.includes('async-std') || stack === 'axum') {
+    rustRefs.push(Read('practices/rust-references/async-patterns.md'));
+  }
+  if (stack === 'leptos') {
+    rustRefs.push(Read('practices/rust-references/leptos-patterns.md'));
+  }
+  if (stack === 'gpui') {
+    rustRefs.push(Read('practices/rust-references/gpui-patterns.md'));
+  }
+  // Always-useful refs for Rust work
+  rustRefs.push(Read('practices/rust-references/ownership-and-borrowing.md'));
+  rustRefs.push(Read('practices/rust-references/error-design.md'));
+  rustRefs.push(Read('practices/rust-references/type-state-and-newtypes.md'));
 }
 
 // Load Effect practices if stack uses Effect
