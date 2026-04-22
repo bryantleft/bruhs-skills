@@ -658,6 +658,13 @@ jq '.dependencies | length' package.json
 
 ### Step 3: Run Static Analysis
 
+Slop calls `scripts/validate_pr_ready.sh` by default — it already detects the language and runs the right checkers. If the script isn't available, fall back to the inline language-specific commands below.
+
+```bash
+# Preferred: delegate to the canonical runner
+bash scripts/validate_pr_ready.sh 2>/dev/null || echo "validate_pr_ready.sh not available — falling back to inline detection"
+```
+
 **TypeScript Strict Checks:**
 ```bash
 # Check for any types
@@ -670,6 +677,33 @@ grep -rn "!;" src/ --include="*.ts" --include="*.tsx"
 # Check for ts-ignore
 grep -rn "@ts-ignore" src/ --include="*.ts" --include="*.tsx"
 grep -rn "@ts-expect-error" src/ --include="*.ts" --include="*.tsx"
+```
+
+**Non-TypeScript static analysis — route by `config.stack?.language`:**
+
+```javascript
+switch (config.stack?.language) {
+  case 'python':
+    // Lint + type-check + dead-test detection
+    Bash("ruff check .");
+    Bash("mypy ." /* or `ty check` if `ty` is present in the project */);
+    Bash("pytest --collect-only"); // surfaces dead / uncollectable tests
+    break;
+
+  case 'rust':
+    Bash("cargo check --all-targets");
+    Bash("cargo clippy --all-targets -- -D warnings");
+    break;
+
+  case 'go':
+    Bash("go vet ./...");
+    Bash("go build ./...");
+    break;
+
+  default:
+    // TypeScript path above already ran
+    break;
+}
 ```
 
 **Dead Code Detection:**
@@ -908,8 +942,14 @@ AskUserQuestion({
 
 ### Step 8: Verification
 
-After fixes:
+After fixes, slop calls `scripts/validate_pr_ready.sh` by default — it detects the language and runs the full verification matrix. If the script isn't available, fall back to the inline language-specific commands below.
 
+```bash
+# Preferred: delegate to the canonical runner
+bash scripts/validate_pr_ready.sh 2>/dev/null || echo "validate_pr_ready.sh not available — falling back to inline detection"
+```
+
+**TypeScript (default path):**
 ```bash
 # Type check
 pnpm tsc --noEmit
@@ -922,6 +962,34 @@ pnpm test
 
 # Build
 pnpm build
+```
+
+**Non-TypeScript verification — route by `config.stack?.language`:**
+
+```javascript
+switch (config.stack?.language) {
+  case 'python':
+    Bash("ruff check .");
+    Bash("mypy ." /* or `ty check` if the project uses `ty` */);
+    Bash("pytest");
+    break;
+
+  case 'rust':
+    Bash("cargo check --all-targets");
+    Bash("cargo clippy --all-targets -- -D warnings");
+    Bash("cargo test");
+    break;
+
+  case 'go':
+    Bash("go vet ./...");
+    Bash("go build ./...");
+    Bash("go test ./...");
+    break;
+
+  default:
+    // TypeScript path above already ran
+    break;
+}
 ```
 
 ### Step 9: Summary

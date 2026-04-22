@@ -48,6 +48,10 @@ AskUserQuestion({
   }]
 })
 
+**Control flow after the prompt:**
+- If **Yes**: proceed into Step 2 and re-run the full detection + prompt flow (Steps 2–7). Step 7 overwrites the existing `.claude/bruhs.json`.
+- If **No**: exit immediately with a one-line confirmation that the existing config is preserved (e.g., `Kept existing .claude/bruhs.json.`).
+
 ### Step 2: Detect Project Structure
 
 ```bash

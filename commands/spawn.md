@@ -732,7 +732,41 @@ This mirrors the key rules from `eslint-config-next` (React hooks, a11y).
 
 ### Step 8: Create/Update bruhs.json
 
-Create `.claude/bruhs.json` with selected configuration:
+**If adding to an existing monorepo:**
+
+When a `.claude/bruhs.json` already exists (monorepo-addition case), merge the new package's config into the existing one instead of overwriting:
+
+```javascript
+const existing = JSON.parse(Bash("cat .claude/bruhs.json"));
+const detected = /* config assembled from user selections for the new package */;
+
+const merged = {
+  ...existing,
+  stack: {
+    ...existing.stack,
+    // Union arrays — don't replace
+    frameworks:  [...new Set([...(existing.stack.frameworks  || []), ...(detected.stack.frameworks  || [])])],
+    libraries:   [...new Set([...(existing.stack.libraries   || []), ...(detected.stack.libraries   || [])])],
+    styling:     [...new Set([...(existing.stack.styling     || []), ...(detected.stack.styling     || [])])],
+    testing:     [...new Set([...(existing.stack.testing     || []), ...(detected.stack.testing     || [])])],
+  },
+  integrations: {
+    ...existing.integrations,
+    // Linear workspace is already configured for the monorepo — leave untouched
+    linear: existing.integrations?.linear,
+  },
+  tooling: {
+    ...existing.tooling,
+    // Union with any new skills detected for the added package
+    skills: [...new Set([...(existing.tooling?.skills || []), ...(detected.tooling?.skills || [])])],
+  },
+};
+
+// Write atomically through the canonical writer
+Bash(`echo '${JSON.stringify(merged)}' | python3 scripts/write_bruhs_config.py`);
+```
+
+Otherwise (fresh project), create `.claude/bruhs.json` with selected configuration:
 
 ```json
 {
@@ -869,7 +903,37 @@ jobs:
 Adjust based on language:
 - Python: Use `uv` and `pytest`
 - Rust: Use `cargo` commands
-- Luau: Use `selene` and `stylua`
+- Luau: Use `selene` and `stylua` — see the Luau / Rojo template below
+
+**Luau / Rojo projects:**
+
+For Roblox projects scaffolded with Rojo, use this workflow template instead of the TypeScript one above. It uses Aftman (the Luau toolchain manager) to install `selene`, `stylua`, and `rojo` from `aftman.toml`, then runs lint + format-check + build.
+
+```yaml
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    runs-on: blacksmith-2vcpu-ubuntu-2204
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ok-nick/setup-aftman@v0.4.2
+
+      - run: aftman install
+      - run: selene src
+      - run: stylua --check src
+      - run: rojo build default.project.json -o <name>.rbxlx
+```
+
+Replace `<name>` with the project name. If the TypeScript template above uses `ubuntu-latest` instead of the Blacksmith runner, use `ubuntu-latest` here too for consistency.
 
 ## Example: New Project
 

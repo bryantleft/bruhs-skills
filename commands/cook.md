@@ -311,19 +311,42 @@ Prepare the working environment:
 
 **Check for unrelated changes:**
 ```bash
-git status
+git status --porcelain
 git diff --stat
 ```
 
-If there are uncommitted changes unrelated to the feature:
-```bash
-git stash push -m "bruhs: stashed before <feature-name>"
+Identify files that are outside the feature scope (i.e., uncommitted changes unrelated to the feature about to be built).
+
+**If any unrelated changes are detected, offer the stash via `AskUserQuestion` — do not stash unconditionally:**
+
+```javascript
+AskUserQuestion({
+  questions: [{
+    question: "Unrelated uncommitted changes detected. How do you want to handle them?",
+    header: "Working tree",
+    multiSelect: false,
+    options: [
+      { label: "Stash them (recommended)", description: "git stash push -u -m \"bruhs: stashed before <feature-name>\"" },
+      { label: "Keep them in the working tree", description: "Proceed without stashing; the diff at yeet time will include them" },
+      { label: "Abort", description: "Stop cook here" },
+    ]
+  }]
+})
 ```
 
-Track that we stashed:
-```
-stashed_changes = true
-```
+Handle the selection:
+
+- **Stash them (recommended)** — run the stash and track that we stashed:
+  ```bash
+  git stash push -u -m "bruhs: stashed before <feature-name>"
+  ```
+  ```
+  stashed_changes = true
+  ```
+- **Keep them in the working tree** — proceed without stashing. Warn the user that the diff at yeet time will include these changes.
+- **Abort** — stop the cook workflow.
+
+If there are no unrelated changes, proceed silently.
 
 **Important:** Do NOT create a branch here. Branch creation happens in `/bruhs:yeet` after code is complete.
 
