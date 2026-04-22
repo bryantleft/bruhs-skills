@@ -1,0 +1,19 @@
+{
+  "skills": ["bruhs"],
+  "command": "/bruhs:slop",
+  "query": "/bruhs:slop",
+  "files": [".claude/bruhs.json"],
+  "context": "Python FastAPI service. .claude/bruhs.json has stack.framework='fastapi' and stack.language='python'. Code includes an endpoint that constructs a new httpx.AsyncClient() per request, an `await` inside a for loop over independent items, and a SQL query built via f-string interpolation.",
+  "expected_behavior": [
+    "Step 4 detects language=python and framework=fastapi, loads practices/python.md as the base, then stacks practices/python-fastapi.md on top; still loads practices/type-driven-design.md as PRIMARY and practices/_common.md",
+    "Applies the priority hierarchy: Types (P1) > Security (P2) > Performance (P3) > Error Handling (P4) > Architecture (P5) > Immutability (P6) > Style (P7)",
+    "Flags the f-string SQL query as a P2 Security issue (SQL injection), the per-request httpx.AsyncClient() as a P3 Performance anti-pattern (should be a module-scope singleton), and the await-in-loop as a P3 Performance anti-pattern (use asyncio.gather)",
+    "Does NOT load practices/typescript-react.md or typescript-hono.md since this is a Python project",
+    "Static-analysis step uses Python-appropriate tooling (ruff, mypy/ty) rather than ESLint/Biome when running validation in Step 8"
+  ],
+  "failure_modes": [
+    "Loads typescript-react.md practices by default and reports React-specific anti-patterns in Python code",
+    "Treats the per-request client construction as a style issue instead of a P3 performance bug (the command doc explicitly says these are bugs, not optimizations)",
+    "Runs `pnpm tsc --noEmit` and `pnpm lint` in the verification step on a Python repo"
+  ]
+}

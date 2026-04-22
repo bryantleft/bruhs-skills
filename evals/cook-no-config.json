@@ -1,0 +1,18 @@
+{
+  "skills": ["bruhs"],
+  "command": "/bruhs:cook",
+  "query": "/bruhs:cook add user profile page",
+  "files": [],
+  "context": "TypeScript project with no .claude/bruhs.json. ls .claude/bruhs.json returns nothing.",
+  "expected_behavior": [
+    "Step 0 detects the missing config and fires AskUserQuestion with header 'Config' offering 'Run /bruhs:claim (Recommended)' and 'Continue without config'",
+    "If user picks 'Run /bruhs:claim', hands off to the claim workflow first, then resumes cook",
+    "If user picks 'Continue without config', skips all Linear-related steps (no ticket lookup, no ticketContext), uses sensible defaults for stack detection, and continues to Step 1 treating the input as a feature description",
+    "Reminds the user at the end of Step 7 that they can run /bruhs:claim later to enable full features"
+  ],
+  "failure_modes": [
+    "Crashes when trying to read the missing .claude/bruhs.json instead of catching the ENOENT and prompting",
+    "Fabricates a default Linear mcpServer name and attempts Linear ticket operations anyway",
+    "Silently proceeds without the AskUserQuestion, hiding the fact that config is missing"
+  ]
+}

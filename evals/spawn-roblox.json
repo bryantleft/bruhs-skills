@@ -1,0 +1,23 @@
+{
+  "skills": ["bruhs"],
+  "command": "/bruhs:spawn",
+  "query": "/bruhs:spawn obby-game",
+  "files": [],
+  "context": "Empty directory. User wants a Roblox Luau project with Rojo for syncing to Studio. Linear MCP not configured.",
+  "expected_behavior": [
+    "Step 2b Type selection goes to the secondary 'Other' question (Extension / CLI / Library / Roblox) per the command doc; user picks Roblox",
+    "Step 2c locks Language to Luau (Roblox is only Luau per the matrix)",
+    "Step 2d locks Framework to Rojo",
+    "Step 2e Tooling question offers Selene / StyLua / Rojo multiSelect (not Biome, Vitest, or other TypeScript tools)",
+    "Skips the TypeScript-only questions (libraries like Zod, testing like Vitest, infrastructure like Vercel)",
+    "Step 3 detects no Linear server and fires AskUserQuestion asking whether to continue without Linear; if yes, proceeds without Linear ticket creation",
+    "Step 6 scaffolds with `rojo init obby-game` (not pnpm create)",
+    "Step 8 writes .claude/bruhs.json with framework='Rojo', language='luau', tooling=['selene','stylua','rojo'], and omits the integrations.linear section",
+    "Step 10 writes a GitHub Actions workflow that uses selene and stylua (Luau tooling) — not pnpm"
+  ],
+  "failure_modes": [
+    "Offers TypeScript-specific options (Tailwind, shadcn, Vitest) on a Roblox project",
+    "Runs `pnpm create` instead of `rojo init` for scaffolding",
+    "Includes integrations.linear in the config with empty/null values instead of omitting it"
+  ]
+}

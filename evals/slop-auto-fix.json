@@ -1,0 +1,20 @@
+{
+  "skills": ["bruhs"],
+  "command": "/bruhs:slop",
+  "query": "/bruhs:slop --fix",
+  "files": [".claude/bruhs.json"],
+  "context": "TypeScript project with unused imports across 23 files, 8 orphan console.log statements, and 15 redundant type annotations (e.g. `const count: number = 0`). There are also 3 `any` types and 2 hardcoded API keys.",
+  "expected_behavior": [
+    "Follows the priority hierarchy: Types (P1) > Security (P2) > Performance (P3) > Error Handling (P4) > Architecture (P5) > Immutability (P6) > Style (P7)",
+    "Auto-applies only the safe categories listed in the command doc: unused imports, console.log removals, and redundant type annotations (23 + 8 + 15 fixes)",
+    "For the 3 `any` types (type-signature violations, P1) and 2 hardcoded secrets (security, P2), enters interactive mode and uses AskUserQuestion per issue with options Apply fix / Skip / Mark intentional / Show context",
+    "Never silently changes a type signature or modifies logic without prompting — only the pre-declared safe list auto-applies",
+    "Step 8 runs verification after the fix batch: tsc --noEmit, lint, test, build",
+    "Final summary reports counts per category and lists remaining skipped issues"
+  ],
+  "failure_modes": [
+    "Auto-applies `any` → proper type fixes without prompting, changing runtime behavior via added runtime validation",
+    "Skips the P2 security hardcoded-secret findings in --fix mode and buries them in the report without prompting the user",
+    "Processes issues in file order rather than priority order, fixing Low-priority nits before Critical security findings"
+  ]
+}

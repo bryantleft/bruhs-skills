@@ -1,0 +1,20 @@
+{
+  "skills": ["bruhs"],
+  "command": "/bruhs:cook",
+  "query": "/bruhs:cook PERDIX-145",
+  "files": [".claude/bruhs.json"],
+  "context": "Next.js + Drizzle project with .claude/bruhs.json where integrations.linear.mcpServer='linear-perdix'. PERDIX-145 exists in Linear and is titled 'Add dark mode toggle to settings page'.",
+  "expected_behavior": [
+    "Step 0 confirms .claude/bruhs.json exists and reads it to extract linearConfig.mcpServer='linear-perdix'",
+    "Step 1 recognizes PERDIX-145 as a ticket ID, runs ToolSearch for mcp__linear-perdix__linear_get_issue, then calls it with id='PERDIX-145'",
+    "Stores ticketContext with id, identifier='PERDIX-145', title, description, and branchName from issue.gitBranchName — this context must be available to yeet later in the same session",
+    "Step 2 launches feature-dev:code-explorer subagent(s) via Task to map settings page and theme hook; loads skills listed in config.tooling.skills",
+    "Step 3 presents 2-3 approaches with files/pros/cons and uses AskUserQuestion for selection",
+    "Step 7 ends with 'Ready to ship! Run /bruhs:yeet to create PR.' and '📋 Using existing ticket: PERDIX-145' so the user knows yeet will reuse the ticket"
+  ],
+  "failure_modes": [
+    "Treats 'PERDIX-145' as a literal feature description instead of a ticket ID and never calls linear_get_issue",
+    "Loads the wrong MCP tool (e.g. mcp__linear__linear_get_issue instead of the mcpServer-scoped mcp__linear-perdix__linear_get_issue)",
+    "Drops the ticketContext so yeet later creates a duplicate Linear ticket"
+  ]
+}

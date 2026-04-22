@@ -1,0 +1,23 @@
+{
+  "skills": ["bruhs"],
+  "command": "/bruhs:yeet",
+  "query": "/bruhs:yeet",
+  "files": [],
+  "context": "TypeScript project with no .claude/bruhs.json. Uncommitted changes add a new leaderboard component. gh CLI is authenticated.",
+  "expected_behavior": [
+    "Step 0 detects missing config and asks via AskUserQuestion header 'Config' offering 'Run /bruhs:claim (Recommended)' and 'Continue in git-only mode'",
+    "User picks 'Continue in git-only mode'; skips Step 3 (Linear MCP check) and Step 4 (ticket creation/reuse) entirely",
+    "Step 2 still categorizes the diff via Conventional Commits types (feat/fix/chore/refactor/docs/test) — this is language-agnostic, not Linear-dependent",
+    "Step 5 generates a branch name from type + description: `git switch -c feat/add-leaderboard` (format `<type>/<short-description>`)",
+    "Step 6 commits with Conventional Commits title 'feat: add leaderboard to game page' and NO 'Fixes TICKET-ID' line in the body since there is no ticket",
+    "Before pushing, runs the project's full validation suite (typecheck + lint + test) as the pre-PR gate mentioned in practices/pr-review.md",
+    "Step 8 creates the PR using the Feature template but omits the Linear section (or fills it with 'N/A — git-only mode')",
+    "Step 9 is skipped — no Linear status update",
+    "Final output warns '⚠ Linear not configured (git-only mode)' and reminds the user to run /bruhs:claim to enable Linear integration"
+  ],
+  "failure_modes": [
+    "Fabricates a fake Linear ticket ID like 'PROJ-1' to put into the commit body",
+    "Abandons the whole flow because Linear isn't configured, instead of offering git-only mode",
+    "Produces a non-Conventional-Commits title like 'Add leaderboard' (missing the `feat:` prefix)"
+  ]
+}

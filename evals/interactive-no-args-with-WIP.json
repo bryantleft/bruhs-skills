@@ -1,0 +1,18 @@
+{
+  "skills": ["bruhs"],
+  "command": "interactive",
+  "query": "/bruhs",
+  "files": [],
+  "context": "User types /bruhs with no args. git status shows uncommitted modifications to three files mid-feature. No branch has been created yet and no Linear ticket exists for the work.",
+  "expected_behavior": [
+    "Presents the interactive AskUserQuestion menu (spawn, claim, cook, yeet, peep, doodle, dip) without auto-selecting based on dirty working tree",
+    "Does not stash or modify the working tree before the user picks a subcommand",
+    "If user selects yeet, routes to yeet which will then analyze the uncommitted diff in Step 1/2 and categorize it",
+    "If user selects cook, cook's Step 4 Setup detects the unrelated changes and offers to stash with the 'bruhs: stashed before <feature-name>' message prefix"
+  ],
+  "failure_modes": [
+    "Assumes WIP means the user wants yeet and skips the menu",
+    "Runs git stash or git add -A preemptively before asking the user",
+    "Forgets to mark the stash message with the 'bruhs:' prefix that dip later uses to detect it"
+  ]
+}

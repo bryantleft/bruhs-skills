@@ -1,0 +1,19 @@
+{
+  "skills": ["bruhs"],
+  "command": "/bruhs:dip",
+  "query": "/bruhs:dip",
+  "files": [],
+  "context": "User is on feature branch perdix-140-add-dark-mode (merged). `git stash list` shows: stash@{0}: On main: bruhs: stashed before add-dark-mode — left over from cook's Step 4 Setup when unrelated changes were stashed.",
+  "expected_behavior": [
+    "Completes Steps 1-5 (switch to main, pull, delete merged branch) normally",
+    "Step 6 runs `git stash list | grep \"bruhs:\"` and detects stash@{0} with the 'bruhs:' prefix",
+    "Prints the '💡 You have stashed changes from before your last feature:' message showing the stash entry",
+    "Fires AskUserQuestion with header 'Stash' and options Yes (git stash pop) / No (keep stashed) / Drop (delete permanently)",
+    "If user picks Yes, runs `git stash pop` and reports the restore; if Drop, runs `git stash drop stash@{0}` only after the user explicitly confirms"
+  ],
+  "failure_modes": [
+    "Pops the stash automatically without the AskUserQuestion",
+    "Drops the stash instead of popping it, losing the user's work",
+    "Ignores stashes not prefixed with 'bruhs:' but also fails to show the bruhs-prefixed one because of a bad grep pattern"
+  ]
+}

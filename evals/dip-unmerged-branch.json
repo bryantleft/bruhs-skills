@@ -1,0 +1,20 @@
+{
+  "skills": ["bruhs"],
+  "command": "/bruhs:dip",
+  "query": "/bruhs:dip",
+  "files": [],
+  "context": "User is on feature branch feat/experimental. The branch has commits that are NOT in origin/main — it was never merged. Working tree is clean.",
+  "expected_behavior": [
+    "Steps 1-4 switch to main and pull latest",
+    "Step 5 tries `git branch -d feat/experimental`, which git refuses because the branch isn't fully merged",
+    "On detecting the unmerged state, fires AskUserQuestion with header 'Unmerged' asking 'Branch feat/experimental is not fully merged. Delete anyway?' with options Yes (force delete with git branch -D) / No (keep the branch)",
+    "If user picks No, keeps the branch and prints 'Keeping branch feat/experimental.' before the summary",
+    "If user picks Yes, runs `git branch -D feat/experimental` and also attempts `git push origin --delete feat/experimental`",
+    "Never silently force-deletes without explicit confirmation"
+  ],
+  "failure_modes": [
+    "Runs `git branch -D` immediately instead of trying the safe `-d` first and prompting on failure",
+    "Deletes the remote branch before the user confirms the local force delete",
+    "Reports success even though the safe delete failed and the user picked 'No'"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "skills": ["bruhs"],
+  "command": "/bruhs:yeet",
+  "query": "/bruhs:yeet",
+  "files": [".claude/bruhs.json"],
+  "context": "Earlier in the same conversation, /bruhs:cook PERDIX-145 ran and produced ticketContext with identifier='PERDIX-145', id=<uuid>, title='Add dark mode toggle to settings page', branchName='perdix-145-add-dark-mode-toggle-to-settings-page'. Code has been implemented and is uncommitted. .claude/bruhs.json has linear-perdix configured.",
+  "expected_behavior": [
+    "Step 1 runs git status/diff, finds uncommitted changes, does not abort",
+    "Step 2 categorizes the diff as 'feat' (new feature), generates a Conventional Commits title like 'feat: add dark mode toggle to settings page' (under 70 chars) following practices/pr-review.md + _common.md",
+    "Step 4 detects the existing ticketContext in conversation memory and SKIPS ticket creation — reuses branchName='perdix-145-add-dark-mode-toggle-to-settings-page' (the exact gitBranchName Linear generated) rather than re-running linear_create_issue",
+    "Step 5 runs `git switch -c perdix-145-add-dark-mode-toggle-to-settings-page` (modern git command, not checkout -b)",
+    "Step 6 commits with 'feat: add dark mode toggle to settings page\\n\\nFixes PERDIX-145' — ticket reference goes in the commit body, not the title",
+    "Step 8 creates the PR via `gh pr create` using the Feature template (Why / What changed / Design decisions / Linear / Test plan) with 'Linear: PERDIX-145' filled in",
+    "Step 9 calls mcp__linear-perdix__linear_edit_issue with stateId for 'In Review'",
+    "Final summary prints '📋 Using existing ticket' flavored output confirming PERDIX-145 was reused"
+  ],
+  "failure_modes": [
+    "Creates a duplicate Linear ticket via linear_create_issue instead of reusing ticketContext from cook",
+    "Uses a model-invented branch name instead of Linear's gitBranchName slug",
+    "Writes the ticket reference into the commit title (`feat(PERDIX-145): ...`) instead of the commit body",
+    "Skips the full-suite validation gate before pushing — per the workflow, yeet should have confidence the branch compiles/tests before opening a PR"
+  ]
+}

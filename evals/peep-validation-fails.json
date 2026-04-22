@@ -1,0 +1,20 @@
+{
+  "skills": ["bruhs"],
+  "command": "/bruhs:peep",
+  "query": "/bruhs:peep 42",
+  "files": [],
+  "context": "PR #42 has one must-fix review comment on lib/db/queries.ts:45. A subagent reads the file, proposes a FIX_OLD_STRING/FIX_NEW_STRING, applies it via Edit, and runs `npx tsc --noEmit`, which exits non-zero with a TS2345 error on the changed line.",
+  "expected_behavior": [
+    "The subagent reverts the Edit by swapping old_string/new_string, then confirms `git diff --stat lib/db/queries.ts` shows no changes",
+    "Returns VALIDATION_STATUS: failed with VALIDATION_COMMANDS showing `npx tsc --noEmit` and VALIDATION_OUTPUT containing the last ~20 lines of the tsc failure, and downgrades its CONFIDENCE by 1",
+    "Step 5 surfaces this fix in the summary table with validation='✗ failed' shown next to the must-fix row, excluded from auto-apply",
+    "Step 6 shows the user the proposed diff alongside the failing validation command output ('$ npx tsc --noEmit → 2 (type errors)' and the TS2345 snippet) so they can decide",
+    "Auto-apply mode (if selected at Step 4) MUST NOT auto-apply this fix: per the doc, only fixes with confidence>=4 AND validation_status==passed auto-apply; failed/skipped/dirty-cleanup-needed always go to manual review regardless of confidence",
+    "If user picks 'Apply fix' anyway, Step 10 reruns the full validation suite and triggers the 'Full validation failed after applying fixes' AskUserQuestion with Revert last fix / Revert all fixes / Commit anyway / Show me the failure options"
+  ],
+  "failure_modes": [
+    "Subagent fails to revert the Edit after validation and leaves the working tree dirty without reporting VALIDATION_STATUS: dirty-cleanup-needed",
+    "Auto-apply mode applies the fix because its CONFIDENCE is still >=4, ignoring the VALIDATION_STATUS: failed rule",
+    "Presents the fix as 'verified locally' with a green check despite tsc having failed"
+  ]
+}

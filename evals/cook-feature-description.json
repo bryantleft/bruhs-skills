@@ -1,0 +1,21 @@
+{
+  "skills": ["bruhs"],
+  "command": "/bruhs:cook",
+  "query": "/bruhs:cook add a leaderboard to the game page",
+  "files": [".claude/bruhs.json"],
+  "context": "Next.js + Drizzle project with existing .claude/bruhs.json, Linear configured. Working tree is clean. Game page and agentStats table already exist.",
+  "expected_behavior": [
+    "Step 1 parses 'add a leaderboard to the game page' as a feature description (not a ticket ID), outputs a Feature/Goal/Scope summary, and does NOT call linear_get_issue",
+    "Step 2 loads practices/type-driven-design.md plus stack practices (typescript-react), loads skills from config.tooling.skills, and spawns feature-dev:code-explorer via Task to find the game page, agentStats schema, and existing stats UI patterns",
+    "Step 3 presents 2-3 concrete approaches with files-to-modify, data-path, and performance notes; uses AskUserQuestion with those approaches as options",
+    "Step 4 runs git status; since working tree is clean, skips stashing",
+    "Step 5 builds with TDD if a test suite is detected (vitest.config.* check), keeps tests when suite exists, otherwise creates then deletes temp test files",
+    "Step 6 launches feature-dev:code-reviewer including the fast-path audit for N+1 / await-in-loop / per-request clients",
+    "Step 7 prints 'Ready to ship! Run /bruhs:yeet to create ticket and PR.' (no existing ticket note)"
+  ],
+  "failure_modes": [
+    "Tries to fetch a Linear ticket for a plain-English feature description",
+    "Skips the AskUserQuestion approach-selection step and picks an approach unilaterally",
+    "Ends with 'Using existing ticket' text even though cook was not started from a ticket ID"
+  ]
+}

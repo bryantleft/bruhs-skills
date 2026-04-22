@@ -1,0 +1,18 @@
+{
+  "skills": ["bruhs"],
+  "command": "/bruhs:claim",
+  "query": "/bruhs:claim",
+  "files": [],
+  "context": "TypeScript Hono API project, git initialized, biome.json present. ~/.claude.json has no entries whose name starts with 'linear'.",
+  "expected_behavior": [
+    "Step 3 reads ~/.claude.json and finds zero Linear servers, sets linearAvailable=false, and logs the hint about adding mcp-server-linear",
+    "Skips Step 4 entirely — does not call any mcp__linear-* tools, does not issue workspace/team/project AskUserQuestions",
+    "Continues to Step 5 stack detection and Step 7 write, omitting the integrations.linear section from the final .claude/bruhs.json",
+    "Final summary in Step 8 does not list a Linear integration line, and tells the user how to add Linear later"
+  ],
+  "failure_modes": [
+    "Attempts ToolSearch for mcp__linear__linear_get_teams even though no Linear server is configured",
+    "Writes integrations.linear with null/empty strings instead of omitting the whole section",
+    "Aborts the claim entirely because Linear is missing, even though Linear is optional per the command doc"
+  ]
+}

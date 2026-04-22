@@ -1,0 +1,21 @@
+{
+  "skills": ["bruhs"],
+  "command": "/bruhs:spawn",
+  "query": "/bruhs:spawn",
+  "files": ["turbo.json", "pnpm-workspace.yaml"],
+  "context": "Existing Turborepo monorepo 'gambit' with apps/web (Next.js) already in it. User wants to add a new Hono API package as apps/api. Linear is configured.",
+  "expected_behavior": [
+    "Step 1 detects turbo.json and pnpm-workspace.yaml, fires AskUserQuestion with header 'Add to repo' offering New app / New package / New project (outside)",
+    "User picks 'New app', then Step 2b selects Type (API), Step 2c Language (TypeScript), Step 2d Framework (Hono)",
+    "Step 2e asks stack additions relevant to API (database, auth, libraries, tooling) via AskUserQuestion",
+    "Step 5 creates a single Linear ticket for the api setup (not the full 3-ticket bootstrap used for greenfield projects)",
+    "Step 6 scaffolds via `pnpm create hono@latest apps/api` from the monorepo root",
+    "Updates turbo.json pipeline to include the new app, and extends pnpm-workspace.yaml if necessary",
+    "Step 8 updates the existing .claude/bruhs.json to add the new framework to stack.frameworks (monorepo uses the frameworks ARRAY form, not framework string) rather than overwriting the whole file"
+  ],
+  "failure_modes": [
+    "Scaffolds the Hono app at the repo root instead of apps/api",
+    "Overwrites the existing .claude/bruhs.json instead of merging the new app into the monorepo config",
+    "Uses `stack.framework` (singular string) in the monorepo config instead of `stack.frameworks` (array)"
+  ]
+}

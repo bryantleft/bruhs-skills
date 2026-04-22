@@ -1,0 +1,20 @@
+{
+  "skills": ["bruhs"],
+  "command": "/bruhs:slop",
+  "query": "/bruhs:slop src/components",
+  "files": [".claude/bruhs.json"],
+  "context": "TypeScript + React Next.js app. .claude/bruhs.json has framework='nextjs'. src/components/ contains 45 files, including a UserCard.tsx with a derived-state useEffect anti-pattern, a Form.tsx with an `any` type on API response, and a HeroImage.tsx with an unstable inline style object causing re-renders.",
+  "expected_behavior": [
+    "Step 1 reads .claude/bruhs.json to learn framework=nextjs, Step 4 loads practices/type-driven-design.md (PRIMARY), practices/_common.md, and practices/typescript-react.md",
+    "Analyzes src/components following the priority hierarchy: Types (P1) > Security (P2) > Performance anti-patterns (P3) > Error Handling (P4) > Architecture (P5) > Immutability (P6) > Style (P7)",
+    "Flags the `any` on the API response as a P1 type-signature violation (highest priority), the unstable inline style reference as a P3 performance anti-pattern (not a style nit), and the derived-state useEffect as a React anti-pattern",
+    "Generates the report grouped by severity (Critical / High / Medium / Low) with a summary table counting issues per category",
+    "Follows up with AskUserQuestion asking whether to fix issues interactively or generate a report only",
+    "Does NOT auto-fix behavior-changing issues — only unused imports, console.logs, and redundant type annotations are safe auto-fix candidates per the command doc"
+  ],
+  "failure_modes": [
+    "Flags the performance anti-patterns (unstable references, N+1) as low-priority style nits instead of high-priority bugs, violating the priority hierarchy",
+    "Runs auto-fix on type changes without prompting, silently altering behavior",
+    "Skips loading practices/typescript-react.md despite framework=nextjs, missing React-specific anti-patterns"
+  ]
+}

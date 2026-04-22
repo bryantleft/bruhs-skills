@@ -1,0 +1,19 @@
+{
+  "skills": ["bruhs"],
+  "command": "/bruhs:yeet",
+  "query": "/bruhs:yeet",
+  "files": [".claude/bruhs.json"],
+  "context": "User runs yeet but `git status` shows a clean working tree and `git diff --stat` is empty. They are on main. There are no staged or unstaged changes.",
+  "expected_behavior": [
+    "Step 1 runs `git status`, `git diff --stat`, and `git diff --cached --stat`, detects no changes",
+    "Aborts gracefully with the message 'No changes to ship. Make some changes first!' from the command doc",
+    "Does NOT create a branch, does NOT call linear_create_issue, does NOT attempt `git push`, does NOT call `gh pr create`",
+    "Does not run the full-suite validation gate (typecheck/lint/test) — there is nothing to validate and no PR to open",
+    "Leaves the working tree and branch exactly as it found them"
+  ],
+  "failure_modes": [
+    "Creates an empty Linear ticket and opens an empty PR despite no diff",
+    "Runs `git commit --allow-empty` to force a Conventional-Commits commit even though nothing changed",
+    "Switches to a new branch before checking for changes, leaving the user on a stray branch"
+  ]
+}

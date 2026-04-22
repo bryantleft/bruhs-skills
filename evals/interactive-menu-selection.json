@@ -1,0 +1,18 @@
+{
+  "skills": ["bruhs"],
+  "command": "interactive",
+  "query": "/bruhs",
+  "files": [],
+  "context": "User invokes /bruhs with no arguments inside a project that already has .claude/bruhs.json. They want to start building a new feature but forgot the exact subcommand.",
+  "expected_behavior": [
+    "Presents an AskUserQuestion menu listing the bruhs subcommands (spawn, claim, cook, yeet, peep, doodle, dip) without including slop, per SKILL.md",
+    "Waits for the user's selection before performing any filesystem or git operations",
+    "After the user picks 'cook', routes to the cook workflow defined in commands/cook.md beginning at Step 0 (check .claude/bruhs.json)",
+    "Does not fabricate a feature description — either prompts the user for one or enters cook's interactive sub-flow"
+  ],
+  "failure_modes": [
+    "Silently picks a default subcommand instead of asking via AskUserQuestion",
+    "Includes slop in the interactive menu despite SKILL.md stating it is intentionally excluded",
+    "Jumps directly into cook's Step 1 exploration without receiving a feature description or ticket ID"
+  ]
+}

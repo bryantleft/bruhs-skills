@@ -1,0 +1,19 @@
+{
+  "skills": ["bruhs"],
+  "command": "/bruhs:peep",
+  "query": "/bruhs:peep",
+  "files": [],
+  "context": "User is on branch feat/add-profile-page with open PR #73. The reviewThreads query returns zero unresolved threads. CI is green.",
+  "expected_behavior": [
+    "Step 1 finds the PR, Step 2 runs the graphql query and counts 0 unresolved threads",
+    "Step 3 fires AskUserQuestion with header 'AI Review' offering 'Yes - full review' (subagent per changed file), 'Yes - quick scan' (single subagent over full diff), and 'Skip to merge'",
+    "If 'Yes - full review': runs `gh pr diff 73 --name-only` then spawns one feature-dev:code-reviewer subagent per changed file, ALL in parallel in one tool-call message, each using the file-scoped review prompt with the priority order (bugs > security > perf anti-patterns > edge cases > API contract) and the local-validation block that sets VALIDATION_STATUS",
+    "If 'Yes - quick scan': spawns a single subagent fed `gh pr diff 73` output, instructed to report only high-confidence (>=4) critical/warning issues",
+    "If 'Skip to merge': jumps straight to Step 12 (gh pr view reviewDecision,mergeable,mergeStateStatus,statusCheckRollup) to check merge readiness"
+  ],
+  "failure_modes": [
+    "Silently exits with 'no comments, nothing to do' instead of offering the AI review branch",
+    "Runs 'full review' sequentially rather than dispatching all per-file subagents in parallel",
+    "Skips the priority hierarchy in the review prompt, reporting style and naming nits instead of real bugs"
+  ]
+}

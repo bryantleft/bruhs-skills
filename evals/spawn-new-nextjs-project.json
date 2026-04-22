@@ -1,0 +1,24 @@
+{
+  "skills": ["bruhs"],
+  "command": "/bruhs:spawn",
+  "query": "/bruhs:spawn my-app",
+  "files": [],
+  "context": "Empty directory (no turbo.json, no pnpm-workspace.yaml, no package.json). User wants a standalone Next.js + Tailwind + shadcn project with Biome. A Linear MCP 'linear-bnle' is configured.",
+  "expected_behavior": [
+    "Step 1 detects no monorepo markers and skips the 'Add to this monorepo' question",
+    "Step 2a AskUserQuestion asks Structure (Monorepo / Single package); user picks Single package",
+    "Step 2b/2c/2d walks through Type (Web) → Language (TypeScript, default) → Framework (Next.js / TanStack Start / Astro) via AskUserQuestion",
+    "Step 2e presents Styling (Tailwind + shadcn multiSelect), Database, Auth, Libraries, Testing, Tooling (Biome, Husky) via AskUserQuestion",
+    "Step 3/4 detects linear-bnle, asks team then project via AskUserQuestion with options built dynamically from mcp__linear-bnle__linear_get_teams and mcp__linear-bnle__linear_list_projects",
+    "Step 5 creates foundational Linear tickets (initial setup, CI/CD, core deps)",
+    "Step 6 scaffolds with `pnpm create next-app@latest my-app` and initializes shadcn via `pnpm dlx shadcn@latest init --style base-mira --base-color neutral --css-variables`",
+    "Step 7 reconciles tooling: since Biome was selected, removes eslint and eslint-config-next, deletes .eslintrc*, rewrites package.json scripts (lint → biome check .), and writes a biome.json with Next.js-equivalent rules (React hooks, a11y)",
+    "Step 8 writes .claude/bruhs.json with structure='single', framework='nextjs', styling=['Tailwind CSS','shadcn/ui'], tooling=['biome'], integrations.linear.mcpServer='linear-bnle'",
+    "Step 10 writes .github/workflows/ci.yml using the blacksmith-2vcpu-ubuntu-2204 runner and pnpm lint/typecheck/test/build"
+  ],
+  "failure_modes": [
+    "Uses npm or yarn instead of pnpm, even though the command doc explicitly says 'Always use pnpm for TypeScript projects'",
+    "Skips the tooling reconciliation step and leaves both eslint-config-next and biome in package.json",
+    "Writes a github-hosted-runner in ci.yml instead of blacksmith-2vcpu-ubuntu-2204"
+  ]
+}

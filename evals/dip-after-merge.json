@@ -1,0 +1,20 @@
+{
+  "skills": ["bruhs"],
+  "command": "/bruhs:dip",
+  "query": "/bruhs:dip",
+  "files": [],
+  "context": "User is on feature branch perdix-139-make-model-form-image-upload-fully-rounded, the PR was just squash-merged into main 30 seconds ago, working tree is clean, no bruhs: stash exists.",
+  "expected_behavior": [
+    "Step 1 runs `git branch --show-current` and `git status`; confirms we are on a feature branch and working tree is clean (no uncommitted-changes prompt)",
+    "Step 2 detects the base branch via `gh repo view --json defaultBranchRef -q '.defaultBranchRef.name'` (falls back to `git remote show origin` if gh fails)",
+    "Step 3 runs `git switch main`, Step 4 runs `git pull origin main`",
+    "Step 5 deletes the local feature branch with `git branch -d perdix-139-make-model-form-image-upload-fully-rounded` (safe delete since it was merged) and attempts `git push origin --delete` for the remote",
+    "Step 6 runs `git stash list | grep \"bruhs:\"`, finds nothing, skips the stash-restore prompt",
+    "Step 7 prints the clean summary ending with 'Ready for your next feature! Run /bruhs:cook to start.'"
+  ],
+  "failure_modes": [
+    "Uses `git checkout main` instead of `git switch main` despite the command doc explicitly preferring modern git commands",
+    "Force-deletes with `git branch -D` unprompted even though the branch was cleanly merged",
+    "Skips the `git pull` so the user ends up on a stale main"
+  ]
+}

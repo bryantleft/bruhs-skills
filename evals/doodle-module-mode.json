@@ -1,0 +1,20 @@
+{
+  "skills": ["bruhs"],
+  "command": "/bruhs:doodle",
+  "query": "/bruhs:doodle module packages/store",
+  "files": [],
+  "context": "pnpm workspace monorepo. packages/store has a package.json, an index.ts barrel, and ~15 TypeScript files. tldraw MCP is installed.",
+  "expected_behavior": [
+    "Resolves packages/store as the module root because it contains package.json and index.ts",
+    "Lists files via `rg --files packages/store` filtered by source extension",
+    "Parses intra-module imports (file → file within packages/store) and extra-module imports (top 10 by count)",
+    "Builds shapes: outer frame labeled 'packages/store' containing geo boxes for each file with bound arrows for internal imports, plus a separate 'External' frame on the right with top external dependencies",
+    "Calls mcp__tldraw__create_diagram with the shapes and default dimensions, then prints the local image path since module mode has no default upload (not --pr-comment)",
+    "Keeps the diagram under ~30 nodes; if > 30, collapses and notes to re-run with --depth higher"
+  ],
+  "failure_modes": [
+    "Treats packages/store as a freeform prompt and generates a fake diagram without reading actual files",
+    "Puts external dependencies inside the module frame instead of in a separate 'External' frame",
+    "Attempts to post a PR comment even though the user did not pass --pr-comment and module mode has no PR-comment default"
+  ]
+}

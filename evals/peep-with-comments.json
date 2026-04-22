@@ -1,0 +1,21 @@
+{
+  "skills": ["bruhs"],
+  "command": "/bruhs:peep",
+  "query": "/bruhs:peep",
+  "files": [],
+  "context": "User is on branch perdix-140-add-leaderboard with an open PR #42 that has 4 unresolved review threads: a must-fix on lib/db/queries.ts, a nit suggestion in components/game/leaderboard-card.tsx, a second suggestion, and one question. gh CLI is authenticated.",
+  "expected_behavior": [
+    "Step 1 detects the PR for the current branch via `gh pr view --json number,headRefName,url,state,reviewDecision,title`",
+    "Step 2 fetches review threads via the gh api graphql query on reviewThreads(first: 100) to get isResolved, path, line, comments with author/body",
+    "Since 4 unresolved threads exist, skips Step 3 (AI discovery) and goes directly to Step 4",
+    "Step 4 spawns ALL 4 feature-dev:code-reviewer subagents in a single tool-call message (parallel, no context bleed) — each with the per-thread prompt including PR title/description, comment, file path/line, categorization instructions, and the local-validation block",
+    "Each subagent applies its proposed fix, runs scoped typecheck + linter + colocated test, reverts via swapped Edit, and returns the STRICT format (CATEGORY, CONFIDENCE, VALIDATION_STATUS, VALIDATION_COMMANDS, etc.)",
+    "Step 5 aggregates results, drops approvals, sorts must-fix > suggestion > question, and renders the summary table with per-thread validation status (passed/failed/skipped)",
+    "Before committing, Step 10 runs the full CI-equivalent suite (typecheck && lint && test) even though each fix individually passed"
+  ],
+  "failure_modes": [
+    "Spawns subagents sequentially (one at a time, awaiting each) instead of in a single parallel tool-call message",
+    "Analyzes all 4 comments in a single shared context, allowing findings from one thread to bias another",
+    "Skips the full-suite validation in Step 10 because per-fix validation already passed, missing cross-file type conflicts"
+  ]
+}

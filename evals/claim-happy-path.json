@@ -1,0 +1,20 @@
+{
+  "skills": ["bruhs"],
+  "command": "/bruhs:claim",
+  "query": "set this project up for bruhs",
+  "files": [],
+  "context": "Existing Next.js app with next.config.ts, tailwind.config.ts, drizzle.config.ts, components/ui/ present, biome.json at root. Git is initialized, no .claude/bruhs.json exists, and a Linear MCP server 'linear-perdix' is configured in ~/.claude.json.",
+  "expected_behavior": [
+    "Runs Step 1 detect-existing-config, confirms .claude/bruhs.json is absent, and proceeds without the reconfigure prompt",
+    "Step 2 detects framework=Next.js (from next.config.ts), styling=['Tailwind CSS','shadcn/ui'] (tailwind.config + components/ui/), database=['drizzle-postgres'] (drizzle.config), tooling=['biome']",
+    "Step 3 reads ~/.claude.json, finds linear-perdix, sets linearAvailable=true, and Step 4 calls mcp__linear-perdix__linear_get_teams then mcp__linear-perdix__linear_list_projects",
+    "Uses AskUserQuestion to pick team then project (one question at a time, options built dynamically from MCP results)",
+    "Step 5 prints the detected stack summary and asks for confirmation via AskUserQuestion before writing the file",
+    "Step 7 writes .claude/bruhs.json with structure='single', integrations.linear.mcpServer='linear-perdix', the selected team/project IDs and names, and tooling.skills including superpowers, feature-dev, commit-commands, shadcn, and vercel-react-best-practices"
+  ],
+  "failure_modes": [
+    "Hardcodes structure as 'monorepo' despite no turbo.json / pnpm-workspace.yaml being present",
+    "Skips the Linear team/project AskUserQuestion and writes null IDs into bruhs.json",
+    "Omits vercel-react-best-practices from tooling.skills even though Next.js was detected"
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "skills": ["bruhs"],
+  "command": "interactive",
+  "query": "/bruhs foo",
+  "files": [],
+  "context": "User passes a bogus subcommand 'foo' that is not one of spawn, claim, cook, yeet, peep, dip, doodle, or slop.",
+  "expected_behavior": [
+    "Recognizes that 'foo' is not a valid bruhs subcommand and does not try to execute a command file that doesn't exist",
+    "Lists the valid subcommands from SKILL.md (spawn, claim, cook, yeet, peep, dip, doodle, slop) so the user can see what is available",
+    "Falls back to the interactive AskUserQuestion menu or asks the user to clarify which command they meant",
+    "Does not create files, run git commands, or call Linear MCP tools while resolving the ambiguity"
+  ],
+  "failure_modes": [
+    "Silently treats 'foo' as a feature description and runs cook",
+    "Hallucinates a commands/foo.md file and tries to Read it",
+    "Fails loudly with a stack-trace-style error instead of offering the valid subcommand list"
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "skills": ["bruhs"],
+  "command": "/bruhs:doodle",
+  "query": "/bruhs:doodle pr",
+  "files": [],
+  "context": "User runs doodle on a branch with an open PR but has never installed a tldraw rendering MCP. Neither mcp__tldraw__create_diagram nor mcp__tldraw-render__create_diagram is available.",
+  "expected_behavior": [
+    "Step 1 attempts ToolSearch('select:mcp__tldraw__create_diagram') followed by ToolSearch('select:mcp__tldraw-render__create_diagram')",
+    "Detects that neither is available and aborts before running any gh api or rg data-gathering",
+    "Prints the install hint from the command doc: `claude mcp add --scope user --transport stdio tldraw -- npx -y tldraw-mcp` (or the tldraw-render alternative)",
+    "Does not fall through to freeform mode or attempt to call the MCP anyway, since pr mode requires a real renderer"
+  ],
+  "failure_modes": [
+    "Tries to call mcp__tldraw__create_diagram despite the schema not being loaded, producing an InputValidationError",
+    "Silently skips rendering and claims success with no image path",
+    "Proceeds to `gh api` and `gh pr diff` work before discovering the MCP is missing, wasting time"
+  ]
+}
