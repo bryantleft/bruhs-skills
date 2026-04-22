@@ -6,6 +6,19 @@ Universal principles for writing code where types serve as the primary documenta
 - `cook` - Type-first design when building features
 - `slop` - Primary lens for detecting slop (types are the #1 signal)
 
+## Contents
+
+- [The Core Principle](#the-core-principle)
+- [The Type Signature Hierarchy](#the-type-signature-hierarchy)
+- [Pillar 1: Signatures as Documentation](#pillar-1-signatures-as-documentation)
+- [Pillar 2: Explicit Error Handling](#pillar-2-explicit-error-handling)
+- [Pillar 3: Immutability by Default](#pillar-3-immutability-by-default)
+- [Pillar 4: Type Safety Over Convenience](#pillar-4-type-safety-over-convenience)
+- [Pillar 5: Functions as Contracts](#pillar-5-functions-as-contracts)
+- [Quick Reference](#quick-reference)
+- [TypeScript Libraries](#typescript-libraries)
+- [References](#references)
+
 ---
 
 ## The Core Principle

@@ -1,10 +1,20 @@
 ---
-description: Claim an existing project for bruhs
+description: Initialize bruhs config for an existing project — auto-detect stack, wire up Linear, detect installed MCPs, write .claude/bruhs.json. Use when adopting bruhs on a repo that wasn't created via /bruhs:spawn.
 ---
 
 # claim - Claim Existing Project
 
 Set up `.claude/bruhs.json` for an existing project. Use this when you have a project that wasn't created with `/bruhs:spawn`.
+
+## Contents
+
+- [Invocation](#invocation)
+- [Prerequisites](#prerequisites)
+- [Workflow](#workflow)
+- [Stack Detection Reference](#stack-detection-reference)
+- [Examples](#examples)
+
+---
 
 ## Invocation
 

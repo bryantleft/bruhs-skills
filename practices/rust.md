@@ -1,12 +1,27 @@
 # Rust Best Practices
 
-Idiomatic modern Rust (2024 edition, Rust 1.86+). Organized around Rust's mental model: ownership first, errors as values, types as proofs.
+Idiomatic modern Rust (2024 edition). Organized around Rust's mental model: ownership first, errors as values, types as proofs.
 
 **Used by:**
 - `cook` - Patterns to follow when building features
 - `slop` - Patterns to detect and fix during cleanup
 
 **Stack triggers:** `framework: rust|leptos|axum|tauri|gpui` or `language: rust` in `bruhs.json`.
+
+## Contents
+
+- [Mental Model](#mental-model)
+- [Pillar 1: Ownership & Borrowing](#pillar-1-ownership--borrowing)
+- [Pillar 2: Errors as Values](#pillar-2-errors-as-values)
+- [Pillar 3: Type System Discipline](#pillar-3-type-system-discipline)
+- [Pillar 4: Iterator-First](#pillar-4-iterator-first)
+- [Pillar 5: Async Boundaries](#pillar-5-async-boundaries)
+- [Pillar 6: Modules & Workspace](#pillar-6-modules--workspace)
+- [Pillar 7: Tooling Discipline](#pillar-7-tooling-discipline)
+- [Pillar 8: Comments & Docs](#pillar-8-comments--docs)
+- [Frameworks](#frameworks)
+- [Quick Reference Checklist](#quick-reference-checklist)
+- [Performance](#performance)
 
 ---
 
@@ -100,7 +115,7 @@ struct Point3 { x: f32, y: f32, z: f32 }  // 12 bytes
 struct User { id: u64, name: String }
 ```
 
-For full ownership patterns → `rust-references/ownership-and-borrowing.md`
+For full ownership patterns → `rust-ownership-and-borrowing.md`
 
 ---
 
@@ -192,7 +207,7 @@ pub fn fetch(url: &str) -> anyhow::Result<Data> { /* ... */ }
 pub fn fetch(url: &str) -> Result<Data, FetchError> { /* ... */ }
 ```
 
-For full error patterns → `rust-references/error-design.md`
+For full error patterns → `rust-error-design.md`
 
 ---
 
@@ -275,7 +290,7 @@ let conn = Connection::<Disconnected>::open("...")?;
 conn.send(b"data");  // works only if `open` returned Connected
 ```
 
-For full type discipline → `rust-references/type-state-and-newtypes.md`
+For full type discipline → `rust-type-state-and-newtypes.md`
 
 ---
 
@@ -400,7 +415,7 @@ async fn also_good(state: Arc<tokio::sync::Mutex<State>>) {
 }
 ```
 
-For full async patterns → `rust-references/async-patterns.md`
+For full async patterns → `rust-async-patterns.md`
 
 ---
 
@@ -554,9 +569,9 @@ When the project uses these frameworks, also load the corresponding reference:
 
 | Framework | Reference |
 |-----------|-----------|
-| **tokio**, async runtimes | `rust-references/async-patterns.md` |
-| **leptos** (web) | `rust-references/leptos-patterns.md` |
-| **gpui** (desktop UI) | `rust-references/gpui-patterns.md` |
+| **tokio**, async runtimes | `rust-async-patterns.md` |
+| **leptos** (web) | `rust-leptos-patterns.md` |
+| **gpui** (desktop UI) | `rust-gpui-patterns.md` |
 
 ---
 

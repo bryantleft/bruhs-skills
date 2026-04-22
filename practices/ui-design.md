@@ -6,6 +6,14 @@ Integrates [pbakaus/impeccable](https://github.com/pbakaus/impeccable) skills in
 - `cook` - Invoked automatically when building UI features
 - `slop` - Can audit UI quality
 
+## Contents
+
+- [When to Apply](#when-to-apply)
+- [Skill Categories](#skill-categories)
+- [Cook Integration](#cook-integration)
+- [Skill Selection Quick Reference](#skill-selection-quick-reference)
+- [Quick Checklist](#quick-checklist)
+
 ---
 
 ## When to Apply

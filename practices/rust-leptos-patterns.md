@@ -4,6 +4,21 @@ Best practices for Leptos 0.8.x. Loaded by `cook` and `slop` when `leptos` is in
 
 > Leptos is a fine-grained reactive framework: signals are the primitives, components are functions that wire them up, the `view!` macro produces real DOM nodes that update only the leaf they depend on. Reactivity is *automatic* — your job is to make it cheap.
 
+## Contents
+
+- [Reactive Primitives](#reactive-primitives)
+- [Components](#components)
+- [Async Data: `Resource`](#async-data-resource)
+- [Action: Side-Effecting Calls](#action-side-effecting-calls)
+- [Conditional & List Rendering](#conditional--list-rendering)
+- [Ownership: The Leptos Trap](#ownership-the-leptos-trap)
+- [Effect Loops (Common Trap)](#effect-loops-common-trap)
+- [Context for App-Wide State](#context-for-app-wide-state)
+- [CSR vs SSR Differences](#csr-vs-ssr-differences)
+- [`view!` Macro Discipline](#view-macro-discipline)
+- [Performance](#performance)
+- [Quick Checklist](#quick-checklist)
+
 ---
 
 ## Reactive Primitives

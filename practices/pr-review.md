@@ -8,6 +8,26 @@ How to author and review PRs. Distilled from Google's [eng-practices](https://go
 - `cook` — informs final pre-PR self-review
 - `slop` — review-specific anti-patterns
 
+## Contents
+
+- [Core Principle](#core-principle)
+- [PR Size: The Single Strongest Predictor](#pr-size-the-single-strongest-predictor)
+- [What to Look For (in priority order)](#what-to-look-for-in-priority-order)
+- [Conventional Comments — The Format](#conventional-comments--the-format)
+- [Reviewer Etiquette](#reviewer-etiquette)
+- [Author Etiquette](#author-etiquette)
+- [What](#what)
+- [Why](#why)
+- [How](#how)
+- [Test plan](#test-plan)
+- [Screenshots / diagrams](#screenshots--diagrams)
+- [Disagreement](#disagreement)
+- [Automation](#automation)
+- [Anti-Patterns to Detect](#anti-patterns-to-detect)
+- [Review for Different Change Types](#review-for-different-change-types)
+- [Quick Checklist](#quick-checklist)
+- [References](#references)
+
 ---
 
 ## Core Principle

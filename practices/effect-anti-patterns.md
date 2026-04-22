@@ -2,6 +2,26 @@
 
 These patterns are **never acceptable** in Effect-TS code. Each is listed with rationale and the correct alternative.
 
+## Contents
+
+- [FORBIDDEN: Effect.runSync/runPromise Inside Services](#forbidden-effectrunsyncrunpromise-inside-services)
+- [FORBIDDEN: throw Inside Effect.gen](#forbidden-throw-inside-effectgen)
+- [FORBIDDEN: catchAll Losing Type Information](#forbidden-catchall-losing-type-information)
+- [FORBIDDEN: any/unknown Casts](#forbidden-anyunknown-casts)
+- [FORBIDDEN: Promise in Service Signatures](#forbidden-promise-in-service-signatures)
+- [FORBIDDEN: console.log](#forbidden-consolelog)
+- [FORBIDDEN: process.env Directly](#forbidden-processenv-directly)
+- [FORBIDDEN: null/undefined in Domain Types](#forbidden-nullundefined-in-domain-types)
+- [FORBIDDEN: Option.getOrThrow](#forbidden-optiongetorthrow)
+- [FORBIDDEN: Context.Tag for Business Services](#forbidden-contexttag-for-business-services)
+- [FORBIDDEN: Ignoring Errors with orDie](#forbidden-ignoring-errors-with-ordie)
+- [FORBIDDEN: mapError Instead of catchTag](#forbidden-maperror-instead-of-catchtag)
+- [FORBIDDEN: Mixing Effect and Promise Chains](#forbidden-mixing-effect-and-promise-chains)
+- [FORBIDDEN: Mutable State Without Ref](#forbidden-mutable-state-without-ref)
+- [FORBIDDEN: Using Date.now() or new Date() Directly](#forbidden-using-datenow-or-new-date-directly)
+
+---
+
 ## FORBIDDEN: Effect.runSync/runPromise Inside Services
 
 ```typescript

@@ -1,5 +1,5 @@
 ---
-description: Address PR review comments and optionally merge
+description: Address PR review comments with isolated subagents and local validation — analyze each thread, propose fixes, verify against project typecheck/lint/tests, apply, commit, optionally merge. Use when responding to PR feedback or checking merge readiness.
 ---
 
 # peep - Address PR Review Comments
@@ -7,6 +7,20 @@ description: Address PR review comments and optionally merge
 Review and address PR feedback, push fixes, and optionally merge when ready.
 
 Uses **isolated subagents** per comment thread to prevent context bleed. Each comment is analyzed independently — findings from one thread never influence analysis of another.
+
+## Contents
+
+- [Best Practices](#best-practices)
+- [Invocation](#invocation)
+- [Prerequisites](#prerequisites)
+- [Architecture: Subagent Review Model](#architecture-subagent-review-model)
+- [Local Validation (Key Principle)](#local-validation-key-principle)
+- [Workflow](#workflow)
+- [Output Summary](#output-summary)
+- [Design Decisions (from BugBot + Code Review Research)](#design-decisions-from-bugbot--code-review-research)
+- [Tips](#tips)
+
+---
 
 ## Best Practices
 
@@ -31,11 +45,12 @@ Uses **isolated subagents** per comment thread to prevent context bleed. Each co
 Main Agent (orchestrator)
 ├── Fetches PR metadata + comment threads
 ├── Spawns N subagents in parallel (one per comment thread)
-│   ├── Subagent 1: reads file, analyzes comment, proposes fix
-│   ├── Subagent 2: reads file, analyzes comment, proposes fix
-│   └── Subagent N: reads file, analyzes comment, proposes fix
-├── Aggregates results, filters by confidence
-├── Presents to user for approval
+│   ├── Subagent 1: reads file, analyzes comment, proposes fix, VALIDATES LOCALLY
+│   ├── Subagent 2: reads file, analyzes comment, proposes fix, VALIDATES LOCALLY
+│   └── Subagent N: reads file, analyzes comment, proposes fix, VALIDATES LOCALLY
+├── Aggregates results, filters by confidence + validation status
+├── Presents to user for approval (showing which fixes verified locally)
+├── Runs full validation suite before commit
 └── Applies approved fixes, commits, pushes
 ```
 
@@ -44,6 +59,23 @@ Main Agent (orchestrator)
 - **Parallel execution**: All comments analyzed concurrently, not sequentially.
 - **Dynamic context discovery**: Each subagent reads what it needs (the file, imports, related types) instead of front-loading everything into one prompt.
 - **Aggressive analysis + natural filtering**: Subagents investigate thoroughly. Their tool use (reading files, checking types) naturally filters false positives — no need for conservative prompting.
+- **Local validation per fix**: Each subagent runs the project's real typecheck/lint/scoped tests against its proposed fix and reverts. Static reasoning is not enough — a fix that "looks right" can still break the build. Only fixes that pass local checks are surfaced as high-confidence.
+
+## Local Validation (Key Principle)
+
+**Every proposed fix must be verified against the project's actual tooling before it is presented to the user as valid.** Subagents don't just read code and reason — they apply the fix in-place, run scoped checks (typecheck, linter, affected tests), and revert, leaving the working tree exactly as they found it.
+
+Validation commands are detected per-project:
+- **TypeScript/JS**: `npm run typecheck` / `tsc --noEmit`, `eslint <file>` / `biome check <file>`, `vitest run <file>` / `jest <file>`
+- **Rust**: `cargo check`, `cargo clippy`, `cargo test <module>`
+- **Python**: `ruff check <file>`, `mypy <file>`, `pytest <file>`
+- **Go**: `go vet ./...`, `go build ./...`, `go test <package>`
+
+Safety rules enforced by subagents:
+1. Before modifying, check `git status --porcelain <file>` — if the file has uncommitted changes, skip validation with reason `dirty-overlap`.
+2. Always revert via the reverse Edit (swap `old_string`/`new_string`) after validation runs — pass or fail.
+3. If revert fails, stop and report `dirty-cleanup-needed` so the orchestrator can alert the user.
+4. Never run destructive commands (no `git reset`, no `rm`, no `git clean`).
 
 ## Workflow
 
@@ -206,6 +238,19 @@ Your job is to find bugs, security issues, logic errors, and performance problem
 4. Missing edge cases (empty input, null, overflow)
 5. API contract violations (breaking backward compat)
 
+## Validate Every Proposed Fix Locally (REQUIRED)
+
+For each issue where you propose a fix, before emitting the final report:
+
+1. Detect the project's validation commands (package.json scripts, tsc, eslint/biome, cargo, ruff/mypy/pytest, go vet/test) — prefer file-scoped invocations.
+2. Check \`git status --porcelain ${file}\` — if dirty, mark \`VALIDATION_STATUS: skipped\` (reason: dirty-overlap) and do not apply.
+3. Apply the fix via Edit.
+4. Run scoped checks (typecheck + linter + colocated test if present). Capture results.
+5. Revert via Edit with old_string/new_string swapped. Confirm \`git diff --stat ${file}\` is empty.
+6. If revert fails, set \`VALIDATION_STATUS: dirty-cleanup-needed\` and STOP — do not process further issues for this file.
+
+Downgrade CONFIDENCE by 1 for any fix where validation failed. Never run destructive git commands.
+
 ## Output Format (STRICT)
 
 For each issue found, output:
@@ -220,6 +265,12 @@ FIX_OLD_STRING: |
   <exact string to replace>
 FIX_NEW_STRING: |
   <replacement string>
+VALIDATION_STATUS: <passed|failed|skipped|dirty-cleanup-needed>
+VALIDATION_COMMANDS: |
+  <commands run, one per line>
+VALIDATION_OUTPUT: |
+  <"all clean" or last ~20 lines of first failure, or skip reason>
+VALIDATION_SKIP_REASON: <reason|N/A>
 
 If no issues found, output:
 NO_ISSUES_FOUND: true
@@ -309,8 +360,38 @@ You are analyzing a single PR review comment in isolation. Do NOT search for or 
    - \`question\`: Needs explanation ("why", "what does", "can you explain", "?")
    - \`approval\`: Positive feedback ("lgtm", "looks good", "nice", ":+1:") — no action needed
 4. **Assess confidence** (1-5) that your categorization and proposed action are correct.
-5. **If must-fix or suggestion**: Propose a concrete fix. Show the exact \`old_string\` and \`new_string\` for an Edit tool call. Verify your fix compiles by checking types and imports.
-6. **If question**: Draft a response that explains the reasoning, referencing the code context you discovered.
+5. **If must-fix or suggestion**: Propose a concrete fix. Show the exact \`old_string\` and \`new_string\` for an Edit tool call.
+6. **Validate the fix locally** (see next section) — static reasoning alone is not sufficient.
+7. **If question**: Draft a response that explains the reasoning, referencing the code context you discovered.
+
+## Local Validation (REQUIRED for every fix)
+
+Do this before reporting. If you propose a fix without running validation, the orchestrator treats it as unverified and lowers its confidence.
+
+1. **Detect validation commands** by reading project config. Prefer project scripts when defined:
+   - package.json → \`scripts\` for \`typecheck\`, \`lint\`, \`test\`, \`check\`
+   - tsconfig.json → run \`npx tsc --noEmit\` if no project script
+   - biome.json / .eslintrc* → \`npx biome check <file>\` / \`npx eslint <file>\`
+   - Cargo.toml → \`cargo check\`, \`cargo clippy -- -D warnings\`, \`cargo test <module>\`
+   - pyproject.toml → \`ruff check <file>\`, \`mypy <file>\`, \`pytest <file>\`
+   - go.mod → \`go vet ./...\`, \`go build ./...\`, \`go test <pkg>\`
+   Prefer file-scoped invocations over whole-repo where the tool supports it, for speed.
+
+2. **Check for working-tree conflicts**: run \`git status --porcelain ${thread.path}\`. If the file is already modified, skip validation and set \`VALIDATION_STATUS: skipped\` with reason \`dirty-overlap\`. Do not apply your fix.
+
+3. **Apply the fix** using the Edit tool with your \`FIX_OLD_STRING\` / \`FIX_NEW_STRING\`.
+
+4. **Run the detected checks**. Capture exit codes and the last ~20 lines of output for each. Pick the minimum useful set — typecheck + linter + the test file colocated with the changed file (if one exists). Avoid full-suite runs unless nothing smaller is available.
+
+5. **Revert the fix** by calling Edit with \`old_string\` and \`new_string\` swapped — put the working tree back exactly as you found it. Confirm with \`git diff --stat ${thread.path}\` showing no changes.
+
+6. **Report the outcome**:
+   - All commands exited 0 → \`VALIDATION_STATUS: passed\`
+   - Any command failed → \`VALIDATION_STATUS: failed\` (and downgrade \`CONFIDENCE\` by 1)
+   - Could not run meaningful checks (no tools detected, dirty tree, etc.) → \`VALIDATION_STATUS: skipped\` with a reason
+   - Revert failed → \`VALIDATION_STATUS: dirty-cleanup-needed\` and STOP. Do not continue. The orchestrator will surface this to the user.
+
+**Never** use destructive git commands (reset, clean, checkout --). If revert via Edit doesn't work, report \`dirty-cleanup-needed\` and let the orchestrator handle it.
 
 ## Output Format (STRICT)
 
@@ -327,6 +408,12 @@ FIX_NEW_STRING: |
 RESPONSE_DRAFT: |
   <suggested reply to post on the thread, or "N/A" if not responding>
 REASONING: <why this fix/response is correct, what you verified>
+VALIDATION_STATUS: <passed|failed|skipped|dirty-cleanup-needed|n/a>
+VALIDATION_COMMANDS: |
+  <one shell command per line, in the order run, or "N/A">
+VALIDATION_OUTPUT: |
+  <condensed output: "all clean" on success, or last ~20 lines of the first failure, or skip reason>
+VALIDATION_SKIP_REASON: <dirty-overlap|no-tools-detected|non-code-change|other: ...|N/A>
 `
 })
 ```
@@ -337,10 +424,11 @@ Collect all subagent results. Filter and sort:
 
 1. **Drop approval-category results** (no action needed)
 2. **Sort by**: must-fix first, then suggestion, then question
-3. **Within each category**: sort by confidence (highest first)
+3. **Within each category**: sort by confidence (highest first), with validation-passed items above validation-failed/skipped at the same confidence
 4. **Flag low-confidence items** (confidence <= 2) for manual review
+5. **Surface any `dirty-cleanup-needed` subagents immediately** and halt the flow — the working tree may be inconsistent. Show the user which file is affected and let them run `git status` / `git diff` before continuing.
 
-Display summary:
+Display summary (include validation status per thread):
 
 ```
 PR #42: Add leaderboard to game page
@@ -351,13 +439,15 @@ Review Status:
 - @reviewer2: Approved
 
 Comments analyzed by isolated subagents (4 threads, 0 context bleed):
-┌─────────────┬──────┬───────────┬─────────────────────────────────────┐
-│ Category    │ Count│ Confidence│ Files                               │
-├─────────────┼──────┼───────────┼─────────────────────────────────────┤
-│ must-fix    │ 1    │ 5/5       │ lib/db/queries.ts                   │
-│ suggestion  │ 2    │ 4/5, 3/5  │ components/game/leaderboard-card.tsx│
-│ question    │ 1    │ 4/5       │ lib/hooks/use-leaderboard.ts        │
-└─────────────┴──────┴───────────┴─────────────────────────────────────┘
+┌─────────────┬──────┬───────────┬──────────────┬─────────────────────────────────────┐
+│ Category    │ Count│ Confidence│ Validation   │ Files                               │
+├─────────────┼──────┼───────────┼──────────────┼─────────────────────────────────────┤
+│ must-fix    │ 1    │ 5/5       │ ✓ passed     │ lib/db/queries.ts                   │
+│ suggestion  │ 2    │ 4/5, 3/5  │ ✓ / ✗ failed │ components/game/leaderboard-card.tsx│
+│ question    │ 1    │ 4/5       │ n/a          │ lib/hooks/use-leaderboard.ts        │
+└─────────────┴──────┴───────────┴──────────────┴─────────────────────────────────────┘
+
+Legend: ✓ passed (fix verified locally) · ✗ failed (typecheck/lint/test broke) · ○ skipped (no validator / dirty file)
 ```
 
 Then use `AskUserQuestion`:
@@ -404,7 +494,24 @@ Subagent analysis:
   + return db.select().from(agentStats).orderBy(desc(agentStats.winRate)).limit(limit);
 
   Verified: desc import exists from drizzle-orm, agentStats.winRate column confirmed.
+
+  Local validation: ✓ passed
+    $ npx tsc --noEmit              → 0
+    $ npx biome check lib/db/queries.ts  → 0
+    $ npx vitest run lib/db/queries.test.ts  → 0 (3 passed)
 ```
+
+If validation failed, show the failing command and its tail:
+
+```
+  Local validation: ✗ failed
+    $ npx tsc --noEmit              → 2 (type errors)
+
+    lib/db/queries.ts:45:40 - error TS2345: Argument of type 'string' is not
+      assignable to parameter of type 'SQLWrapper | Column | ...'
+```
+
+A failing validation does NOT automatically drop the fix — the user may still want to apply it (e.g. the failure is a pre-existing issue the fix surfaced). But it is surfaced prominently and excluded from auto-apply.
 
 Then use `AskUserQuestion`:
 
@@ -579,18 +686,20 @@ AskUserQuestion({
 
 If the user selected "Auto-apply high confidence" in Step 4:
 
-1. Apply all fixes with confidence >= 4 automatically
-2. Show a summary of what was applied
-3. Present remaining low-confidence items for manual review
+1. Apply all fixes where **confidence >= 4 AND validation_status == passed** automatically
+2. Kick fixes with validation_status of `failed`, `skipped`, or `dirty-cleanup-needed` to manual review regardless of confidence — the user should see the evidence before the code lands
+3. Show a summary of what was applied
+4. Present remaining items for manual review
 
 ```
-Auto-applied (confidence >= 4):
-✓ [must-fix] lib/db/queries.ts:45 - Added orderBy clause (5/5)
-✓ [suggestion] components/game/leaderboard-card.tsx:23 - Added constant (4/5)
+Auto-applied (confidence >= 4, validation passed):
+✓ [must-fix] lib/db/queries.ts:45 - Added orderBy clause (5/5, ✓ tsc + biome + vitest)
+✓ [suggestion] components/game/leaderboard-card.tsx:23 - Added constant (4/5, ✓ tsc + biome)
 
-Needs manual review (confidence < 4):
+Needs manual review:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-[1/1] suggestion | components/game/leaderboard-card.tsx:45 | confidence: 2/5
+[1/2] suggestion | components/game/leaderboard-card.tsx:45 | confidence: 2/5 | validation: ✓ passed
+[2/2] must-fix   | lib/api/handler.ts:88 | confidence: 5/5 | validation: ✗ failed (tsc)
 ...
 ```
 
@@ -602,6 +711,35 @@ After addressing all comments:
 # Check for changes
 git status
 git diff
+```
+
+**Before committing, run the full validation suite once.** Per-fix validation catches each fix in isolation, but not cross-file interactions (e.g. two fixes that separately pass tsc but together introduce a type conflict). Run the project's standard CI-equivalent commands:
+
+```bash
+# Detect & run — examples; use what the project defines
+npm run typecheck && npm run lint && npm test
+# or
+cargo check && cargo clippy -- -D warnings && cargo test
+# or
+go vet ./... && go test ./...
+```
+
+If full-suite validation fails, surface the failure and ask the user how to proceed:
+
+```javascript
+AskUserQuestion({
+  questions: [{
+    question: "Full validation failed after applying fixes. What now?",
+    header: "Validation failed",
+    multiSelect: false,
+    options: [
+      { label: "Show me the failure", description: "Print the failing command output" },
+      { label: "Revert last fix", description: "Un-apply the most recently applied fix and re-run" },
+      { label: "Revert all fixes", description: "Restore the working tree to pre-peep state" },
+      { label: "Commit anyway", description: "I'll fix the failure in a follow-up" },
+    ]
+  }]
+})
 ```
 
 If changes were made:

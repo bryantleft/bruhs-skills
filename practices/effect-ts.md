@@ -8,6 +8,22 @@ Opinionated patterns for Effect-TS codebases, optimizing for type safety, testab
 
 **Applies when:** `bruhs.json` has `effect` in `stack.libraries`
 
+## Contents
+
+- [Quick Reference: Critical Rules](#quick-reference-critical-rules)
+- [Service Definition Pattern](#service-definition-pattern)
+- [Error Definition Pattern](#error-definition-pattern)
+- [Schema & Branded Types Pattern](#schema--branded-types-pattern)
+- [Function Pattern with Effect.fn](#function-pattern-with-effectfn)
+- [Layer Composition](#layer-composition)
+- [Option Handling](#option-handling)
+- [Observability](#observability)
+- [Anti-Patterns (Forbidden)](#anti-patterns-forbidden)
+- [Slop Detection Checklist](#slop-detection-checklist)
+- [Performance](#performance)
+- [Detailed Reference Files](#detailed-reference-files)
+- [Resources](#resources)
+
 ---
 
 ## Quick Reference: Critical Rules
@@ -437,17 +453,17 @@ app.get("/", (req) => runtime.runPromise(program))
 
 ## Detailed Reference Files
 
-For in-depth patterns and examples, see the reference files in `effect-references/`:
+For in-depth patterns and examples, see the colocated reference files:
 
 | File | Description |
 |------|-------------|
-| `service-patterns.md` | Effect.Service, dependencies, testing |
-| `error-patterns.md` | Schema.TaggedError, error naming, catchTag |
-| `schema-patterns.md` | Branded types, transforms, unions |
-| `layer-patterns.md` | Layer composition, testing layers |
-| `anti-patterns.md` | Forbidden patterns with fixes |
-| `observability-patterns.md` | Logging, tracing, metrics |
-| `rpc-cluster-patterns.md` | RpcGroup, Workflow, ClusterCron |
+| `effect-service-patterns.md` | Effect.Service, dependencies, testing |
+| `effect-error-patterns.md` | Schema.TaggedError, error naming, catchTag |
+| `effect-schema-patterns.md` | Branded types, transforms, unions |
+| `effect-layer-patterns.md` | Layer composition, testing layers |
+| `effect-anti-patterns.md` | Forbidden patterns with fixes |
+| `effect-observability-patterns.md` | Logging, tracing, metrics |
+| `effect-rpc-cluster-patterns.md` | RpcGroup, Workflow, ClusterCron |
 | `effect-atom-patterns.md` | Frontend state with Effect Atom |
 
 ---

@@ -1,10 +1,20 @@
 ---
-description: Create new project OR add to monorepo
+description: Create a new project or add an app/package to a monorepo — select stack, scaffold via official CLIs, create Linear project, wire up GitHub Actions, write .claude/bruhs.json. Use when starting a greenfield project or adding to a pnpm/turbo monorepo.
 ---
 
 # spawn - Project Scaffolding
 
 Create a new project from scratch or add an app/package to an existing monorepo.
+
+## Contents
+
+- [Invocation](#invocation)
+- [Workflow](#workflow)
+- [Example: New Project](#example-new-project)
+- [Example: Add to Monorepo](#example-add-to-monorepo)
+- [Stack Reference](#stack-reference)
+
+---
 
 ## Invocation
 

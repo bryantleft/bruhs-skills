@@ -4,6 +4,18 @@ Deep reference for ownership decisions in Rust. Loaded by `cook` and `slop` when
 
 > Every value has exactly one owner. Borrows are temporary read or write loans. The borrow checker is your design partner — fight it once, learn the lesson, never fight it again.
 
+## Contents
+
+- [Function Signatures: The First Decision](#function-signatures-the-first-decision)
+- [Clone: When and Why](#clone-when-and-why)
+- [Cow — Clone on Write](#cow--clone-on-write)
+- [Copy: The 24-Byte Rule](#copy-the-24-byte-rule)
+- [Rc vs Arc vs Box](#rc-vs-arc-vs-box)
+- [Lifetimes: Keep Them Implicit](#lifetimes-keep-them-implicit)
+- [RAII: Drop Guards](#raii-drop-guards)
+- [Interior Mutability: Choose Carefully](#interior-mutability-choose-carefully)
+- [Quick Checklist](#quick-checklist)
+
 ---
 
 ## Function Signatures: The First Decision

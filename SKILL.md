@@ -1,13 +1,13 @@
 ---
 name: bruhs
-description: Opinionated development lifecycle - spawn projects, cook features, yeet to ship
+description: End-to-end development lifecycle for Claude Code — scaffold projects, plan and build features, create Linear tickets, open and review PRs, clean up after merge, audit codebases. Use when starting a project, implementing a feature, shipping code, addressing PR reviews, merging, or auditing code quality.
 ---
 
 # bruhs
 
 ## Index
 |commands|spawn,claim,cook,yeet,peep,dip,slop,doodle
-|practices|type-driven-design,_common,pr-review,typescript-react,typescript-hono,python,python-fastapi,effect-ts,rust,rust-references/*,ui-design
+|practices|type-driven-design,_common,pr-review,typescript-react,typescript-hono,python,python-fastapi,effect-ts,effect-*,rust,rust-*,ui-design
 |config|.claude/bruhs.json
 
 ## Commands Quick Reference
@@ -167,138 +167,26 @@ Per-stack performance patterns → `practices/<stack>.md` (Performance section i
 
 ---
 
-## Command Workflows
+## Command Details
 
-### cook - Plan + Build Feature
-```
-1. CONFIG: Check .claude/bruhs.json exists (offer /bruhs:claim if not)
-2. UNDERSTAND: Parse feature or fetch Linear ticket (TICKET-123 format)
-3. EXPLORE: Load project skills from bruhs.json, find-skills for new ones, code-explorer agents
-4. PLAN: Design 2-3 approaches → AskUserQuestion for selection
-5. SETUP: Stash unrelated changes if needed (git stash push -m "bruhs: ...")
-6. BUILD: TDD if test suite exists, else temp tests → cleanup after
-7. REVIEW: code-reviewer agents, browser verification for UI
-8. READY: "Run /bruhs:yeet to ship" (ticket context in memory for yeet)
-```
-Detail → `commands/cook.md`
+Each command's full workflow lives in its own file. Read the specific file when executing that command:
 
-### yeet - Ship Code
-```
-1. CONFIG: Check bruhs.json (git-only mode if missing)
-2. CHANGES: git status/diff - abort if none
-3. ANALYZE: Categorize (feat/fix/chore/refactor), generate title + summary
-4. LINEAR: Use ticketContext from cook OR create new ticket
-   - Tool: mcp__<mcpServer>__linear_create_issue
-   - Get branchName from issue.gitBranchName
-5. BRANCH: git switch -c <branchName>
-6. COMMIT: git add <files> && git commit (HEREDOC, "Fixes TICKET-ID")
-7. PUSH: git push -u origin <branchName>
-8. PR: gh pr create --title --body (Summary + Linear + Test plan)
-9. STATUS: Update Linear → "In Review"
-```
-Detail → `commands/yeet.md`
-
-### peep - Address PR Reviews
-```
-1. DETECT: Get PR from current branch, or arg (PR# or TICKET-ID)
-2. FETCH: gh api repos/.../pulls/.../comments
-3. CATEGORIZE: must-fix | suggestion | question
-4. ADDRESS: Interactive per comment (apply/respond/skip)
-5. COMMIT: Stage fixes, commit, push
-6. RE-REVIEW: Request if needed
-7. MERGE: When approved (squash/merge/rebase via AskUserQuestion)
-8. TRANSITION: Auto-run dip workflow after merge
-```
-Detail → `commands/peep.md`
-
-### dip - Post-Merge Cleanup
-```
-1. SWITCH: git switch <base-branch> (main/dev from config)
-2. PULL: git pull
-3. DELETE: git branch -d <feature-branch> && git push origin --delete
-4. RESTORE: git stash pop (if cook stashed changes)
-```
-Detail → `commands/dip.md`
-
-### doodle - Architecture Visualization
-```
-Modes: pr | module | deps | dependents | compare | map | freeform
-
-1. MODE: Resolve from arg, or AskUserQuestion if interactive
-2. MCP: Verify tldraw render MCP available (else print install hint, abort)
-3. GATHER: Mode-specific data (gh pr / git diff / rg imports / module discovery)
-4. SHAPES: Build tldraw shape JSON (frames=modules, geo=files, arrows=edges)
-   - Layout: layered (pr/compare/map), grid (module), radial (deps/dependents)
-   - Colors: green=added, yellow=modified, red=deleted, grey=unchanged
-5. RENDER: mcp__tldraw__create_diagram { shapes, format } → local image
-6. OUTPUT: --pr-comment | --gist | --commit | --out (defaults: pr→pr-comment, else local)
-```
-Detail → `commands/doodle.md`
-
-### spawn - Create Project
-```
-1. DETECT: Monorepo context (pnpm-workspace.yaml, turbo.json)
-2. SELECT: Structure → Type → Language → Framework → Stack (AskUserQuestion flow)
-3. SCAFFOLD: Official CLIs (pnpm create for TS projects)
-4. LINEAR: Create project + initial tickets
-5. GITHUB: Setup Actions with Blacksmith runner
-6. CONFIG: Create .claude/bruhs.json
-7. SKILLS: find-skills for relevant skills
-```
-Detail → `commands/spawn.md`
-
-### claim - Initialize Existing Project
-```
-1. DETECT: Auto-detect stack from files (package.json, framework configs)
-2. LINEAR: Configure team, project, labels (AskUserQuestion)
-3. MCPS: Detect installed MCPs from ~/.claude.json
-4. WRITE: Create .claude/bruhs.json
-```
-Detail → `commands/claim.md`
-
-### slop - Codebase Analysis
-```
-Priority: Types(1) → Security(2) → Performance(3) → Errors(4) → Architecture(5) → Immutability(6) → Style(7)
-
-1. CONTEXT: Load stack from bruhs.json
-2. STATIC: Run tsc, security scan, dead code detection
-3. ANALYZE: Each file against Type-Driven Design checklist
-4. REPORT: Severity-ranked issues
-5. FIX: Interactive (--fix for auto-fix safe issues)
-6. VERIFY: tsc, lint, tests
-
-Severity: relaxed | balanced | nitpicky (default) | brutal
-```
-Detail → `commands/slop.md`
+| Command | File |
+|---|---|
+| cook  | `commands/cook.md` |
+| yeet  | `commands/yeet.md` |
+| peep  | `commands/peep.md` |
+| dip   | `commands/dip.md` |
+| spawn | `commands/spawn.md` |
+| claim | `commands/claim.md` |
+| slop  | `commands/slop.md` |
+| doodle | `commands/doodle.md` |
 
 ---
 
 ## Interactive Menu
 
-When `/bruhs` invoked without arguments:
-
-```javascript
-AskUserQuestion({
-  questions: [{
-    question: "What do you want to do?",
-    header: "Command",
-    multiSelect: false,
-    options: [
-      { label: "spawn", description: "Create new project or add to monorepo" },
-      { label: "claim", description: "Claim existing project for bruhs" },
-      { label: "cook", description: "Plan + Build a feature end-to-end" },
-      { label: "yeet", description: "Ship: Linear ticket → Branch → Commit → PR" },
-      { label: "peep", description: "Address PR review comments and merge" },
-      { label: "doodle", description: "Render architecture diagrams (PR, module, deps, compare, map, freeform)" },
-      { label: "dip", description: "Clean up after merge and switch to base branch" },
-    ]
-  }]
-})
-```
-
-Note: `slop` excluded from menu (specialized tool - invoke directly with `/bruhs:slop`)
-
-After selection, execute the corresponding workflow above. Only read detail files for edge cases.
+When `/bruhs` is invoked without arguments, present the command list via `AskUserQuestion` and route to the selected command's file. Options: spawn, claim, cook, yeet, peep, doodle, dip. `slop` is intentionally excluded from the menu — invoke directly with `/bruhs:slop`.
 
 ---
 

@@ -1,6 +1,6 @@
 # Python Best Practices
 
-Modern Python (3.12+ targeting 3.13). Reflects the 2026 tooling consolidation around Astral's stack (uv + ruff + ty) and the maturation of typed Python. Cribbed from the Python core docs, [Hynek Schlawack](https://hynek.me/articles/), [Raymond Hettinger](https://rhettinger.github.io/), [Pydantic](https://docs.pydantic.dev/) and [FastAPI](https://fastapi.tiangolo.com/) docs, and the [PEP](https://peps.python.org/) standards.
+Modern Python (3.12+). Defaults around Astral's tooling stack (uv + ruff + ty) and typed Python. Cribbed from the Python core docs, [Hynek Schlawack](https://hynek.me/articles/), [Raymond Hettinger](https://rhettinger.github.io/), [Pydantic](https://docs.pydantic.dev/) and [FastAPI](https://fastapi.tiangolo.com/) docs, and the [PEP](https://peps.python.org/) standards.
 
 **Used by:**
 - `cook` — patterns to follow when building Python features
@@ -8,9 +8,24 @@ Modern Python (3.12+ targeting 3.13). Reflects the 2026 tooling consolidation ar
 
 **Stack triggers:** `language: python` or any Python framework (`fastapi`, `django`, `flask`, etc.) in `bruhs.json`.
 
+## Contents
+
+- [The Astral Tooling Stack](#the-astral-tooling-stack)
+- [Pillar 1: Types Are Mandatory](#pillar-1-types-are-mandatory)
+- [Pillar 2: Data Classes / Pydantic / attrs](#pillar-2-data-classes--pydantic--attrs)
+- [Pillar 3: Errors](#pillar-3-errors)
+- [Pillar 4: Async](#pillar-4-async)
+- [Pillar 5: Idiomatic Python](#pillar-5-idiomatic-python)
+- [Pillar 6: Testing (pytest)](#pillar-6-testing-pytest)
+- [Pillar 7: Project Structure](#pillar-7-project-structure)
+- [Pillar 8: Tooling Discipline](#pillar-8-tooling-discipline)
+- [Quick Reference](#quick-reference)
+- [Performance](#performance)
+- [References](#references)
+
 ---
 
-## The 2026 Tooling Stack
+## The Astral Tooling Stack
 
 Three tools from one company (Astral) replace the old fragmented chain:
 

@@ -1,10 +1,24 @@
 ---
-description: Ship workflow - Linear ticket → Branch → Commit → PR
+description: Ship staged work — categorize the diff, create or reuse a Linear ticket, checkout a branch, commit, push, open a PR via gh, update Linear to In Review. Use when ready to ship changes, open a PR, or turn a WIP into a ticketed branch.
 ---
 
 # yeet - Ship Workflow
 
 Ship code that's ready to go. Creates Linear ticket, commits, pushes, and opens PR.
+
+## Contents
+
+- [Invocation](#invocation)
+- [Best Practices](#best-practices)
+- [Prerequisites](#prerequisites)
+- [Workflow](#workflow)
+- [Configuration](#configuration)
+- [Git-Only Mode](#git-only-mode)
+- [Examples](#examples)
+- [Git Best Practices](#git-best-practices)
+- [Tips](#tips)
+
+---
 
 ## Invocation
 
@@ -207,6 +221,50 @@ If Linear not available, generate branch name:
 # Format: <type>/<short-description>
 git switch -c feat/add-leaderboard
 ```
+
+### Step 5.5: Validate Before Shipping
+
+Before committing, run the project's verification suite. Broken code must not end up in a Linear ticket or PR.
+
+```bash
+bash scripts/validate_pr_ready.sh
+```
+
+`scripts/validate_pr_ready.sh` lives at the plugin's scripts directory and runs the project's typecheck + lint + tests in one shot.
+
+**Fallback if `scripts/validate_pr_ready.sh` is not present** — auto-detect the toolchain and run the equivalents inline:
+
+- **Node / TypeScript**: `npm run typecheck` (or `tsc --noEmit`), `npm run lint`, `npm test` — substitute `pnpm` / `yarn` / `bun` per the project's lockfile.
+- **Rust**: `cargo check`, `cargo clippy -- -D warnings`, `cargo test`.
+- **Python**: `ruff check .`, `mypy .` (or `ty check` / `pyright`), `pytest`.
+- **Go**: `go vet ./...`, `go test ./...`.
+
+**Interpret the output:**
+
+- **All passed** → continue to Step 6 silently.
+- **Anything failed** → STOP. Do not commit. Use `AskUserQuestion`:
+
+```javascript
+AskUserQuestion({
+  questions: [{
+    question: "Validation failed. How do you want to proceed?",
+    header: "Validation",
+    multiSelect: false,
+    options: [
+      { label: "Show me the failure output", description: "Print the failing typecheck/lint/test output" },
+      { label: "Fix the issue now", description: "Pause here — iterate on the fix, then re-run validation" },
+      { label: "Ship anyway (not recommended)", description: "Proceed with commit + PR; unvalidated areas will be flagged in the PR body" },
+      { label: "Abort", description: "Stop the ship workflow entirely" },
+    ]
+  }]
+})
+```
+
+**Rules:**
+
+- Never pass `--no-verify` to `git commit` or `git push` to bypass hooks.
+- Never skip this step unless the user explicitly chose "Ship anyway (not recommended)".
+- If the user chose "Ship anyway", append a note to the PR body's **Test plan** section in Step 8 flagging which checks failed and which areas are unvalidated — e.g. `- [ ] ⚠ Shipped with failing typecheck in <file> — reviewer please verify`.
 
 ### Step 6: Stage and Commit
 

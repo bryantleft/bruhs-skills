@@ -4,6 +4,21 @@ Tokio-based async Rust patterns. Loaded by `cook` and `slop` when `tokio`, `asyn
 
 > Async functions are colored. Spawned tasks need `Send + 'static`. The runtime can't tell sync code from async — *you* have to keep blocking calls out of `async fn`.
 
+## Contents
+
+- [The Bounds That Bite](#the-bounds-that-bite)
+- [Never Block in `async fn`](#never-block-in-async-fn)
+- [Locks Across `.await`](#locks-across-await)
+- [Spawning: `spawn`, `JoinSet`, `JoinHandle`](#spawning-spawn-joinset-joinhandle)
+- [Cancellation](#cancellation)
+- [Channels: Picking the Right One](#channels-picking-the-right-one)
+- [`async fn` in Traits (Stable since Rust 1.75)](#async-fn-in-traits-stable-since-rust-175)
+- [Streams](#streams)
+- [`tokio::main` and Runtime Choice](#tokiomain-and-runtime-choice)
+- [Common Pitfalls](#common-pitfalls)
+- [Tracing in Async Code](#tracing-in-async-code)
+- [Quick Checklist](#quick-checklist)
+
 ---
 
 ## The Bounds That Bite

@@ -1,10 +1,31 @@
 ---
-description: Visualize code architecture as tldraw diagrams (PRs, modules, deps, comparisons, freeform)
+description: Render architecture as tldraw diagrams — PRs, modules, dependency graphs, before/after comparisons, module maps, freeform. Use when visualizing code structure, explaining a PR's scope, or diagramming dependencies.
 ---
 
 # doodle - Architecture Visualization
 
 Render architectural diagrams from your codebase: PR changes, module dependency graphs, file dependents/dependencies, branch comparisons, codebase maps, or freeform descriptions. Outputs tldraw diagrams as PNG/SVG. Optionally posts to PR comments, saves to disk, or commits to the repo.
+
+## Contents
+
+- [Invocation](#invocation)
+- [Prerequisites](#prerequisites)
+- [MCP Contract](#mcp-contract)
+- [Visual Vocabulary (shared across modes)](#visual-vocabulary-shared-across-modes)
+- [Mode: `pr`](#mode-pr)
+- [Mode: `module`](#mode-module)
+- [Mode: `deps`](#mode-deps)
+- [Mode: `dependents`](#mode-dependents)
+- [Mode: `compare`](#mode-compare)
+- [Mode: `map`](#mode-map)
+- [Mode: `freeform`](#mode-freeform)
+- [Workflow (shared across modes)](#workflow-shared-across-modes)
+- [Reusing across other commands](#reusing-across-other-commands)
+- [Edge Cases](#edge-cases)
+- [Config](#config)
+- [Failure modes](#failure-modes)
+
+---
 
 ## Invocation
 

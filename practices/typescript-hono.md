@@ -4,6 +4,23 @@ Hono is a small, fast, edge-native web framework. Built on Web Standards (`Reque
 
 Sources: official [Hono docs](https://hono.dev/docs), [Hono Best Practices guide](https://hono.dev/docs/guides/best-practices), [Hono RPC docs](https://hono.dev/docs/guides/rpc).
 
+## Contents
+
+- [Mental Model](#mental-model)
+- [Project Structure](#project-structure)
+- [Pillar 1: Keep the Chain Inline](#pillar-1-keep-the-chain-inline)
+- [Pillar 2: One `Hono()` Per Resource — Mounted](#pillar-2-one-hono-per-resource--mounted)
+- [Pillar 3: Typed Bindings and Variables](#pillar-3-typed-bindings-and-variables)
+- [Pillar 4: Validation with Zod](#pillar-4-validation-with-zod)
+- [Pillar 5: Typed Middleware](#pillar-5-typed-middleware)
+- [Pillar 6: RPC — End-to-End Type Safety Without Codegen](#pillar-6-rpc--end-to-end-type-safety-without-codegen)
+- [Pillar 7: Errors](#pillar-7-errors)
+- [Pillar 8: Edge-Native Discipline](#pillar-8-edge-native-discipline)
+- [Pillar 9: Testing](#pillar-9-testing)
+- [Pillar 10: Performance](#pillar-10-performance)
+- [Quick Reference](#quick-reference)
+- [References](#references)
+
 ---
 
 ## Mental Model

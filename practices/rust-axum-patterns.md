@@ -1,8 +1,25 @@
 # Axum Patterns
 
-Best practices for [Axum 0.8](https://docs.rs/axum) — Tokio's web framework. Loaded by `cook` and `slop` when `axum` appears in `Cargo.toml`. Builds on `practices/rust.md` and `practices/rust-references/async-patterns.md`.
+Best practices for [Axum 0.8](https://docs.rs/axum) — Tokio's web framework. Loaded by `cook` and `slop` when `axum` appears in `Cargo.toml`. Builds on `practices/rust.md` and `practices/rust-async-patterns.md`.
 
 Sources: [official axum docs](https://docs.rs/axum/latest/axum/), [tokio-rs/axum examples](https://github.com/tokio-rs/axum/tree/main/examples), and the Tower middleware ecosystem docs.
+
+## Contents
+
+- [Mental Model](#mental-model)
+- [Project Structure](#project-structure)
+- [Pillar 1: Application State via `State<T>`](#pillar-1-application-state-via-statet)
+- [Pillar 2: Errors Must Implement `IntoResponse`](#pillar-2-errors-must-implement-intoresponse)
+- [Pillar 3: Extractors — Custom Where Useful](#pillar-3-extractors--custom-where-useful)
+- [Pillar 4: Routing](#pillar-4-routing)
+- [Pillar 5: Middleware via Tower](#pillar-5-middleware-via-tower)
+- [Pillar 6: Validation](#pillar-6-validation)
+- [Pillar 7: Database — sqlx + connection pooling](#pillar-7-database--sqlx--connection-pooling)
+- [Pillar 8: Tracing & Observability](#pillar-8-tracing--observability)
+- [Pillar 9: Graceful Shutdown](#pillar-9-graceful-shutdown)
+- [Pillar 10: Testing](#pillar-10-testing)
+- [Quick Reference](#quick-reference)
+- [References](#references)
 
 ---
 
@@ -110,7 +127,7 @@ async fn get_user(
 ) -> Result<Json<User>, AppError> { /* ... */ }
 ```
 
-This is the **2026 idiom**. It keeps handlers honest about their dependencies and makes them trivially testable.
+This is the current idiom. It keeps handlers honest about their dependencies and makes them trivially testable.
 
 ---
 
@@ -581,7 +598,7 @@ async fn get_user_returns_200_for_existing_user() {
 - [ ] `Extension<T>` middleware when a custom extractor would be clearer
 - [ ] CORS `permissive()` in production
 - [ ] Heavy state cloned per request (`Arc` it)
-- [ ] Holding sync `Mutex` across `.await` (see `practices/rust-references/async-patterns.md`)
+- [ ] Holding sync `Mutex` across `.await` (see `practices/rust-async-patterns.md`)
 
 ### Testing
 - [ ] `tower::ServiceExt::oneshot` over spinning a real server

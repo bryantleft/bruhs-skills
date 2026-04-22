@@ -4,6 +4,17 @@ Encoding domain rules in the type system. Loaded by `cook` and `slop` when worki
 
 > The compiler is free labor. If a state can't be represented, it can't be reached. If a wrong argument can't be constructed, it can't be passed.
 
+## Contents
+
+- [Newtypes](#newtypes)
+- [Stdlib Invariant Types](#stdlib-invariant-types)
+- [Typestate Pattern](#typestate-pattern)
+- [Sealed Traits](#sealed-traits)
+- [Marker Traits](#marker-traits)
+- [`From` / `Into` / `TryFrom` / `TryInto`](#from--into--tryfrom--tryinto)
+- [`Default` and Builders](#default-and-builders)
+- [Quick Checklist](#quick-checklist)
+
 ---
 
 ## Newtypes

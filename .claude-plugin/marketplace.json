@@ -1,6 +1,6 @@
 {
   "name": "bruhs",
-  "description": "Opinionated development lifecycle - spawn projects, cook features, yeet to ship",
+  "description": "End-to-end development lifecycle: scaffold projects, plan and build features, create Linear tickets, open and review PRs, clean up after merge, audit codebases. Use when starting a project, implementing a feature, shipping code, addressing PR reviews, merging, or auditing code quality.",
   "owner": {
     "name": "Bryant Le",
     "email": "bryantleft@gmail.com"
@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "bruhs",
-      "description": "Opinionated development lifecycle - spawn projects, cook features, yeet to ship",
+      "description": "End-to-end development lifecycle: scaffold projects, plan and build features, create Linear tickets, open and review PRs, clean up after merge, audit codebases. Use when starting a project, implementing a feature, shipping code, addressing PR reviews, merging, or auditing code quality.",
       "version": "1.0.0",
       "source": "./",
       "author": {

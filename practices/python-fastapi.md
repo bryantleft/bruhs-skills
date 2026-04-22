@@ -4,6 +4,24 @@ FastAPI on Python 3.13+ with Pydantic v2, async SQLAlchemy 2.0, and modern depen
 
 Sources: official [FastAPI docs](https://fastapi.tiangolo.com/), [zhanymkanov/fastapi-best-practices](https://github.com/zhanymkanov/fastapi-best-practices) (a widely cited industry reference), and [SQLAlchemy 2.0 docs](https://docs.sqlalchemy.org/en/20/).
 
+## Contents
+
+- [Mental Model](#mental-model)
+- [Project Structure](#project-structure)
+- [Pillar 1: Routers, Not Decorators on `app`](#pillar-1-routers-not-decorators-on-app)
+- [Pillar 2: Schema Discipline](#pillar-2-schema-discipline)
+- [Pillar 3: Dependency Injection](#pillar-3-dependency-injection)
+- [Pillar 4: Async Database](#pillar-4-async-database)
+- [Pillar 5: Error Handling](#pillar-5-error-handling)
+- [Pillar 6: Settings via Pydantic](#pillar-6-settings-via-pydantic)
+- [Pillar 7: Background Tasks](#pillar-7-background-tasks)
+- [Pillar 8: Testing](#pillar-8-testing)
+- [Pillar 9: Observability](#pillar-9-observability)
+- [Pillar 10: Production Concerns](#pillar-10-production-concerns)
+- [Performance Defaults](#performance-defaults)
+- [Quick Reference](#quick-reference)
+- [References](#references)
+
 ---
 
 ## Mental Model
@@ -230,7 +248,7 @@ async def delete_user(user_id: int, _: AdminUser, db: DbSession) -> None:
     ...
 ```
 
-This is the **2026 idiom** — it scales beautifully and reads cleanly.
+This is the current idiom — it scales beautifully and reads cleanly.
 
 ---
 

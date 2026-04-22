@@ -6,6 +6,18 @@ Shared best practices for TypeScript/React stacks (Next.js, React Native, Tauri,
 - `cook` - Patterns to follow when building features
 - `slop` - Patterns to detect and fix during cleanup
 
+## Contents
+
+- [Core Principles](#core-principles)
+- [TypeScript Patterns](#typescript-patterns)
+- [Modern TypeScript Patterns (TS 5.4+ / 5.9)](#modern-typescript-patterns-ts-54--59)
+- [React Patterns](#react-patterns)
+- [Architecture Patterns](#architecture-patterns)
+- [Code Quality](#code-quality)
+- [Security](#security)
+- [Performance](#performance)
+- [Quick Reference](#quick-reference)
+
 ---
 
 ## Core Principles

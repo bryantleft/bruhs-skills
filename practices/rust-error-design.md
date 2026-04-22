@@ -4,6 +4,22 @@ How to design error types in Rust crates and binaries. Loaded by `cook` and `slo
 
 > Errors are values. They flow through `Result<T, E>` and propagate via `?`. Designing error types well costs little; doing it badly costs every caller.
 
+## Contents
+
+- [The Library/Binary Split](#the-librarybinary-split)
+- [Crate-Level Error Enums (`thiserror`)](#crate-level-error-enums-thiserror)
+- [Error Hierarchies](#error-hierarchies)
+- [Single-Variant Errors: Struct, Not Enum](#single-variant-errors-struct-not-enum)
+- [`#[from]` vs `#[source]`](#from-vs-source)
+- [The `?` Operator](#the--operator)
+- [Recovering vs Logging vs Transforming](#recovering-vs-logging-vs-transforming)
+- [`unwrap` / `expect` Policy](#unwrap--expect-policy)
+- [`panic!` vs `todo!` vs `unimplemented!` vs `unreachable!`](#panic-vs-todo-vs-unimplemented-vs-unreachable)
+- [Async Error Bounds](#async-error-bounds)
+- [Binary Error Handling (`anyhow`)](#binary-error-handling-anyhow)
+- [Testing Errors](#testing-errors)
+- [Quick Checklist](#quick-checklist)
+
 ---
 
 ## The Library/Binary Split

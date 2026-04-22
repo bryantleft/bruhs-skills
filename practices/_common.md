@@ -2,6 +2,19 @@
 
 Universal patterns that apply across all stacks.
 
+## Contents
+
+- [Naming Conventions](#naming-conventions)
+- [Code Organization](#code-organization)
+- [Error Handling](#error-handling)
+- [Git Practices](#git-practices)
+- [Comments](#comments)
+- [Testing](#testing)
+- [Dependencies](#dependencies)
+- [External Searches](#external-searches)
+- [Performance](#performance)
+- [Quick Reference](#quick-reference)
+
 ---
 
 ## Naming Conventions
@@ -406,7 +419,7 @@ WebSearch({ query: `Next.js app router documentation` })
 
 - Documentation and best practices evolve rapidly
 - Search results without date context may prioritize older, higher-ranked content
-- Framework versions change—what was best practice in 2024 may be outdated in 2026
+- Framework versions change — best practice drifts over time as APIs evolve
 - Libraries deprecate features and introduce breaking changes
 
 ### When to Include Date

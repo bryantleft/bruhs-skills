@@ -4,6 +4,20 @@ Best practices for GPUI (Zed's UI framework). Loaded by `cook` and `slop` when `
 
 > GPUI runs on a single foreground UI thread with a background executor for heavy work. State lives in `Entity<T>` handles. Updates are scoped through `Context<T>` and produce reactive notifications. Misuse causes panics, deadlocks, or retain cycles.
 
+## Contents
+
+- [The Mental Model](#the-mental-model)
+- [Creating Entities](#creating-entities)
+- [Reading and Updating](#reading-and-updating)
+- [Weak References — Always in Closures](#weak-references--always-in-closures)
+- [Async Tasks: Foreground vs Background](#async-tasks-foreground-vs-background)
+- [Task Lifecycle: Detach vs Hold](#task-lifecycle-detach-vs-hold)
+- [Subscriptions and Observations](#subscriptions-and-observations)
+- [Actions: Keyboard Shortcuts](#actions-keyboard-shortcuts)
+- [Rendering Discipline](#rendering-discipline)
+- [Common Mistakes](#common-mistakes)
+- [Quick Checklist](#quick-checklist)
+
 ---
 
 ## The Mental Model

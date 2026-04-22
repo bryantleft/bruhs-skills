@@ -1,10 +1,26 @@
 ---
-description: Deep codebase analysis and AI slop cleanup - acts as a nitpicky senior engineer
+description: Deep codebase audit — types, security, performance, errors, architecture — acting as a nitpicky senior engineer with severity levels (relaxed/balanced/nitpicky/brutal). Use when cleaning up AI-generated code, preparing for review, or auditing a module.
 ---
 
 # slop - Clean Up AI Slop
 
 Thoroughly analyze the entire codebase and clean up AI-generated code patterns. Acts as a local senior engineer with extreme attention to detail.
+
+## Contents
+
+- [Invocation](#invocation)
+- [Philosophy](#philosophy)
+- [Best Practices Reference](#best-practices-reference)
+- [The Priority Hierarchy](#the-priority-hierarchy)
+- [The Analysis Pillars](#the-analysis-pillars)
+- [AI Slop Patterns](#ai-slop-patterns)
+- [Workflow](#workflow)
+- [Configuration](#configuration)
+- [Examples](#examples)
+- [Tips](#tips)
+- [References](#references)
+
+---
 
 ## Invocation
 
@@ -37,7 +53,7 @@ Slop detects violations of the patterns defined in:
 - **`practices/python-fastapi.md`** - FastAPI specifics (loaded when `framework: fastapi`)
 - **`practices/effect-ts.md`** - Effect-TS specific patterns (loaded when `effect` in `stack.libraries`)
 - **`practices/rust.md`** - Idiomatic Rust patterns (loaded when `language: rust` or Rust framework in stack)
-- **`practices/rust-references/`** - Deep refs (ownership, errors, async, type-state, leptos, gpui, axum) — loaded conditionally
+- **`practices/rust-*.md`** - Deep Rust refs (`rust-ownership-and-borrowing`, `rust-error-design`, `rust-async-patterns`, `rust-type-state-and-newtypes`, `rust-leptos-patterns`, `rust-gpui-patterns`, `rust-axum-patterns`) — loaded conditionally
 
 **Read these files for the full pattern catalog.** The sections below summarize what slop detects.
 
@@ -721,21 +737,21 @@ if (['nextjs', 'next.js', 'react-native', 'tauri', 'electron'].includes(stack)) 
   // Load deep refs only for the frameworks/runtimes actually in use
   rustRefs = [];
   if (libs.includes('tokio') || libs.includes('async-std') || stack === 'axum') {
-    rustRefs.push(Read('practices/rust-references/async-patterns.md'));
+    rustRefs.push(Read('practices/rust-async-patterns.md'));
   }
   if (stack === 'leptos') {
-    rustRefs.push(Read('practices/rust-references/leptos-patterns.md'));
+    rustRefs.push(Read('practices/rust-leptos-patterns.md'));
   }
   if (stack === 'gpui') {
-    rustRefs.push(Read('practices/rust-references/gpui-patterns.md'));
+    rustRefs.push(Read('practices/rust-gpui-patterns.md'));
   }
   if (stack === 'axum') {
-    rustRefs.push(Read('practices/rust-references/axum-patterns.md'));
+    rustRefs.push(Read('practices/rust-axum-patterns.md'));
   }
   // Always-useful refs for Rust work
-  rustRefs.push(Read('practices/rust-references/ownership-and-borrowing.md'));
-  rustRefs.push(Read('practices/rust-references/error-design.md'));
-  rustRefs.push(Read('practices/rust-references/type-state-and-newtypes.md'));
+  rustRefs.push(Read('practices/rust-ownership-and-borrowing.md'));
+  rustRefs.push(Read('practices/rust-error-design.md'));
+  rustRefs.push(Read('practices/rust-type-state-and-newtypes.md'));
 }
 
 // Load Effect practices if stack uses Effect

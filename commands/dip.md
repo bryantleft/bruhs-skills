@@ -1,10 +1,21 @@
 ---
-description: Clean up after merge and switch to base branch
+description: Post-merge cleanup — switch to base branch, pull latest, delete the merged feature branch, restore any stash. Use right after a PR merges or when transitioning off a shipped branch.
 ---
 
 # dip - Clean Up After Merge
 
 Clean up your feature branch after merging and switch back to the base branch to start fresh.
+
+## Contents
+
+- [Invocation](#invocation)
+- [Prerequisites](#prerequisites)
+- [Workflow](#workflow)
+- [Examples](#examples)
+- [Git Best Practices](#git-best-practices)
+- [Tips](#tips)
+
+---
 
 ## Invocation
 

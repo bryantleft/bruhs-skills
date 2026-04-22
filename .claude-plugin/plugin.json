@@ -1,6 +1,6 @@
 {
   "name": "bruhs",
-  "description": "Opinionated development lifecycle - spawn projects, cook features, yeet to ship",
+  "description": "End-to-end development lifecycle: scaffold projects, plan and build features, create Linear tickets, open and review PRs, clean up after merge, audit codebases. Use when starting a project, implementing a feature, shipping code, addressing PR reviews, merging, or auditing code quality.",
   "version": "1.0.0",
   "author": {
     "name": "Bryant Le",
@@ -8,5 +8,29 @@
   },
   "repository": "https://github.com/bryantleft/bruhs-skills",
   "license": "MIT",
-  "keywords": ["workflow", "linear", "git", "scaffolding", "development"]
+  "keywords": [
+    "workflow",
+    "linear",
+    "git",
+    "github",
+    "scaffolding",
+    "scaffold",
+    "development",
+    "feature",
+    "ticket",
+    "pr",
+    "pull-request",
+    "code-review",
+    "review",
+    "commit",
+    "refactor",
+    "cleanup",
+    "audit",
+    "merge",
+    "branch",
+    "diagram",
+    "tldraw",
+    "monorepo",
+    "turborepo"
+  ]
 }

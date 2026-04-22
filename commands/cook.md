@@ -1,10 +1,22 @@
 ---
-description: Plan + Build a feature end-to-end
+description: Plan and build a feature end-to-end — fetch Linear ticket, explore codebase, design approaches, implement with TDD, self-review. Use when starting new feature work, implementing a ticket, or when the user says "build", "implement", or "add".
 ---
 
 # cook - Plan + Build Features
 
 Combined planning and building workflow. Wraps brainstorming and feature development patterns into a single end-to-end flow.
+
+## Contents
+
+- [Invocation](#invocation)
+- [Best Practices](#best-practices)
+- [Workflow](#workflow)
+- [Examples](#examples)
+- [Integration with Other Skills](#integration-with-other-skills)
+- [Configuration](#configuration)
+- [Tips](#tips)
+
+---
 
 ## Invocation
 
@@ -25,7 +37,7 @@ All code produced by cook follows the patterns defined in:
 - **`practices/python-fastapi.md`** - FastAPI specifics (Annotated DI, async SQLAlchemy 2.0, error handling)
 - **`practices/effect-ts.md`** - Effect-TS specific patterns (loaded when `effect` in `stack.libraries`)
 - **`practices/rust.md`** - Idiomatic Rust patterns (loaded when `language: rust` or Rust framework in stack)
-- **`practices/rust-references/`** - Deep refs (ownership, errors, async, type-state, leptos, gpui, axum) — loaded conditionally
+- **`practices/rust-*.md`** - Deep Rust refs (`rust-ownership-and-borrowing`, `rust-error-design`, `rust-async-patterns`, `rust-type-state-and-newtypes`, `rust-leptos-patterns`, `rust-gpui-patterns`, `rust-axum-patterns`) — loaded conditionally
 - **`practices/ui-design.md`** - UI design quality via impeccable skills (loaded for UI features)
 
 **Optional integrations** (auto-detected from MCPs available):
@@ -317,11 +329,9 @@ stashed_changes = true
 
 ### Step 5: Build
 
-Implement the feature using TDD where applicable:
+Implement the feature by explicitly running the **RED → GREEN → REFACTOR** cycle. These are three distinct phases, not a single step. Do not collapse them.
 
-**For testable code:**
-
-First, check if project has a test suite:
+First, check if the project has a test suite:
 ```bash
 # Look for test config files
 ls vitest.config.* jest.config.* pytest.ini 2>/dev/null
@@ -329,35 +339,66 @@ ls vitest.config.* jest.config.* pytest.ini 2>/dev/null
 ls -d __tests__ tests test spec 2>/dev/null
 ```
 
-**If test suite exists:**
-1. Write failing test (will be kept)
-2. Implement minimum code to pass
-3. Refactor
-4. Repeat
+If no harness exists, either set one up (preferred if the project is testable but just lacks config) or write a temp `test_<feature>.ts` / `test_<feature>.py` in a scratch directory that you'll clean up after the cycle completes.
 
 ```
-testSuiteExists = true
+testSuiteExists = <true|false>
+tempTestFiles = []  // populate if we wrote temp tests
 ```
 
-**If no test suite:**
-1. Create temporary test file to verify logic
-2. Implement minimum code to pass
-3. Verify tests pass
-4. Delete temporary test file when done
+**RED phase — write a failing test first.**
+
+Write the test that encodes the desired behavior. Run it and confirm it fails for the right reason (assertion failure, not a syntax or import error). Do not write any implementation code yet.
 
 ```
-testSuiteExists = false
-tempTestFiles = ["<path-to-temp-test>"]
+✓ RED: test_<feature> fails with <expected assertion error>
 ```
 
-Cleanup at end of Step 6:
+**GREEN phase — implement the minimum code to make the test pass.**
+
+Write just enough production code to flip the failing test to passing. Resist gold-plating here; extra behavior belongs in a follow-up RED phase.
+
+```
+✓ GREEN: test_<feature> passes
+```
+
+**REFACTOR phase — clean up, re-run tests, stop only when green.**
+
+Tidy naming, extract helpers, remove duplication, tighten types. Re-run the full test suite after each change. If anything turns red, either fix it or revert. Stop only when all tests are green and the code is in a state you'd be happy to merge.
+
+```
+✓ REFACTOR: cleanup complete, all tests green
+```
+
+Loop RED → GREEN → REFACTOR for each new behavior. Do not batch multiple behaviors into one RED.
+
+**Cleanup after the cycle (only if we wrote temp tests):**
 ```javascript
 if (!testSuiteExists && tempTestFiles.length > 0) {
-  // Remove temporary test files
   tempTestFiles.forEach(f => rm(f))
   console.log("✓ Cleaned up temporary test files")
 }
 ```
+
+**For UI / visual-only changes that are genuinely untestable:**
+
+Some UI tweaks (pure visual polish, color adjustments, spacing) can't be meaningfully asserted in a test. In that case, require the user to explicitly opt into a manual-verification fallback:
+
+```javascript
+AskUserQuestion({
+  questions: [{
+    question: "This change looks visual-only. Skip the RED-GREEN-REFACTOR cycle and use manual verification?",
+    header: "Test strategy",
+    multiSelect: false,
+    options: [
+      { label: "Yes, manual verification only", description: "I'll verify in the browser; skip writing a failing test" },
+      { label: "No, write a test anyway", description: "Snapshot / visual-regression / interaction test is worth the effort" },
+    ]
+  }]
+})
+```
+
+Only proceed without a test if the user explicitly chose the manual-verification option. Default to writing the test.
 
 **For UI/non-testable code:**
 
@@ -607,6 +648,39 @@ if (!testSuiteExists && tempTestFiles.length > 0) {
 ```
 
 ### Step 7: Ready to Ship
+
+Before reporting "ready to ship", run the full validation suite. A passing local RED-GREEN-REFACTOR cycle is not sufficient — the project's typecheck + lint + tests must all pass end-to-end.
+
+```bash
+bash scripts/validate_pr_ready.sh
+```
+
+Fallback if `scripts/validate_pr_ready.sh` isn't present — auto-detect and run inline:
+
+- **Node / TypeScript**: `npm run typecheck` (or `tsc --noEmit`), `npm run lint`, `npm test`
+- **Rust**: `cargo check`, `cargo clippy -- -D warnings`, `cargo test`
+- **Python**: `ruff check .`, `mypy .` (or `ty check` / `pyright`), `pytest`
+- **Go**: `go vet ./...`, `go test ./...`
+
+If anything fails, STOP and present the same options as yeet:
+
+```javascript
+AskUserQuestion({
+  questions: [{
+    question: "Validation failed. How do you want to proceed?",
+    header: "Validation",
+    multiSelect: false,
+    options: [
+      { label: "Show me the failure output", description: "Print the failing typecheck/lint/test output" },
+      { label: "Fix the issue now", description: "Pause here — iterate on the fix, then re-run validation" },
+      { label: "Ship anyway (not recommended)", description: "Proceed to /bruhs:yeet; unvalidated areas will be flagged in the PR body" },
+      { label: "Abort", description: "Stop the cook workflow entirely" },
+    ]
+  }]
+})
+```
+
+Only report "ready to ship" once validation is green (or the user explicitly chose "Ship anyway").
 
 Signal completion and prompt for shipping:
 

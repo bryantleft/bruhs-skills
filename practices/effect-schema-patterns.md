@@ -1,5 +1,20 @@
 # Schema Patterns
 
+## Contents
+
+- [Branded Types for IDs](#branded-types-for-ids)
+- [Schema.Struct for Domain Types](#schemastruct-for-domain-types)
+- [Schema.transform and transformOrFail](#schematransform-and-transformorfail)
+- [Schema.Class for Entities with Methods](#schemaclass-for-entities-with-methods)
+- [Schema.annotations](#schemaannotations)
+- [Optional Fields](#optional-fields)
+- [Union Types and Discriminated Unions](#union-types-and-discriminated-unions)
+- [Enums and Literals](#enums-and-literals)
+- [Recursive Schemas](#recursive-schemas)
+- [Decoding and Encoding](#decoding-and-encoding)
+
+---
+
 ## Branded Types for IDs
 
 **Always brand entity IDs** to prevent accidentally passing the wrong ID type:
