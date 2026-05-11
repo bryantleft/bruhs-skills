@@ -6,7 +6,7 @@ Opinionated patterns for Effect-TS codebases, optimizing for type safety, testab
 - `cook` - When building features with Effect services, errors, layers
 - `slop` - Detects Effect anti-patterns during cleanup
 
-**Applies when:** `bruhs.json` has `effect` in `stack.libraries`
+**Applies when:** the `bruhs:state` block in `CLAUDE.md` has `effect` in `stack.libraries`
 
 ## Contents
 

@@ -1,10 +1,12 @@
 ---
-description: Initialize bruhs config for an existing project — auto-detect stack, wire up Linear, detect installed MCPs, write .claude/bruhs.json. Use when adopting bruhs on a repo that wasn't created via /bruhs:spawn.
+description: Initialize bruhs config for an existing project — auto-detect stack, wire up Linear, detect installed MCPs, write marker-bounded state and rules blocks into CLAUDE.md and AGENTS.md. Use when adopting bruhs on a repo that wasn't created via /bruhs:spawn.
 ---
 
 # claim - Claim Existing Project
 
-Set up `.claude/bruhs.json` for an existing project. Use this when you have a project that wasn't created with `/bruhs:spawn`.
+Set up bruhs for an existing project by writing the `bruhs:state` and `bruhs:rules` marker blocks into `CLAUDE.md` and `AGENTS.md` (mirrored). Use this when you have a project that wasn't created with `/bruhs:spawn`.
+
+If a legacy `.claude/bruhs.json` is present, this command migrates it into the marker blocks and prompts before deleting the old file.
 
 ## Contents
 
@@ -29,28 +31,75 @@ Set up `.claude/bruhs.json` for an existing project. Use this when you have a pr
 
 ### Step 1: Detect Existing Config
 
+Check for both the new marker-block format and the legacy JSON file:
+
 ```bash
+# Try the marker block first (new format)
+python3 <PLUGIN_DIR>/scripts/read_bruhs_block.py --kind state --root . 2>/dev/null
+
+# Then check for legacy file
 ls .claude/bruhs.json 2>/dev/null
 ```
 
-If config exists, use `AskUserQuestion`:
+**Case A — `bruhs:state` block found in CLAUDE.md / AGENTS.md:**
 
 ```javascript
 AskUserQuestion({
   questions: [{
-    question: "Config already exists at .claude/bruhs.json. Would you like to reconfigure?",
+    question: "Config already exists in CLAUDE.md (bruhs:state block). Would you like to reconfigure?",
     header: "Reconfigure",
     multiSelect: false,
     options: [
-      { label: "Yes", description: "Overwrite existing configuration" },
+      { label: "Yes", description: "Re-detect and overwrite the block" },
       { label: "No", description: "Keep existing configuration and exit" },
     ]
   }]
 })
+```
+- If **Yes**: proceed into Step 2 and re-run the full detection + prompt flow.
+- If **No**: exit with `Kept existing bruhs:state block.`
 
-**Control flow after the prompt:**
-- If **Yes**: proceed into Step 2 and re-run the full detection + prompt flow (Steps 2–7). Step 7 overwrites the existing `.claude/bruhs.json`.
-- If **No**: exit immediately with a one-line confirmation that the existing config is preserved (e.g., `Kept existing .claude/bruhs.json.`).
+**Case B — Legacy `.claude/bruhs.json` found, no marker block yet (MIGRATION PATH):**
+
+```javascript
+AskUserQuestion({
+  questions: [{
+    question: "Legacy .claude/bruhs.json found. Migrate it into CLAUDE.md + AGENTS.md marker blocks?",
+    header: "Migrate legacy config",
+    multiSelect: false,
+    options: [
+      { label: "Migrate (recommended)", description: "Port .claude/bruhs.json into the new blocks, then ask before deleting" },
+      { label: "Re-detect from scratch", description: "Ignore the legacy file and run full detection (Steps 2–7)" },
+      { label: "Cancel", description: "Do nothing" },
+    ]
+  }]
+})
+```
+
+- If **Migrate**:
+  1. Read the legacy JSON: `LEGACY=$(cat .claude/bruhs.json)`.
+  2. Write the state block: `echo "$LEGACY" | python3 <PLUGIN_DIR>/scripts/sync_bruhs_block.py --kind state --root .`
+  3. Derive and write the rules block: `echo "$LEGACY" | python3 <PLUGIN_DIR>/scripts/derive_stack_rules.py | python3 <PLUGIN_DIR>/scripts/sync_bruhs_block.py --kind rules --root .`
+  4. Prompt before deleting:
+     ```javascript
+     AskUserQuestion({
+       questions: [{
+         question: "Migration complete. Delete the legacy .claude/bruhs.json?",
+         header: "Delete legacy",
+         multiSelect: false,
+         options: [
+           { label: "Yes, delete", description: "Remove .claude/bruhs.json — read_bruhs_block.py reads from CLAUDE.md now" },
+           { label: "No, keep both", description: "Leave the legacy file in place (it will be ignored)" },
+         ]
+       }]
+     })
+     ```
+     If **Yes**: `rm .claude/bruhs.json` (and `rmdir .claude 2>/dev/null` only if empty).
+  5. Exit with summary.
+- If **Re-detect**: proceed to Step 2.
+- If **Cancel**: exit, no changes.
+
+**Case C — Neither block nor legacy file present:** proceed to Step 2 (fresh setup).
 
 ### Step 2: Detect Project Structure
 
@@ -252,16 +301,16 @@ Detecting relevant skills...
 ✓ Found: vercel-react-best-practices (React/Next.js patterns)
 ```
 
-### Step 7: Create Config
+### Step 7: Write State + Rules Blocks
 
-Create `.claude/bruhs.json`:
+Build the state JSON in memory, then pipe it through the two helper scripts to write **both** the `bruhs:state` and `bruhs:rules` blocks into `CLAUDE.md` **and** `AGENTS.md` (mirrored, atomic).
 
-**For single projects:**
+**State shape — single project:**
 ```json
 {
   "integrations": {
     "linear": {
-      "mcpServer": "<selected-mcp-server>",  // e.g., "linear-sonner"
+      "mcpServer": "<selected-mcp-server>",
       "team": "<selected-team-id>",
       "teamName": "<selected-team-name>",
       "project": "<selected-project-id>",
@@ -301,45 +350,30 @@ Create `.claude/bruhs.json`:
 }
 ```
 
-**For monorepos:** Use `frameworks` (array) instead of `framework` (string):
-```json
-{
-  "integrations": { ... },
-  "tooling": { ... },
-  "stack": {
-    "structure": "monorepo",
-    "frameworks": ["Next.js", "Astro"],
-    "styling": ["Tailwind CSS", "shadcn/ui"],
-    "database": ["<detected>"],
-    "auth": null,
-    "libraries": ["<detected>"],
-    "state": "<detected>",
-    "animation": null,
-    "ai": "<detected>",
-    "workers": null,
-    "payments": null,
-    "email": null,
-    "testing": ["<detected>"],
-    "tooling": ["Turborepo"],
-    "infra": ["<detected>"],
-    "gpu": ["<detected>"],
-    "observability": [],
-    "llmObservability": null
-  }
-}
+**Monorepos:** Use `frameworks` (array) instead of `framework` (string), set `structure: "monorepo"`, and include `"Turborepo"` or `"Nx"` in `tooling` if detected.
+
+**If Linear not configured:** omit the `linear` section from `integrations`.
+
+**Write to disk:**
+
+```bash
+STATE_JSON='<the JSON object above>'
+
+# 1. State block (validated, atomic, mirrored to CLAUDE.md + AGENTS.md)
+echo "$STATE_JSON" | python3 <PLUGIN_DIR>/scripts/sync_bruhs_block.py --kind state --root .
+
+# 2. Rules block (derived from state, mirrored to both files)
+echo "$STATE_JSON" \
+  | python3 <PLUGIN_DIR>/scripts/derive_stack_rules.py \
+  | python3 <PLUGIN_DIR>/scripts/sync_bruhs_block.py --kind rules --root .
 ```
 
-**Key differences for monorepos:**
-- `structure`: "monorepo" instead of "single"
-- `frameworks`: Array of all frameworks used across apps (not `framework`)
-- `tooling`: Include "Turborepo" or "Nx" if detected
-
-If Linear not configured, omit the `linear` section from integrations.
+If `CLAUDE.md` or `AGENTS.md` does not exist, the sync script creates it with a minimal header. Hand-written content outside the markers is **never** touched.
 
 ### Step 8: Output Summary
 
 ```
-Initialized .claude/bruhs.json
+Initialized bruhs in CLAUDE.md + AGENTS.md
 
 Integrations:
   ✓ Linear: Perdix Labs / Gambit
@@ -442,8 +476,9 @@ Detecting relevant skills...
 
 Confirm detected stack? [Y/n] Y
 
-Creating config...
-✓ Created .claude/bruhs.json
+Writing state + rules blocks...
+✓ Wrote bruhs:state to CLAUDE.md + AGENTS.md
+✓ Wrote bruhs:rules to CLAUDE.md + AGENTS.md
 
 Ready! You can now use /bruhs:cook and /bruhs:yeet.
 ```
@@ -476,8 +511,9 @@ Detecting relevant skills...
 
 Confirm detected stack? [Y/n] Y
 
-Creating config...
-✓ Created .claude/bruhs.json
+Writing state + rules blocks...
+✓ Wrote bruhs:state to CLAUDE.md + AGENTS.md
+✓ Wrote bruhs:rules to CLAUDE.md + AGENTS.md
 
 Ready! You can now use /bruhs:cook and /bruhs:yeet.
 ```

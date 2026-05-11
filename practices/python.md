@@ -6,7 +6,7 @@ Modern Python (3.12+). Defaults around Astral's tooling stack (uv + ruff + ty) a
 - `cook` — patterns to follow when building Python features
 - `slop` — patterns to detect during cleanup
 
-**Stack triggers:** `language: python` or any Python framework (`fastapi`, `django`, `flask`, etc.) in `bruhs.json`.
+**Stack triggers:** `language: python` or any Python framework (`fastapi`, `django`, `flask`, etc.) in the `bruhs:state` block (`CLAUDE.md`).
 
 ## Contents
 

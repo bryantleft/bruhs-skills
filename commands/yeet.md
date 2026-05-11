@@ -46,15 +46,16 @@ PR description + commit + reviewer-assignment quality is governed by **`practice
 ### Step 0: Check Config
 
 ```bash
-ls .claude/bruhs.json 2>/dev/null
+# Try the new marker-block first, falling back to legacy bruhs.json
+CONFIG_JSON=$(python3 <PLUGIN_DIR>/scripts/read_bruhs_block.py --kind state --root . 2>/dev/null)
 ```
 
-If config doesn't exist, use `AskUserQuestion`:
+If no config found (empty `CONFIG_JSON`), use `AskUserQuestion`:
 
 ```javascript
 AskUserQuestion({
   questions: [{
-    question: "No bruhs.json found. Would you like to:",
+    question: "No bruhs config found in CLAUDE.md (or legacy bruhs.json). Would you like to:",
     header: "Config",
     multiSelect: false,
     options: [
@@ -107,12 +108,12 @@ Generate:
 ### Step 3: Check Linear MCP
 
 ```javascript
-// Read Linear config from bruhs.json
-config = readJson(".claude/bruhs.json")
+// Read Linear config from bruhs:state (CLAUDE.md > AGENTS.md > legacy bruhs.json)
+config = JSON.parse(Bash(`python3 <PLUGIN_DIR>/scripts/read_bruhs_block.py --kind state --root .`))
 linearConfig = config.integrations?.linear
 
 if (!linearConfig?.mcpServer) {
-  console.log("Linear not configured in bruhs.json.")
+  console.log("Linear not configured in bruhs:state.")
   linearAvailable = false
 } else {
   // Tool format: mcp__<mcpServer>__linear_<method>
@@ -167,7 +168,7 @@ if (ticketContext) {
 **If no existing ticket, create one:**
 
 ```javascript
-// Get Linear config from bruhs.json
+// Use the Linear config already loaded from bruhs:state
 const mcpName = linearConfig.mcpServer    // e.g., "linear-sonner"
 
 // Load Linear tools
@@ -520,7 +521,7 @@ When you get review feedback, run /bruhs:peep to address comments.
 
 ## Configuration
 
-Reads `.claude/bruhs.json`:
+Reads the `bruhs:state` block in `CLAUDE.md` (fallback `AGENTS.md`, then legacy `.claude/bruhs.json`):
 
 ```json
 {
@@ -544,7 +545,7 @@ Reads `.claude/bruhs.json`:
 
 The `labels` map commit types to Linear label names.
 
-**Multi-workspace setup:** Each project's bruhs.json points to its specific Linear workspace via `mcpServer`. Tool names are always `mcp__<mcpServer>__linear_<method>` (e.g., `mcp__linear-sonner__linear_create_issue`).
+**Multi-workspace setup:** Each project's `bruhs:state` block points to its specific Linear workspace via `mcpServer`. Tool names are always `mcp__<mcpServer>__linear_<method>` (e.g., `mcp__linear-sonner__linear_create_issue`).
 
 ## Git-Only Mode
 

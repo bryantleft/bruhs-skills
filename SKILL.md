@@ -6,9 +6,9 @@ description: End-to-end development lifecycle for Claude Code — scaffold proje
 # bruhs
 
 ## Index
-|commands|spawn,claim,cook,yeet,peep,dip,slop,doodle
-|practices|type-driven-design,_common,pr-review,typescript-react,typescript-hono,python,python-fastapi,effect-ts,effect-*,rust,rust-*,ui-design
-|config|.claude/bruhs.json
+|commands|spawn,claim,cook,yeet,peep,dip,slop,doodle,deepen,drill
+|practices|type-driven-design,architecture-deepening,testing-infrastructure,_common,pr-review,typescript-react,typescript-hono,python,python-fastapi,effect-ts,effect-*,rust,rust-*,ui-design
+|config|CLAUDE.md + AGENTS.md (`bruhs:state` and `bruhs:rules` blocks)
 
 ## Commands Quick Reference
 |spawn|Create project or add to monorepo|commands/spawn.md
@@ -19,6 +19,8 @@ description: End-to-end development lifecycle for Claude Code — scaffold proje
 |dip|Clean up after merge, switch to base branch|commands/dip.md
 |slop|Deep codebase analysis, AI slop cleanup|commands/slop.md
 |doodle|Visualize architecture as tldraw diagrams (PRs, modules, deps, compare, map, freeform)|commands/doodle.md
+|deepen|Find shallow modules, propose architectural deepenings (explore → candidates → grill)|commands/deepen.md
+|drill|Find missing/weak test-infra layers, propose adoptions (explore → candidates → grill)|commands/drill.md
 
 ## Invocation
 - `/bruhs` → Interactive menu (AskUserQuestion)
@@ -26,6 +28,8 @@ description: End-to-end development lifecycle for Claude Code — scaffold proje
 - `/bruhs:cook <feature>` or `/bruhs:cook TICKET-123` → With argument
 - `/bruhs:slop [path] [--fix|--report]` → Codebase analysis
 - `/bruhs:doodle <mode> [args] [--out|--gist|--commit|--pr-comment|--format|--depth]` → Render diagram (modes: pr, module, deps, dependents, compare, map, freeform)
+- `/bruhs:deepen [path | module-name] [--no-explore]` → Find shallow modules, propose deepenings
+- `/bruhs:drill [path | layer-name] [--no-explore]` → Find missing/weak test-infra layers, propose adoptions
 
 ---
 
@@ -82,6 +86,82 @@ type State =
 ```
 
 For full patterns → `practices/type-driven-design.md`
+
+---
+
+## Architectural Deepening
+
+> A deep module hides a lot of behaviour behind a small interface. A shallow module's interface is nearly as complex as its implementation.
+
+Use the `/bruhs:deepen` command to find shallow modules and propose deepenings. Distinct from `/bruhs:slop` (line-level audit) — this is **structural**.
+
+### Vocabulary (use these terms exactly)
+
+|Term|Meaning|
+|---|---|
+|**Module**|Anything with an interface and an implementation (function, class, package, slice)|
+|**Interface**|Everything a caller must know — types, invariants, ordering, errors, configuration|
+|**Depth**|Behaviour-per-unit-of-interface. Deep = lots of behaviour behind a small interface|
+|**Seam**|A place where you can alter behaviour without editing in that place (Feathers)|
+|**Adapter**|A concrete thing that satisfies an interface at a seam|
+|**Leverage**|Caller-side benefit of depth — capability per unit of interface learned|
+|**Locality**|Maintainer-side benefit — change/bugs/tests concentrate in one place|
+
+### Core principles
+
+- **Depth is a property of the interface, not the implementation.** Internal seams are fine; don't expose them.
+- **The deletion test.** Imagine deleting the module. If complexity vanishes → pass-through, merge it. If it scatters across N callers → the module earns its keep.
+- **The interface is the test surface.** If you want to test *past* it, the module is the wrong shape.
+- **One adapter means a hypothetical seam. Two adapters means a real one.** Don't add a port for a single implementation.
+
+### When to invoke `/bruhs:deepen`
+
+- A codebase feels like it bounces between many small files for one operation
+- Tests feel like they're testing the wrong thing (mocks everywhere, brittle to refactors)
+- Callers must learn implementation details (transport, encoding, storage) to use a "domain" module
+- Same invariant repeats across N call sites
+- During `/bruhs:slop` you keep flagging "architecture" — promote to `/bruhs:deepen` for structural treatment
+
+For full glossary, dependency categories, seam discipline, design-it-twice mechanics → `practices/architecture-deepening.md`
+
+---
+
+## Testing Infrastructure
+
+> A test suite is a layered safety net. Each layer catches a different bug class. A missing layer isn't covered by the others — it's just where bugs ship from.
+
+Use the `/bruhs:drill` command to find missing or weak layers and propose adoption plans. Companion to `/bruhs:deepen`: deepen modules, drill tests.
+
+### The 8 layers
+
+|#|Layer|Catches|
+|---|---|---|
+|1|**Acceptance specs**|Intent drift — no executable definition of "done"|
+|2|**Unit tests**|Regressions in module behaviour at the interface|
+|3|**Coverage gate**|Untested code landing (measured on **changed lines per PR**, not total)|
+|4|**Mutation runner**|Tests that exist but assert nothing meaningful — the **kill ratio** is the only number that proves coverage is doing work|
+|5|**Complexity composite**|High-complexity / low-coverage hotspots (the worst-of-both — Savoia's "CRAP")|
+|6|**Architecture checker**|Layer / dependency rule violations — encodes ADRs so they're enforced, not just documented|
+|7|**Test-code linter**|Rot in test files themselves; AI-generated test code becoming a second untyped codebase|
+|8|**CI orchestrator**|Discipline collapse — runs every layer as hard gates. The 8th is load-bearing|
+
+### Core principles
+
+- **Hard gate, advisory, or ratchet — pick one, defend it.** Indefinite advisory is decoration. Ratchet ("no worse than baseline") is honest about legacy debt and locks in improvement.
+- **The orchestrator is load-bearing.** Layers 1–7 without a real CI gate are theatre. `continue-on-error: true` on a gated layer is advisory regardless of what the config claims.
+- **Replace, don't layer.** Old advisory checks become waste once a hard gate exists. Old shallow-module tests become waste once the deeper module's interface is tested. Delete; don't preserve out of guilt.
+- **The "what would slip through" test.** Don't propose adopting a layer unless you can name a concrete bug class it catches in *this* codebase.
+
+### When to invoke `/bruhs:drill`
+
+- Tests pass but bugs still ship — the suite isn't catching what it claims to catch
+- Coverage is high but feels meaningless (no mutation kill ratio measured)
+- ADRs exist but get violated; "clean architecture" decisions erode unenforced
+- AI-generated test files are accumulating without review
+- CI is green; the build still feels unreliable — likely an advisory orchestrator
+- During `/bruhs:slop` you keep flagging "no test for X" — promote to `/bruhs:drill` for safety-net treatment
+
+For full layer specs, diagnostics, gating posture, rejected framings → `practices/testing-infrastructure.md`
 
 ---
 
@@ -173,26 +253,37 @@ Each command's full workflow lives in its own file. Read the specific file when 
 
 | Command | File |
 |---|---|
-| cook  | `commands/cook.md` |
-| yeet  | `commands/yeet.md` |
-| peep  | `commands/peep.md` |
-| dip   | `commands/dip.md` |
-| spawn | `commands/spawn.md` |
-| claim | `commands/claim.md` |
-| slop  | `commands/slop.md` |
+| cook   | `commands/cook.md` |
+| yeet   | `commands/yeet.md` |
+| peep   | `commands/peep.md` |
+| dip    | `commands/dip.md` |
+| spawn  | `commands/spawn.md` |
+| claim  | `commands/claim.md` |
+| slop   | `commands/slop.md` |
 | doodle | `commands/doodle.md` |
+| deepen | `commands/deepen.md` |
+| drill  | `commands/drill.md` |
 
 ---
 
 ## Interactive Menu
 
-When `/bruhs` is invoked without arguments, present the command list via `AskUserQuestion` and route to the selected command's file. Options: spawn, claim, cook, yeet, peep, doodle, dip. `slop` is intentionally excluded from the menu — invoke directly with `/bruhs:slop`.
+When `/bruhs` is invoked without arguments, present the command list via `AskUserQuestion` and route to the selected command's file. Options: spawn, claim, cook, yeet, peep, doodle, dip, deepen, drill. `slop` is intentionally excluded from the menu — invoke directly with `/bruhs:slop`.
 
 ---
 
 ## Config Reference
 
-`.claude/bruhs.json`:
+Project state lives in two marker-bounded blocks inside `CLAUDE.md` **and** `AGENTS.md` (mirrored). The model reads them every session — no separate config file to keep in sync. Hand-written rules live outside the blocks and are never touched.
+
+### Block 1 — `bruhs:state` (auto-maintained JSON)
+
+```markdown
+<!-- bruhs:state:begin v1 -->
+<!-- AUTO-MAINTAINED BY /bruhs. Edits inside this block will be overwritten. -->
+
+### Project State (managed by /bruhs)
+
 ```json
 {
   "integrations": {
@@ -210,7 +301,7 @@ When `/bruhs` is invoked without arguments, present the command list via `AskUse
     "skills": ["superpowers", "shadcn", "vercel-react-best-practices"]
   },
   "stack": {
-    "structure": "turborepo|standalone",
+    "structure": "single|monorepo",
     "framework": "nextjs|tanstack-start|astro|hono|...",
     "styling": ["tailwind", "shadcn"],
     "database": ["drizzle-postgres", "convex", "..."],
@@ -219,6 +310,36 @@ When `/bruhs` is invoked without arguments, present the command list via `AskUse
   }
 }
 ```
+<!-- bruhs:state:end -->
+```
+
+### Block 2 — `bruhs:rules` (stack-derived behavioral rules)
+
+```markdown
+<!-- bruhs:rules:begin v1 -->
+<!-- AUTO-MAINTAINED BY /bruhs. Stack-specific rules derived from detected stack. -->
+
+### Stack-Specific Rules (managed by /bruhs)
+
+#### Convex
+- Convex actions that import the `ai` SDK MUST live in a file whose first line is `'use node'`.
+- ...
+<!-- bruhs:rules:end -->
+```
+
+Rules are derived from the detected stack via `scripts/derive_stack_rules.py` — short, high-signal, and **only** stack-specific. Universal behavioral rules (the kind that map to *your* failure modes) should be hand-written by you, outside the bruhs blocks.
+
+### Scripts
+
+| Script | Purpose |
+|---|---|
+| `scripts/sync_bruhs_block.py` | Atomically write a `bruhs:state` or `bruhs:rules` block into CLAUDE.md + AGENTS.md. |
+| `scripts/read_bruhs_block.py` | Read the JSON state (or rules markdown) back out. Falls back to legacy `.claude/bruhs.json` for `--kind state` during the transition. |
+| `scripts/derive_stack_rules.py` | Given state JSON on stdin, emit the markdown rules body to pipe into `sync_bruhs_block.py --kind rules`. |
+
+### Migration from `.claude/bruhs.json`
+
+Legacy `.claude/bruhs.json` is still read by `read_bruhs_block.py` as a fallback. `/bruhs:claim` detects the legacy file and offers to port it into the marker blocks, then prompts before deleting the old file.
 
 ---
 
@@ -235,7 +356,7 @@ Common tools:
 |`linear_edit_issue`|Update status|
 |`linear_get_issue`|Fetch ticket by ID|
 
-Multi-workspace: Each project's bruhs.json points to its Linear workspace via `mcpServer`.
+Multi-workspace: Each project's `bruhs:state` block points to its Linear workspace via `mcpServer`.
 
 Example:
 ```javascript

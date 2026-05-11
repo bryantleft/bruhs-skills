@@ -6,7 +6,7 @@ Idiomatic modern Rust (2024 edition). Organized around Rust's mental model: owne
 - `cook` - Patterns to follow when building features
 - `slop` - Patterns to detect and fix during cleanup
 
-**Stack triggers:** `framework: rust|leptos|axum|tauri|gpui` or `language: rust` in `bruhs.json`.
+**Stack triggers:** `framework: rust|leptos|axum|tauri|gpui` or `language: rust` in the `bruhs:state` block (`CLAUDE.md`).
 
 ## Contents
 

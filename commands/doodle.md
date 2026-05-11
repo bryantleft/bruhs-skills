@@ -457,7 +457,7 @@ When invoking from another command, prefer building shape JSON inline + calling 
 
 ## Config
 
-Optional in `.claude/bruhs.json`:
+Optional in the `bruhs:state` block (in `CLAUDE.md` / `AGENTS.md`):
 
 ```json
 {

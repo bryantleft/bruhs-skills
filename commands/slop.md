@@ -633,8 +633,8 @@ async function processOrder(order: Order) {
 ### Step 1: Load Configuration
 
 ```bash
-# Read bruhs.json for stack context
-cat .claude/bruhs.json
+# Read bruhs:state from CLAUDE.md (fallback AGENTS.md, then legacy .claude/bruhs.json)
+python3 <PLUGIN_DIR>/scripts/read_bruhs_block.py --kind state --root .
 ```
 
 Understand the stack to apply relevant rules:
@@ -746,7 +746,7 @@ typePractices = Read('practices/type-driven-design.md');
 // Load common practices
 commonPractices = Read('practices/_common.md');
 
-// Determine stack from bruhs.json and load stack-specific practices
+// Determine stack from bruhs:state and load stack-specific practices
 const stack = config.stack?.framework || 'typescript';
 const language = config.stack?.language;
 const libs = config.stack?.libraries || [];
@@ -1025,7 +1025,7 @@ Ready to commit? Run /bruhs:yeet
 
 ## Configuration
 
-Add slop settings to `.claude/bruhs.json`:
+Add slop settings to the `bruhs:state` block (in `CLAUDE.md` / `AGENTS.md`):
 
 ```json
 {
@@ -1166,7 +1166,7 @@ AskUserQuestion({
 - **Start with --report** - Understand scope before fixing
 - **Fix by category** - Do all TypeScript issues, then React, etc.
 - **Trust the nitpicks** - Small issues compound into big problems
-- **Update bruhs.json** - Tune rules based on your codebase
+- **Update bruhs:state** - Tune rules in CLAUDE.md / AGENTS.md based on your codebase
 - **Pair with tests** - Run tests after each batch of fixes
 
 ## References

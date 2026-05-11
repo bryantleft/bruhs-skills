@@ -82,15 +82,16 @@ For TypeScript + React, key highlights:
 ### Step 0: Check Config
 
 ```bash
-ls .claude/bruhs.json 2>/dev/null
+# Try the new marker-block first, falling back to legacy bruhs.json
+CONFIG_JSON=$(python3 <PLUGIN_DIR>/scripts/read_bruhs_block.py --kind state --root . 2>/dev/null)
 ```
 
-If config doesn't exist, use `AskUserQuestion`:
+If no config found (empty `CONFIG_JSON`), use `AskUserQuestion`:
 
 ```javascript
 AskUserQuestion({
   questions: [{
-    question: "No bruhs.json found. Would you like to:",
+    question: "No bruhs config found in CLAUDE.md (or legacy bruhs.json). Would you like to:",
     header: "Config",
     multiSelect: false,
     options: [
@@ -99,6 +100,7 @@ AskUserQuestion({
     ]
   }]
 })
+```
 
 If user chooses to continue without config:
 - Skip Linear-related features
@@ -112,8 +114,8 @@ Clarify what we're building:
 **If input looks like a ticket ID** (e.g., `PERDIX-123`, `SON-456`):
 
 ```javascript
-// Get Linear config from bruhs.json
-config = readJson(".claude/bruhs.json")
+// Get Linear config from the bruhs:state block (CLAUDE.md > AGENTS.md > legacy bruhs.json)
+config = JSON.parse(Bash(`python3 <PLUGIN_DIR>/scripts/read_bruhs_block.py --kind state --root .`))
 linearConfig = config.integrations?.linear
 
 if (!linearConfig?.mcpServer) {
@@ -172,8 +174,8 @@ Scope: <what's included/excluded>
 **Load practices based on stack:**
 
 ```javascript
-// Load bruhs.json for stack info
-config = readJson(".claude/bruhs.json")
+// Load bruhs:state for stack info
+config = JSON.parse(Bash(`python3 <PLUGIN_DIR>/scripts/read_bruhs_block.py --kind state --root .`))
 
 // Load Effect practices if stack uses Effect
 if (config.stack?.libraries?.includes('effect')) {
@@ -188,7 +190,7 @@ if (featureInvolvesUI) {
 }
 ```
 
-**Load project skills from bruhs.json:**
+**Load project skills from bruhs:state block:**
 
 ```javascript
 // Load skills already configured for this project
@@ -206,7 +208,7 @@ Loading project skills...
 
 **Search for additional skills needed for this feature:**
 
-Based on the feature requirements, search for skills not already in bruhs.json:
+Based on the feature requirements, search for skills not already in the bruhs:state block:
 
 ```javascript
 // Identify libraries/technologies involved in the feature
@@ -224,14 +226,19 @@ Checking for feature-specific skills...
 ✓ Found: stripe (not in project config)
 ```
 
-**Persist newly discovered skills to bruhs.json:**
+**Persist newly discovered skills to the bruhs:state block:**
 
 ```javascript
 if (newSkills.length > 0) {
-  // Add to bruhs.json for future sessions
+  // Update state for future sessions
   config.tooling.skills = [...projectSkills, ...newSkills]
-  writeJson(".claude/bruhs.json", config)
-  console.log(`✓ Added ${newSkills.join(", ")} to bruhs.json`)
+
+  const json = JSON.stringify(config)
+  // Re-sync the state block (atomic, mirrored to CLAUDE.md + AGENTS.md)
+  Bash(`echo '${json}' | python3 <PLUGIN_DIR>/scripts/sync_bruhs_block.py --kind state --root .`)
+  // Re-derive the rules block in case new skills changed the rule set
+  Bash(`echo '${json}' | python3 <PLUGIN_DIR>/scripts/derive_stack_rules.py | python3 <PLUGIN_DIR>/scripts/sync_bruhs_block.py --kind rules --root .`)
+  console.log(`✓ Added ${newSkills.join(", ")} to bruhs:state (CLAUDE.md + AGENTS.md)`)
 }
 ```
 
@@ -841,7 +848,7 @@ Cook implements its own workflow but draws on these established patterns.
 
 ## Configuration
 
-Reads `.claude/bruhs.json` for:
+Reads the `bruhs:state` block in `CLAUDE.md` (fallback `AGENTS.md`, then legacy `.claude/bruhs.json`) for:
 - Stack info (to understand project conventions)
 - Linear config (for ticket references if needed)
 

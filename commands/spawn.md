@@ -1,5 +1,5 @@
 ---
-description: Create a new project or add an app/package to a monorepo — select stack, scaffold via official CLIs, create Linear project, wire up GitHub Actions, write .claude/bruhs.json. Use when starting a greenfield project or adding to a pnpm/turbo monorepo.
+description: Create a new project or add an app/package to a monorepo — select stack, scaffold via official CLIs, create Linear project, wire up GitHub Actions, write bruhs:state and bruhs:rules blocks into CLAUDE.md and AGENTS.md. Use when starting a greenfield project or adding to a pnpm/turbo monorepo.
 ---
 
 # spawn - Project Scaffolding
@@ -511,7 +511,7 @@ if (createNewProject) {
 }
 ```
 
-**Store selected workspace in bruhs.json:**
+**Store selected workspace in the bruhs:state block:**
 - `integrations.linear.mcpServer`: Which MCP server to use (e.g., `"linear-sonner"`)
 - Project name: `<project-name>`
 - Team: **From user selection (always ask)**
@@ -730,14 +730,17 @@ When Biome replaces ESLint in a Next.js project, create `biome.json`:
 
 This mirrors the key rules from `eslint-config-next` (React hooks, a11y).
 
-### Step 8: Create/Update bruhs.json
+### Step 8: Write State + Rules Blocks
+
+State lives in marker-bounded blocks inside `CLAUDE.md` **and** `AGENTS.md` (mirrored, atomic).
 
 **If adding to an existing monorepo:**
 
-When a `.claude/bruhs.json` already exists (monorepo-addition case), merge the new package's config into the existing one instead of overwriting:
+Read the existing state block, merge the new package's config, and write back:
 
 ```javascript
-const existing = JSON.parse(Bash("cat .claude/bruhs.json"));
+const raw = Bash(`python3 <PLUGIN_DIR>/scripts/read_bruhs_block.py --kind state --root .`);
+const existing = JSON.parse(raw);
 const detected = /* config assembled from user selections for the new package */;
 
 const merged = {
@@ -752,7 +755,7 @@ const merged = {
   },
   integrations: {
     ...existing.integrations,
-    // Linear workspace is already configured for the monorepo — leave untouched
+    // Linear workspace already configured for the monorepo — leave untouched
     linear: existing.integrations?.linear,
   },
   tooling: {
@@ -762,11 +765,14 @@ const merged = {
   },
 };
 
-// Write atomically through the canonical writer
-Bash(`echo '${JSON.stringify(merged)}' | python3 scripts/write_bruhs_config.py`);
+const json = JSON.stringify(merged);
+// State block (validated, atomic, mirrored)
+Bash(`echo '${json}' | python3 <PLUGIN_DIR>/scripts/sync_bruhs_block.py --kind state --root .`);
+// Rules block (re-derived against merged stack)
+Bash(`echo '${json}' | python3 <PLUGIN_DIR>/scripts/derive_stack_rules.py | python3 <PLUGIN_DIR>/scripts/sync_bruhs_block.py --kind rules --root .`);
 ```
 
-Otherwise (fresh project), create `.claude/bruhs.json` with selected configuration:
+Otherwise (fresh project), assemble the state and write both blocks:
 
 ```json
 {
@@ -804,6 +810,8 @@ Otherwise (fresh project), create `.claude/bruhs.json` with selected configurati
   }
 }
 ```
+
+Then pipe it through the two helpers — `sync_bruhs_block.py --kind state` writes the validated JSON block, and `derive_stack_rules.py | sync_bruhs_block.py --kind rules` writes the stack-derived rules block. Both write atomically to `CLAUDE.md` and `AGENTS.md`. Hand-written content outside the markers is never touched.
 
 **Tooling is auto-detected at generation time:**
 
@@ -975,8 +983,9 @@ $ cd gambit-v2 && pnpm create next-app@latest apps/web
 Setting up GitHub Actions...
 ✓ Created .github/workflows/ci.yml
 
-Creating config...
-✓ Created .claude/bruhs.json
+Writing state + rules blocks...
+✓ Wrote bruhs:state to CLAUDE.md + AGENTS.md
+✓ Wrote bruhs:rules to CLAUDE.md + AGENTS.md
 
 Done! Ready to commit when you are.
 ```

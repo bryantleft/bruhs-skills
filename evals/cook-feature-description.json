@@ -1,9 +1,13 @@
 {
-  "skills": ["bruhs"],
+  "skills": [
+    "bruhs"
+  ],
   "command": "/bruhs:cook",
   "query": "/bruhs:cook add a leaderboard to the game page",
-  "files": [".claude/bruhs.json"],
-  "context": "Next.js + Drizzle project with existing .claude/bruhs.json, Linear configured. Working tree is clean. Game page and agentStats table already exist.",
+  "files": [
+    "CLAUDE.md"
+  ],
+  "context": "Next.js + Drizzle project with existing bruhs:state block in CLAUDE.md, Linear configured. Working tree is clean. Game page and agentStats table already exist.",
   "expected_behavior": [
     "Step 1 parses 'add a leaderboard to the game page' as a feature description (not a ticket ID), outputs a Feature/Goal/Scope summary, and does NOT call linear_get_issue",
     "Step 2 loads practices/type-driven-design.md plus stack practices (typescript-react), loads skills from config.tooling.skills, and spawns feature-dev:code-explorer via Task to find the game page, agentStats schema, and existing stats UI patterns",
