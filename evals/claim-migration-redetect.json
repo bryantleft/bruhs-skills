@@ -1,0 +1,21 @@
+{
+  "skills": ["bruhs"],
+  "command": "/bruhs:claim",
+  "query": "/bruhs:claim",
+  "files": [".claude/bruhs.json"],
+  "context": "Project has a stale .claude/bruhs.json from a year ago — the recorded stack lists framework='Astro' but the project has since migrated to Next.js (next.config.ts present, astro.config.* removed). CLAUDE.md does not yet contain a bruhs:state block. User wants the new claim to ignore the stale file and re-detect from the current code.",
+  "expected_behavior": [
+    "Step 1 detects the legacy .claude/bruhs.json via Case B and fires the migration AskUserQuestion offering Migrate / Re-detect from scratch / Cancel",
+    "On 'Re-detect from scratch': ignores the legacy file entirely and proceeds into Steps 2–7 as if the legacy file were absent (Case C, fresh setup)",
+    "Step 2 detects framework='Next.js' from next.config.ts — does NOT carry forward the stale framework='Astro' from the legacy JSON",
+    "Step 7 writes the new bruhs:state block to CLAUDE.md AND AGENTS.md with the freshly detected stack",
+    "After writing, fires the delete-prompt AskUserQuestion (legacy file still exists, ignored from now on). User picks 'Yes, delete' → .claude/bruhs.json is removed. User picks 'No, keep both' → legacy file is left alone (it will be ignored by read_bruhs_block.py since the marker block now exists)",
+    "Final summary mentions which fields were re-detected vs missing, so the user can spot what to fill in"
+  ],
+  "failure_modes": [
+    "Carries the stale framework='Astro' forward into the new bruhs:state block instead of re-detecting from code",
+    "Skips the second 'delete legacy?' prompt because it isn't a migrate path — but the legacy file is still on disk and will keep being read by old tooling, so the user must still be asked",
+    "Falls through into the Migrate path despite the user picking 'Re-detect from scratch'",
+    "Refuses to re-detect on the grounds that 'a config already exists'"
+  ]
+}

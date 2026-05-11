@@ -1,6 +1,6 @@
 # bruhs
 
-End-to-end development lifecycle for Claude Code — scaffold projects, plan and build features, open and review PRs, clean up after merge, audit codebases, surface architectural deepenings, drill the test safety net.
+End-to-end development lifecycle for AI coding agents — scaffold projects, plan and build features, open and review PRs, clean up after merge, audit codebases, surface architectural deepenings, drill the test safety net. Works with any agent that reads `CLAUDE.md` or `AGENTS.md`.
 
 ## Installation
 
@@ -227,7 +227,7 @@ Linear integration is optional but enables full ticket management. Uses `mcp-ser
      }
    }
    ```
-3. Restart Claude Code.
+3. Restart your AI coding agent.
 
 ### Multi-Workspace
 
@@ -235,7 +235,7 @@ Add one entry per workspace with a unique name (e.g. `linear-perdix`, `linear-so
 
 **Tool naming convention:** `mcp__<server-name>__linear_<method>` — e.g. `mcp__linear-sonner__linear_create_issue`.
 
-Run `/mcp` in Claude Code to verify connected servers.
+Run `/mcp` (or your agent's equivalent) to verify connected servers.
 
 ## Other Dependencies
 

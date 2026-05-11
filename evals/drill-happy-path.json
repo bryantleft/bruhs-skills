@@ -1,0 +1,28 @@
+{
+  "skills": ["bruhs"],
+  "command": "/bruhs:drill",
+  "query": "/bruhs:drill apps/web",
+  "files": [],
+  "context": "Next.js + Vitest monorepo. apps/web/.github/workflows/ci.yml runs lint, typecheck, test, build — typecheck has continue-on-error: true. Vitest config excludes *.test.tsx files from coverage. No acceptance-spec runner. No mutation runner. ESLint config excludes the entire tests/ directory. The repo has docs/adrs/0007-app-must-not-import-from-marketing.md describing a layer rule but no enforcer for it. Coverage gate exists at 40% on total lines (not changed lines).",
+  "expected_behavior": [
+    "Phase 1: reads the CI workflow files first as the ground truth, then walks the test tree — does not trust 'green CI' as a proxy for safety",
+    "Maps each of the 8 layers to its current state (absent / advisory / gated / rotting). Calls out at minimum: acceptance specs ABSENT, mutation runner ABSENT, architecture checker ABSENT (ADR exists, enforcer doesn't), test-code linter ABSENT (tests/ excluded from lint), CI orchestrator ROTTING (typecheck in continue-on-error)",
+    "Applies the discipline-floor rules — coverage at 40% on total lines (not changed) is flagged as effectively absent, NOT 'partially gated'",
+    "Applies the 'what would slip through' test to each absent or advisory layer and refuses to flag layers where the answer is 'nothing in this codebase'",
+    "Phase 2: produces 5–8 ranked candidates structured with Layer / Current state / Evidence (specific file paths + step names + threshold history) / Bug class / Proposed adoption / Gating posture / Cross-layer effect / Effort",
+    "Uses the 8-layer vocabulary exactly. Does NOT invent layer names like 'integration tests' or 'e2e' — those map into 'acceptance specs' or 'unit tests' depending on what they cover",
+    "Calls out the CI orchestrator rot explicitly — 'continue-on-error: true' makes typecheck advisory regardless of intent",
+    "Does NOT propose specific tools (Stryker, Mutmut, Cypress, etc.) in Phase 2 — that's Phase 3",
+    "Ends Phase 2 with 'Which would you like to grill?'",
+    "Does NOT write code, install dependencies, or modify CI in Phase 1 or 2"
+  ],
+  "failure_modes": [
+    "Treats the 40% total-line coverage gate as 'gated' instead of effectively absent (fails to apply the discipline-floor rule)",
+    "Misses the continue-on-error: true on typecheck and reports CI orchestrator as healthy",
+    "Proposes Stryker / Mutmut / specific test libraries in Phase 2 instead of staying tool-agnostic",
+    "Invents new layer names ('integration tests', 'e2e suite') instead of mapping into the 8-layer vocabulary",
+    "Flags layers (e.g. mutation runner) without a concrete 'what would slip through today' answer",
+    "Writes the actual CI yaml or installs runner packages in Phase 1 / 2",
+    "Treats the unenforced ADR (0007-app-must-not-import-from-marketing.md) as 'architecture checker present' — the rule isn't machine-checked"
+  ]
+}

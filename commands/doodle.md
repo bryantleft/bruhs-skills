@@ -60,7 +60,7 @@ Render architectural diagrams from your codebase: PR changes, module dependency 
   - `bassimeledath/tldraw-render` — `claude mcp add --scope user --transport stdio tldraw -- npx -y tldraw-render` (drop-in alternative)
 - **For `pr` / `--pr-comment`:** GitHub CLI (`gh`) authenticated
 - **For `--gist`:** `gh` with default scopes
-- **For `freeform` mode:** no extra deps — uses Claude to author shapes directly
+- **For `freeform` mode:** no extra deps — the agent authors shapes directly
 
 ## MCP Contract
 
@@ -250,7 +250,7 @@ Natural language → diagram. No source-code introspection. Useful for ad-hoc sk
 
 ```
 1. Parse the freeform description ("auth flow with refresh tokens", "data flow from upload to S3")
-2. Author shape JSON directly (Claude does this — no rg/gh involvement)
+2. Author shape JSON directly (the agent does this — no rg/gh involvement)
 3. Render
 ```
 
@@ -351,7 +351,7 @@ Layout strategy:
 - **`pr`/`compare`/`map`:** layered top-to-bottom by inferred layer; force-directed within layer
 - **`module`:** outer frame for the module, files in a grid inside, external imports off to the right
 - **`deps`/`dependents`:** focus node centered, depth = radial distance
-- **`freeform`:** Claude composes layout
+- **`freeform`:** the agent composes layout
 
 ### Step 4: Render
 

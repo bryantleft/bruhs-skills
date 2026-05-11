@@ -253,7 +253,7 @@ AskUserQuestion({
 ### Step 6: Detect Installed Tooling
 
 ```bash
-# Check user's Claude MCP config for installed MCPs
+# Check the agent's MCP config for installed MCPs (Claude Code: ~/.claude.json)
 cat ~/.claude.json 2>/dev/null
 ```
 

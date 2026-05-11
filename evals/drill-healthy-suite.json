@@ -1,0 +1,24 @@
+{
+  "skills": ["bruhs"],
+  "command": "/bruhs:drill",
+  "query": "/bruhs:drill",
+  "files": [],
+  "context": "Rust Axum service with disciplined test infra. CI runs: cargo nextest with coverage at 85% on changed lines (hard-gated), cargo mutants weekly with ratchet-only gate, dependency-rules.json checked by a custom build script (hard-gated), test files included in clippy + rustfmt config, acceptance specs via a small bash harness against a docker-compose, all steps run via a single ci.yml with no continue-on-error. The team is asking 'what's the next layer to add?'",
+  "expected_behavior": [
+    "Phase 1: maps all 8 layers and concludes most are GATED or ADVISORY-WITH-RATCHET in a healthy way",
+    "Applies the 'what would slip through' test for each absent or advisory layer and is honest when the answer is 'nothing concrete in this codebase'",
+    "Refuses to fabricate adoption candidates just to fill 5–8 slots — Phase 2 may legitimately produce 0–2 candidates here",
+    "If Phase 2 produces zero candidates, says so explicitly with the evidence: each layer's current state, why no upgrade has a concrete bug class to catch, and how the team would know when that changes",
+    "If Phase 2 produces 1–2 candidates (e.g. complexity composite — only layer absent), they each carry a concrete bug class, not a hypothetical",
+    "Does NOT propose tightening already-healthy gates (raising coverage from 85% to 90%) without a concrete bug class that the higher threshold catches",
+    "Suggests when to re-run /bruhs:drill — e.g. 'after adopting any module deepening from /bruhs:deepen' or 'on the next dependency-rules.json change'",
+    "Does NOT propose adding layers redundant with the existing healthy ones"
+  ],
+  "failure_modes": [
+    "Forces 5+ candidates despite the suite being healthy — pads the list with hypothetical bug classes",
+    "Recommends raising coverage from 85% → 95% without a concrete failure case",
+    "Treats a healthy ratchet-only mutation gate as 'advisory only' and proposes a hard gate when the team already chose the posture deliberately",
+    "Proposes a second acceptance-spec harness because the docker-compose one is 'unusual'",
+    "Misses the absence of a complexity composite (if it is in fact absent) because every other layer looks shiny"
+  ]
+}

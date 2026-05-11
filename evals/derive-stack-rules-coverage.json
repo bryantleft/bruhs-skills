@@ -1,0 +1,27 @@
+{
+  "skills": ["bruhs"],
+  "command": "scripts/derive_stack_rules.py",
+  "query": "cat state.json | python3 <PLUGIN_DIR>/scripts/derive_stack_rules.py",
+  "files": [],
+  "context": "STATE_JSON describes a Next.js + Convex + Better Auth + Biome + shadcn + Vitest stack with libraries=['zustand'] and ai='vercel-ai-sdk'. (No Drizzle, no Effect, no Prisma, no Rust.)",
+  "expected_behavior": [
+    "Emits a markdown bullet group for each matched signal: Next.js, Convex, Better Auth, Biome, shadcn, Vitest, Zustand, Vercel AI SDK",
+    "Does NOT emit groups for signals NOT in the state: no Drizzle, no Prisma, no Effect, no Rust",
+    "Uses '#### <Stack name>' as the heading for each group (matches sync_bruhs_block.py's render_rules_body expectations)",
+    "Each rule is one bullet, short, and prescriptive — does not include backstory or rationale",
+    "Output is stable across runs with the same state — same order, same wording, byte-identical",
+    "Recognizes synonyms — 'Next.js' (with the dot) and 'nextjs' both map to the Next.js rule group; 'Tailwind CSS' maps to 'tailwind'; '@tanstack/react-query' maps to 'tanstack-query'",
+    "Exits 0 even when no signals match (empty stack) — emits empty stdout, NOT an error",
+    "Invalid stdin JSON exits 2 with a stderr error, NOT 0 with empty output",
+    "--json flag emits {signals, matched} structure for debugging"
+  ],
+  "failure_modes": [
+    "Emits the Drizzle rule when the state doesn't mention drizzle anywhere",
+    "Skips Convex even though state.database includes 'convex'",
+    "Order shifts between runs — output is non-deterministic",
+    "Includes meta-commentary or backstory in rule bullets instead of just the prescriptive rule",
+    "Treats 'Next.js' and 'nextjs' as different signals and emits the rule group twice",
+    "Exits 0 on malformed JSON instead of exit 2",
+    "Hard-codes a 'universal' rule group regardless of stack — violates the 'only stack-derived' design"
+  ]
+}

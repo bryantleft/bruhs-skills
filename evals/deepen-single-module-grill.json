@@ -1,0 +1,26 @@
+{
+  "skills": ["bruhs"],
+  "command": "/bruhs:deepen",
+  "query": "/bruhs:deepen ReservationManager --no-explore",
+  "files": [],
+  "context": "TypeScript codebase. ReservationManager is a known shallow module the team wants grilled directly. It has methods: createReservation(customerId, restaurantId, partySize, date, time, smoking, vip, depositCents, depositRequired, notes) and updateReservation(id, partialFields). Three callers across api/reservations.ts, jobs/reminders.ts, and admin/reservations.ts each duplicate input validation (party size > 0, date in the future, deposit >= 0). The interface leaks Stripe payment intent IDs into the create signature even though only one caller uses deposits.",
+  "expected_behavior": [
+    "Skips Phase 1 (--no-explore is set) and goes directly to Phase 3 grilling on ReservationManager",
+    "Phase 3 opens by re-stating the deletion test for this module: 'If ReservationManager were deleted, where would the complexity go?' — and resolves it before designing a new interface",
+    "Co-designs an interface, not handed down. Asks clarifying questions about invariants, ordering, error behavior, and configuration before proposing types",
+    "Classifies the dependency category (in-process / local-substitutable / remote-owned / true-external) — Stripe is true-external, restaurant DB is local-substitutable",
+    "Proposes promoting the scattered party-size / date / deposit invariants into the module (locality win) and hiding Stripe payment intent IDs behind a Deposit type (leverage win)",
+    "Proposes a testing plan tied to the new interface — what becomes integration-testable, what becomes unit-testable, what becomes contract-testable against the Stripe adapter",
+    "Names a seam (the deposit-collection step) and explicitly notes whether one adapter or two are expected — invokes the 'two adapters means a real seam' rule",
+    "Asks before generating an ADR. Only writes an ADR if the user gives a reason that should prevent future re-suggestion",
+    "Still does not refactor code or write the new module — output is the co-designed interface + dependency strategy + testing plan"
+  ],
+  "failure_modes": [
+    "Re-runs Phase 1 exploration despite --no-explore",
+    "Skips the deletion test and goes straight to interface design",
+    "Designs the interface unilaterally instead of co-designing — never asks for invariants or error behavior",
+    "Adds a port (interface + adapter) for a single implementation, violating 'two adapters means a real seam'",
+    "Writes the actual TypeScript implementation of ReservationManager v2",
+    "Auto-generates an ADR without asking — pollutes docs/adrs/ for a deepening that may still happen"
+  ]
+}

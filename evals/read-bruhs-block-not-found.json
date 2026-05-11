@@ -1,0 +1,23 @@
+{
+  "skills": ["bruhs"],
+  "command": "scripts/read_bruhs_block.py",
+  "query": "python3 <PLUGIN_DIR>/scripts/read_bruhs_block.py --kind state --root .",
+  "files": [],
+  "context": "Fresh project with NO bruhs:state block in CLAUDE.md (or no CLAUDE.md at all), no AGENTS.md, and no legacy .claude/bruhs.json. The plugin has never been initialized here.",
+  "expected_behavior": [
+    "Exit code 1 (not 0, not 2)",
+    "Stderr contains 'no bruhs:state block found' (or equivalently informative message) — names the files that were tried so the caller can debug",
+    "Stdout is empty — callers using `JSON.parse($(read_bruhs_block.py))` get a clean empty string, not garbage",
+    "Does NOT create any files as a side effect — read is non-destructive even on miss",
+    "Does NOT crash with a Python traceback — handles missing files with a clean exit",
+    "--kind rules behaves the same way: exit 1, stderr message naming 'bruhs:rules', stdout empty"
+  ],
+  "failure_modes": [
+    "Exits 0 with empty stdout — callers can't distinguish 'block missing' from 'block empty'",
+    "Exits 2 (usage error) instead of 1 — implies the script was called wrong, not that the block is missing",
+    "Writes the warning to stdout instead of stderr — pollutes downstream JSON parsing",
+    "Raises a FileNotFoundError traceback on missing CLAUDE.md instead of skipping silently",
+    "Creates a stub CLAUDE.md as a side effect of being called for 'read'",
+    "Falls back to '/dev/null'-style empty JSON output that downstream code treats as valid empty state"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "skills": ["bruhs"],
+  "command": "scripts/sync_bruhs_block.py",
+  "query": "echo \"$STATE_JSON\" | python3 <PLUGIN_DIR>/scripts/sync_bruhs_block.py --kind state --root .",
+  "files": ["CLAUDE.md"],
+  "context": "CLAUDE.md exists with the following sections in this order: (a) hand-written '## Product Vision' section above the bruhs block, (b) an existing bruhs:state block with old skills=['superpowers'], (c) hand-written '## Behavioral Rules' section below the bruhs block with 6 user-authored rules. AGENTS.md exists with similar structure. STATE_JSON now contains skills=['superpowers','shadcn','vercel-react-best-practices'].",
+  "expected_behavior": [
+    "Replaces ONLY the content between <!-- bruhs:state:begin v1 --> and <!-- bruhs:state:end --> in both CLAUDE.md and AGENTS.md",
+    "Hand-written content above the begin marker is byte-identical before and after the run",
+    "Hand-written content below the end marker is byte-identical before and after the run",
+    "Both files end up byte-identical to each other inside the bruhs:state block (mirror invariant)",
+    "Writes atomically — uses tmp file + os.replace(), never leaves CLAUDE.md in a half-written state if the process is killed",
+    "Idempotent: running the script twice with the same STATE_JSON leaves both files byte-identical between runs",
+    "Validates STATE_JSON before writing — non-object input, missing 'stack', missing 'tooling', or invalid integrations.linear.mcpServer/team cause exit 2 with a stderr error message AND no file modification",
+    "Prints the resolved paths (CLAUDE.md, AGENTS.md) to stdout on success",
+    "If CLAUDE.md or AGENTS.md doesn't exist, creates it with a minimal header before appending the block — does NOT crash",
+    "If the marker block is absent, appends it under a '## bruhs-managed' heading instead of failing"
+  ],
+  "failure_modes": [
+    "Rewrites the whole file from scratch, losing hand-written sections",
+    "Writes only CLAUDE.md and skips AGENTS.md (or vice versa) — breaks mirror invariant",
+    "Re-orders or strips blank lines outside the markers",
+    "Writes invalid JSON inside the block without validation",
+    "Leaves a half-written CLAUDE.md on crash (no atomic temp file)",
+    "Re-running with the same STATE_JSON produces a drifted file (non-idempotent — e.g. duplicates the block, adds extra newlines)",
+    "Modifies the file when validation fails (validation must happen before any disk write)"
+  ]
+}

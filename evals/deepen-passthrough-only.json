@@ -1,0 +1,21 @@
+{
+  "skills": ["bruhs"],
+  "command": "/bruhs:deepen",
+  "query": "/bruhs:deepen src/utils",
+  "files": [],
+  "context": "TypeScript codebase. src/utils contains 14 files: formatDate.ts (one-liner wrapping date-fns.format), capitalize.ts (str[0].toUpperCase()+str.slice(1)), clamp.ts (Math.min/Math.max), 8 more one-liners, plus three files that each only re-export from another package. There are no domain modules in src/utils — every file is a pass-through to a library or a string/number operator. Tests for src/utils import the lib directly and ignore the wrappers.",
+  "expected_behavior": [
+    "Phase 1: applies the deletion test to each pass-through file and confirms that deleting any of them moves complexity to ONE call site (or zero), not to N",
+    "Phase 2: produces FEW or ZERO 'deepen' candidates here — the right output is mostly 'eliminate / inline' candidates, NOT new interfaces",
+    "Names the anti-pattern explicitly: pass-through modules without behavior to hide are not deepening candidates, they are deletion candidates",
+    "If any candidate is presented, it is structured as 'eliminate <file>, inline into <caller>' with the deletion-test justification, not as 'design a new interface for <file>'",
+    "Does not invent a domain to wrap these utilities in (no 'TextFormattingModule' or 'NumberUtils' speculative module)",
+    "Closes Phase 2 by noting that src/utils is structurally healthy at the file level — the friction (if any) is breadth, and breadth alone is not a deepening problem"
+  ],
+  "failure_modes": [
+    "Fabricates 8 deepening candidates that each wrap one utility behind a 'service'-style interface",
+    "Promotes pass-through wrappers to 'modules' that 'need a deeper interface' — exactly the inverse of the deletion test",
+    "Generates 'TextUtils', 'NumberUtils', 'DateUtils' grouping modules where none of the utilities share invariants or ordering — speculative grouping",
+    "Skips the deletion test entirely and lists every file as a candidate"
+  ]
+}

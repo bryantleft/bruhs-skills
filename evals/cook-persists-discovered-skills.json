@@ -1,0 +1,24 @@
+{
+  "skills": ["bruhs"],
+  "command": "/bruhs:cook",
+  "query": "/bruhs:cook add stripe checkout to the pricing page",
+  "files": ["CLAUDE.md"],
+  "context": "Next.js + Drizzle project. CLAUDE.md contains a bruhs:state block with stack.framework='nextjs', tooling.skills=['superpowers','shadcn','vercel-react-best-practices']. The 'stripe-best-practices' skill is installed in the agent's skill marketplace but NOT yet listed in tooling.skills. The feature involves Stripe Checkout, which the stripe-best-practices skill exists to guide.",
+  "expected_behavior": [
+    "Step 0 reads the bruhs:state block via read_bruhs_block.py, finds existing tooling.skills",
+    "Step 2 loads each existing project skill (superpowers, shadcn, vercel-react-best-practices) before exploring",
+    "Searches for additional feature-specific skills via Skill('find-skills') given that the query mentions Stripe — discovers stripe-best-practices",
+    "Persists the newly discovered stripe-best-practices skill back into the bruhs:state block by piping the updated state JSON into sync_bruhs_block.py --kind state AND re-deriving the rules block (in case Stripe-related rules are added later)",
+    "Both CLAUDE.md and AGENTS.md are updated atomically — same content, same block, mirrored. The state block now lists ['superpowers','shadcn','vercel-react-best-practices','stripe-best-practices']",
+    "Hand-written content outside the bruhs:state block is preserved",
+    "Step 7 console.log mentions which skill was added to the state, so the user sees the side effect"
+  ],
+  "failure_modes": [
+    "Loads stripe-best-practices for this session but does NOT persist it — next session has to rediscover it",
+    "Persists by writing .claude/bruhs.json (legacy path) instead of via sync_bruhs_block.py — defeats the migration",
+    "Updates state but skips re-deriving rules — leaves the rules block stale",
+    "Writes the new skill into only CLAUDE.md, not AGENTS.md — breaks the mirror invariant",
+    "Re-orders or de-duplicates the existing skills list incorrectly while persisting (e.g. drops superpowers because it's a 'plugin not a skill')",
+    "Asks the user to manually run /bruhs:claim to update the config instead of doing the write inline"
+  ]
+}

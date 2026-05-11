@@ -1,0 +1,25 @@
+{
+  "skills": ["bruhs"],
+  "command": "/bruhs:drill",
+  "query": "/bruhs:drill mutation --no-explore",
+  "files": [],
+  "context": "Python FastAPI service. Existing coverage gate at 78% on changed lines (hard-gated). No mutation runner. Test suite is fast: 1,800 unit tests run in ~22 seconds. The team has a 10-minute hard cap on the CI critical path. CONTEXT.md mentions a recent incident where a test passed asserting nothing but the function was returning the wrong value.",
+  "expected_behavior": [
+    "Skips Phase 1 and jumps to Phase 3 grilling on the mutation runner layer",
+    "Phase 3a: frames the layer concretely — bug class (assertion-free / shallow tests), constraint (10-minute CI cap), illustrative gate output ('kill ratio on changed lines is 42%, gate is 70%'), and clarifies whether this is hard-gate-from-day-1 or advisory-then-baseline",
+    "Phase 3b: designs the gate twice — at minimum Alternative A (strict from day 1), Alternative B (ratchet-only), and Alternative C (scoped pilot on one package). Each alternative carries its own threshold, rollout, and what-breaks analysis",
+    "Considers Alternative D (cross-layer fusion) — could a strong mutation gate make the coverage gate redundant? Names it explicitly even if rejected",
+    "Phase 3c: makes an opinionated recommendation — given the 10-minute CI cap, recommends a scheduled mutation run (NOT per-PR) with ratchet-only gating, OR a per-PR scoped pilot on one package. Names the trade-off",
+    "Phase 3d: if the user rejects mutation testing for a load-bearing reason (e.g. 'kill ratio is unstable on async code'), drafts an ADR so the layer isn't re-suggested by the next /bruhs:drill",
+    "Phase 3e: outputs an adoption plan suitable for /bruhs:cook — what to install, what to configure, what to wire into CI, with explicit gate spec, tests-to-delete list, and rollback plan",
+    "Does NOT write the CI yaml or install Mutmut/Cosmic Ray itself — output is the plan, not the implementation"
+  ],
+  "failure_modes": [
+    "Skips Phase 3b and presents only one alternative — fails the 'design it twice' rule",
+    "Recommends per-PR mutation testing without confronting the 10-minute CI budget",
+    "Ignores the CI budget constraint entirely",
+    "Picks a specific tool (Mutmut) in 3a before any alternatives are designed",
+    "Writes the actual pyproject.toml mutation config and CI step instead of staying in plan form",
+    "Drafts an ADR auto-rejecting mutation testing without grilling the user for a load-bearing reason"
+  ]
+}

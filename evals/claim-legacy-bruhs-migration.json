@@ -1,0 +1,25 @@
+{
+  "skills": ["bruhs"],
+  "command": "/bruhs:claim",
+  "query": "/bruhs:claim",
+  "files": [".claude/bruhs.json", "CLAUDE.md"],
+  "context": "Existing project with a legacy .claude/bruhs.json from before the marker-block migration. The JSON has integrations.linear.mcpServer='linear-sonner', stack.framework='nextjs', stack.styling=['Tailwind CSS','shadcn/ui'], tooling.skills=['superpowers','shadcn']. CLAUDE.md exists with hand-written rules and product vision but NO bruhs:state or bruhs:rules block. AGENTS.md does not yet exist.",
+  "expected_behavior": [
+    "Step 1 detects the legacy file via Case B path (read_bruhs_block.py returns empty for the marker block, but .claude/bruhs.json is present) and fires the migration AskUserQuestion with header 'Migrate legacy config' offering Migrate / Re-detect from scratch / Cancel",
+    "On 'Migrate (recommended)': reads the legacy JSON verbatim and pipes it into sync_bruhs_block.py --kind state — does NOT re-run stack detection, does NOT lose the user's existing mcpServer / team / project IDs",
+    "Also pipes the legacy JSON through derive_stack_rules.py | sync_bruhs_block.py --kind rules to populate the rules block",
+    "Both blocks are written to BOTH CLAUDE.md and AGENTS.md — AGENTS.md is created if missing, with a minimal header. The two files end up with identical block contents (mirrored)",
+    "Hand-written content in CLAUDE.md outside the marker block is NOT touched — product vision, custom commands, hand-written rules above and below the bruhs-managed block are preserved verbatim",
+    "After writing, fires a second AskUserQuestion: 'Delete the legacy .claude/bruhs.json?' with Yes/No options",
+    "On 'Yes, delete': removes .claude/bruhs.json (and rmdir .claude only if empty). On 'No, keep both': leaves the legacy file alone (it will be ignored by read_bruhs_block.py since the marker block now exists)",
+    "Exits with a one-line summary of what was migrated. Does NOT re-run stack detection (Steps 2–6) on a migrate path — the legacy JSON IS the source of truth"
+  ],
+  "failure_modes": [
+    "Re-runs stack detection (Steps 2–6) on the migrate path, potentially overwriting the user's selected Linear team/project with auto-detected defaults",
+    "Auto-deletes .claude/bruhs.json without the second AskUserQuestion",
+    "Skips writing AGENTS.md (writes only CLAUDE.md) — breaks the mirror invariant",
+    "Truncates or rewrites hand-written CLAUDE.md content outside the block",
+    "Skips the rules block (writes state only) — leaves the user without stack-derived rules",
+    "Falls through to Case C (fresh setup) despite the legacy file being present"
+  ]
+}

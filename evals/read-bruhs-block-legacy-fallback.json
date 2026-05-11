@@ -1,0 +1,22 @@
+{
+  "skills": ["bruhs"],
+  "command": "scripts/read_bruhs_block.py",
+  "query": "python3 <PLUGIN_DIR>/scripts/read_bruhs_block.py --kind state --root .",
+  "files": [".claude/bruhs.json"],
+  "context": "Project has a legacy .claude/bruhs.json with a valid state JSON, but CLAUDE.md does not contain a bruhs:state marker block (the migration hasn't been run). AGENTS.md does not exist.",
+  "expected_behavior": [
+    "Tries CLAUDE.md first — finds no bruhs:state block",
+    "Tries AGENTS.md second — file doesn't exist, skip silently",
+    "Falls back to .claude/bruhs.json — reads the file and prints its content verbatim to stdout",
+    "Prints a stderr warning that mentions the legacy fallback and suggests running /bruhs:claim to migrate — non-fatal, exit code is still 0",
+    "Exit code 0 (found and printed), not 1",
+    "Output on stdout is parseable JSON — callers can pipe through `jq` or JSON.parse without preprocessing"
+  ],
+  "failure_modes": [
+    "Returns exit code 1 / 'block not found' despite the legacy file being present",
+    "Prints the warning to stdout, breaking JSON parseability downstream",
+    "Hard-fails when AGENTS.md doesn't exist (it should silently skip and try the next)",
+    "Reads CLAUDE.md but is fooled into returning the WRONG block kind (e.g. matches a bruhs:rules block when --kind state was requested)",
+    "Reads the legacy file even when a valid bruhs:state block IS present in CLAUDE.md (the marker block must take priority)"
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "skills": ["bruhs"],
+  "command": "/bruhs:deepen",
+  "query": "/bruhs:deepen src/billing",
+  "files": [],
+  "context": "Next.js + Drizzle project. src/billing contains 9 files: charge.ts (thin wrapper around stripe.charges.create), refund.ts (thin wrapper around stripe.refunds.create), subscription.ts (8 fields + 3 booleans for state), receipt.ts (formats and emails), invoice.ts (queries DB then formats), and 4 utility files. CONTEXT.md exists and defines a 'Subscription' as 'a charge cadence bound to a Customer'. Callers across src/api and src/jobs each construct stripe.Charge objects directly before passing them to billing functions.",
+  "expected_behavior": [
+    "Phase 1: reads CONTEXT.md first to anchor domain vocabulary, then traces 2–3 representative call paths end-to-end (e.g., a charge from API → DB → receipt), not running a static linter",
+    "Identifies friction points using the diagnostic categories from practices/architecture-deepening.md — at minimum 'Pass-through' (charge.ts, refund.ts thin wrappers), 'Leaky implementation' (callers constructing stripe.Charge directly), and 'Boolean-flag interfaces' (subscription.ts multi-boolean state)",
+    "Applies the deletion test before promoting any module to a candidate — names the module, names where complexity would go if deleted",
+    "Phase 2: produces a numbered list of 5–8 candidates, each with Files / Problem / Proposed deepening / Benefits (Leverage + Locality) / Dependency category / Rough effort",
+    "Uses domain vocabulary ('Subscription', 'Charge') from CONTEXT.md, NOT generic terms like 'manager' or 'service'",
+    "Uses architectural language exactly: 'module', 'interface', 'depth', 'seam', 'adapter', 'leverage', 'locality' — does not substitute 'component', 'service', 'API', or 'boundary'",
+    "Ranks candidates by leverage × locality, not by effort — calls this out explicitly",
+    "Ends Phase 2 with the prompt: 'Which would you like to grill?'",
+    "Does NOT refactor code or write any patches — output is decision support only"
+  ],
+  "failure_modes": [
+    "Runs a static analyzer (ts-prune / madge / eslint) instead of reading the code",
+    "Skips the deletion test and promotes every thin wrapper as a candidate without justifying why each earns its keep",
+    "Uses generic 'BillingService' / 'PaymentManager' language instead of the domain vocabulary in CONTEXT.md",
+    "Substitutes 'component' or 'boundary' for 'module' / 'seam' — drifts away from the deepen vocabulary",
+    "Returns 12+ candidates without filtering — failure to re-apply the deletion test",
+    "Writes actual refactor patches in Phase 2 instead of staying decision-only",
+    "Produces interface designs in Phase 2 instead of waiting for Phase 3 grilling"
+  ]
+}

@@ -134,7 +134,7 @@ def ensure_file(path: Path) -> str:
     if path.exists():
         return path.read_text(encoding="utf-8")
     if path.name == "CLAUDE.md":
-        return "# CLAUDE.md\n\nProject instructions for Claude Code.\n"
+        return "# CLAUDE.md\n\nProject instructions for AI coding agents.\n"
     if path.name == "AGENTS.md":
         return "# AGENTS.md\n\nProject instructions for AI coding agents.\n"
     return ""
