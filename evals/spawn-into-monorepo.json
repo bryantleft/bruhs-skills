@@ -16,7 +16,7 @@
     "Step 5 creates a single Linear ticket for the api setup (not the full 3-ticket bootstrap used for greenfield projects)",
     "Step 6 scaffolds via `pnpm create hono@latest apps/api` from the monorepo root",
     "Updates turbo.json pipeline to include the new app, and extends pnpm-workspace.yaml if necessary",
-    "Step 8 updates the existing bruhs:state block in CLAUDE.md to add the new framework to stack.frameworks (monorepo uses the frameworks ARRAY form, not framework string) rather than overwriting the whole file"
+    "Step 8 updates the existing bruhs:state block in CLAUDE.md and AGENTS.md to add the new framework to stack.frameworks (monorepo uses the frameworks ARRAY form, not framework string) rather than overwriting the existing block"
   ],
   "failure_modes": [
     "Scaffolds the Hono app at the repo root instead of apps/api",

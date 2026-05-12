@@ -43,7 +43,12 @@ ls .claude/bruhs.json 2>/dev/null
 
 **Case A — `bruhs:state` block found in CLAUDE.md / AGENTS.md:**
 
+The marker block always wins. If a legacy `.claude/bruhs.json` is *also* present, surface that to the user as a one-line note before the prompt — it's dormant (ignored by `read_bruhs_block.py`) but should be cleaned up at some point.
+
 ```javascript
+// Optional one-line note when both are present:
+// "Note: a legacy .claude/bruhs.json is also on disk. It's dormant — read_bruhs_block.py reads the marker block."
+
 AskUserQuestion({
   questions: [{
     question: "Config already exists in CLAUDE.md (bruhs:state block). Would you like to reconfigure?",
@@ -56,8 +61,8 @@ AskUserQuestion({
   }]
 })
 ```
-- If **Yes**: proceed into Step 2 and re-run the full detection + prompt flow.
-- If **No**: exit with `Kept existing bruhs:state block.`
+- If **Yes**: proceed into Step 2 and re-run the full detection + prompt flow. If a legacy `.claude/bruhs.json` was also present, fire the delete-prompt AskUserQuestion after Step 7 (same prompt as the Migrate / Re-detect paths).
+- If **No**: exit with `Kept existing bruhs:state block.` Any dormant legacy file stays in place.
 
 **Case B — Legacy `.claude/bruhs.json` found, no marker block yet (MIGRATION PATH):**
 
@@ -96,8 +101,8 @@ AskUserQuestion({
      ```
      If **Yes**: `rm .claude/bruhs.json` (and `rmdir .claude 2>/dev/null` only if empty).
   5. Exit with summary.
-- If **Re-detect**: proceed to Step 2.
-- If **Cancel**: exit, no changes.
+- If **Re-detect**: proceed to Step 2 with the legacy file ignored. After Step 7 writes the freshly-detected blocks, fire the same delete prompt as the Migrate path (the legacy file is still on disk but will be ignored by `read_bruhs_block.py` going forward; ask the user before removing it).
+- If **Cancel**: exit, no changes (no marker blocks written, legacy file untouched).
 
 **Case C — Neither block nor legacy file present:** proceed to Step 2 (fresh setup).
 

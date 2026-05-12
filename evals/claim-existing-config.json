@@ -9,14 +9,14 @@
   ],
   "context": "Project already has a valid bruhs:state block in CLAUDE.md with Linear wired to linear-sonner and a Next.js+Drizzle stack. User runs claim again, perhaps to reconfigure after adding Convex.",
   "expected_behavior": [
-    "Step 1 detects the existing bruhs:state block in CLAUDE.md via the read_bruhs_block.py probe (with legacy bruhs.json fallback)",
+    "Step 1 detects the existing bruhs:state block in CLAUDE.md via the read_bruhs_block.py probe (with legacy .claude/bruhs.json fallback)",
     "Immediately issues an AskUserQuestion with header 'Reconfigure' offering Yes (overwrite) / No (keep existing and exit)",
     "If user picks 'No', exits cleanly without touching the file or calling any Linear MCP tools",
     "If user picks 'Yes', continues into Step 2 stack detection and proceeds to re-run the full workflow before overwriting the file at Step 7",
     "Does not silently overwrite the existing config without the prompt"
   ],
   "failure_modes": [
-    "Overwrites the bruhs:state block to CLAUDE.md and AGENTS.md without asking, losing custom fields the user added by hand",
+    "Overwrites the bruhs:state block in CLAUDE.md and AGENTS.md without asking, losing custom fields the user added by hand",
     "Exits immediately on detecting the file without offering the reconfigure option",
     "Merges the new detection into the existing config in a destructive way (e.g. wiping stack.libraries)"
   ]

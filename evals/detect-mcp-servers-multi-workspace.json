@@ -1,0 +1,28 @@
+{
+  "skills": ["bruhs"],
+  "command": "scripts/detect_mcp_servers.py",
+  "query": "python3 <PLUGIN_DIR>/scripts/detect_mcp_servers.py --config <PATH>",
+  "files": [],
+  "context": "User has ~/.claude.json with mcpServers configured: 'linear-perdix', 'linear-sonner', 'notion', 'context7', 'github', 'shadcn', 'trigger'. Two Linear workspaces are intentional (multi-workspace setup). Some entries have only a 'command' field; others have full env blocks.",
+  "expected_behavior": [
+    "Exit code 0",
+    "Output is valid JSON with four array-valued keys: linear, notion, github, other",
+    "linear array contains BOTH 'linear-perdix' and 'linear-sonner' (substring or prefix match on the name)",
+    "notion array contains 'notion'",
+    "github array contains 'github'",
+    "other array contains the remaining names (context7, shadcn, trigger) — exact spelling preserved",
+    "Order within each array is stable across runs (deterministic — alphabetical or insertion order, but consistent)",
+    "Missing ~/.claude.json (or empty mcpServers) returns all four arrays as empty, exit 0 — NOT exit 2",
+    "Invalid JSON in the config file exits 2 with stderr error message",
+    "--config <PATH> overrides the default location and reads that file instead",
+    "Errors go to stderr; stdout is always parseable JSON or empty"
+  ],
+  "failure_modes": [
+    "Returns only one of the two Linear entries — fails to detect multi-workspace setup, breaks claim's workspace-picker AskUserQuestion",
+    "Groups 'linear-perdix' under 'other' because the name doesn't match exactly 'linear'",
+    "Exits 2 when ~/.claude.json is missing instead of returning empty arrays",
+    "Crashes on entries without a full env block — assumes shape that not all MCPs have",
+    "Logs to stdout, polluting JSON output",
+    "Order changes across runs (depends on dict iteration order), making downstream caller logic flaky"
+  ]
+}

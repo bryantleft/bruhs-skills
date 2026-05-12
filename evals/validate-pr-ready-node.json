@@ -1,0 +1,28 @@
+{
+  "skills": ["bruhs"],
+  "command": "scripts/validate_pr_ready.sh",
+  "query": "bash <PLUGIN_DIR>/scripts/validate_pr_ready.sh",
+  "files": [],
+  "context": "Node project with package.json that has scripts: 'typecheck' (passes), 'lint' (FAILS with one error), 'test' (passes). No Cargo.toml, pyproject.toml, or go.mod. The script should auto-detect the stack as node-only.",
+  "expected_behavior": [
+    "Exit code 1 (at least one check failed)",
+    "Auto-detects 'node' stack from package.json without --stack flag",
+    "Runs typecheck, lint, test in order — does NOT short-circuit on first failure (runs all checks so the user sees the full picture)",
+    "Each check prints '[PASS] <label>' or '[FAIL] <label>' to stdout",
+    "On FAIL, prints the first ~20 lines of the failing command's output for triage",
+    "--skip lint excludes lint from the run; exit code is 0 if all OTHER checks pass",
+    "--stack node forces node-only detection (no false positives for any present Cargo.toml in a mixed repo)",
+    "No recognized stack (no package.json / Cargo.toml / pyproject.toml / go.mod) exits 2 with usage-error stderr message",
+    "Output goes to stdout (not stderr) so the caller can pipe / capture; errors-about-the-script-itself go to stderr",
+    "Script is executable (chmod +x), not requiring 'bash' prefix"
+  ],
+  "failure_modes": [
+    "Short-circuits on first FAIL, hiding subsequent failures from the user",
+    "Auto-detects stack as 'all' instead of 'node' and runs Rust/Python checks that aren't applicable",
+    "Exit code 0 when lint fails — masks the failure",
+    "Truncates failure output to 0 lines (just '[FAIL]' with no context for triage)",
+    "--skip flag silently ignored, runs all checks anyway",
+    "Hard-coded to assume vitest — fails for projects using jest or other test runners",
+    "Crashes on package.json with no scripts section"
+  ]
+}

@@ -6,21 +6,23 @@
   "context": "TypeScript codebase. ReservationManager is a known shallow module the team wants grilled directly. It has methods: createReservation(customerId, restaurantId, partySize, date, time, smoking, vip, depositCents, depositRequired, notes) and updateReservation(id, partialFields). Three callers across api/reservations.ts, jobs/reminders.ts, and admin/reservations.ts each duplicate input validation (party size > 0, date in the future, deposit >= 0). The interface leaks Stripe payment intent IDs into the create signature even though only one caller uses deposits.",
   "expected_behavior": [
     "Skips Phase 1 (--no-explore is set) and goes directly to Phase 3 grilling on ReservationManager",
-    "Phase 3 opens by re-stating the deletion test for this module: 'If ReservationManager were deleted, where would the complexity go?' — and resolves it before designing a new interface",
-    "Co-designs an interface, not handed down. Asks clarifying questions about invariants, ordering, error behavior, and configuration before proposing types",
-    "Classifies the dependency category (in-process / local-substitutable / remote-owned / true-external) — Stripe is true-external, restaurant DB is local-substitutable",
+    "Phase 3a frames the candidate concretely — names the existing interface, problem (10-arg create + 3 boolean state), and the user-visible target shape — before proposing alternatives",
+    "Phase 3b designs the interface TWICE: produces at least two distinct alternatives (e.g., 'Minimal' vs 'Caller-optimised' vs 'Ports-and-Adapters'), each with its own dependency strategy and trade-offs. Naming alternatives A/B/C/D is encouraged but the load-bearing rule is plurality, not the labels",
+    "Classifies dependency category for each alternative (in-process / local-substitutable / remote-owned / true-external) — Stripe is true-external, restaurant DB is local-substitutable",
     "Proposes promoting the scattered party-size / date / deposit invariants into the module (locality win) and hiding Stripe payment intent IDs behind a Deposit type (leverage win)",
-    "Proposes a testing plan tied to the new interface — what becomes integration-testable, what becomes unit-testable, what becomes contract-testable against the Stripe adapter",
+    "Phase 3c makes an OPINIONATED recommendation among the alternatives. Recommending without picking a winner is failure. The recommendation cites trade-offs explicitly",
     "Names a seam (the deposit-collection step) and explicitly notes whether one adapter or two are expected — invokes the 'two adapters means a real seam' rule",
-    "Asks before generating an ADR. Only writes an ADR if the user gives a reason that should prevent future re-suggestion",
-    "Still does not refactor code or write the new module — output is the co-designed interface + dependency strategy + testing plan"
+    "Phase 3 hand-off output (3e) includes: implementation plan suitable for /bruhs:cook, test plan tied to the new interface (what becomes integration-testable / unit-testable / contract-testable), migration plan from the old interface, and a tests-to-delete list",
+    "If a rejection reason is durable, drafts an ADR — does not auto-skip ADR creation when it would prevent future re-suggestion",
+    "Still does not refactor code or write the new module — output is the co-designed interface + dependency strategy + plans"
   ],
   "failure_modes": [
     "Re-runs Phase 1 exploration despite --no-explore",
-    "Skips the deletion test and goes straight to interface design",
-    "Designs the interface unilaterally instead of co-designing — never asks for invariants or error behavior",
+    "Designs ONE interface only — violates the 'design-it-twice' rule (Phase 3b)",
+    "Presents alternatives but refuses to pick a winner — 'recommending without an opinion is failure' (Phase 3c)",
     "Adds a port (interface + adapter) for a single implementation, violating 'two adapters means a real seam'",
     "Writes the actual TypeScript implementation of ReservationManager v2",
-    "Auto-generates an ADR without asking — pollutes docs/adrs/ for a deepening that may still happen"
+    "Skips the hand-off bundle (Phase 3e) — produces an interface design with no implementation plan, test plan, or tests-to-delete list",
+    "Refuses to draft an ADR even when a load-bearing rejection reason would justify one"
   ]
 }

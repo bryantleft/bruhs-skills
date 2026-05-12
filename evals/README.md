@@ -9,9 +9,19 @@ Each file in this directory is a JSON scenario that tests one command, a script 
 - Are load-bearing rules (e.g. peep's local validation, yeet's Conventional Commits, slop's priority order) actually applied?
 - For script-level scenarios: does the script produce the expected stdout / stderr / exit code, and are its file-system side effects safe (atomic, idempotent, non-destructive outside the markers)?
 
-## Running an evaluation manually
+## Running the script-level evals (automated)
 
-There's no built-in runner. The lightweight process:
+Run the harness:
+
+```bash
+bash evals/run_script_tests.sh
+```
+
+It exercises every script-level scenario with concrete assertions (stdout / stderr / exit code / file-system side effects) and prints a `PASS: N / FAIL: N` summary. Non-zero exit if anything fails. Use it as a pre-commit smoke check whenever you touch `scripts/*`.
+
+## Running the command-level evals manually
+
+There's no automated runner for command-level scenarios — they test natural-language activation and agent workflow adherence, which require a model in the loop. The lightweight process:
 
 1. Open a fresh AI coding agent session with the bruhs plugin installed (Claude Code, Codex, or any agent that reads CLAUDE.md / AGENTS.md).
 2. Paste the `query` as the user message (with any `files` staged in a scratch repo).
@@ -57,15 +67,19 @@ There's no built-in runner. The lightweight process:
 | `/bruhs:spawn` | `spawn-*.json` |
 | `/bruhs:yeet` | `yeet-*.json` |
 
-### Scripts (script-level scenarios)
+### Scripts (script-level scenarios — automated via `run_script_tests.sh`)
 
 | Script | Scenarios |
 |---|---|
 | `scripts/sync_bruhs_block.py` | `sync-bruhs-block-*.json` |
 | `scripts/read_bruhs_block.py` | `read-bruhs-block-*.json` |
 | `scripts/derive_stack_rules.py` | `derive-stack-rules-*.json` |
+| `scripts/detect_stack.py` | `detect-stack-*.json` |
+| `scripts/detect_mcp_servers.py` | `detect-mcp-servers-*.json` |
+| `scripts/validate_pr_ready.sh` | `validate-pr-ready-*.json` |
+| `scripts/write_bruhs_config.py` | `write-bruhs-config-*.json` (deprecation shim) |
 
-Script scenarios assert on stdout, stderr, exit code, and observable file-system side effects (atomicity, idempotency, hand-written content preservation outside the markers).
+Script scenarios assert on stdout, stderr, exit code, and observable file-system side effects (atomicity, idempotency, hand-written content preservation outside the markers). All seven are exercised by `run_script_tests.sh` — 69 concrete assertions at the time of writing.
 
 ### Cross-cutting flows
 
@@ -73,6 +87,7 @@ Scenarios that span multiple commands or test invariants of the marker-block sys
 
 - `claim-legacy-bruhs-migration.json` — port `.claude/bruhs.json` → marker blocks
 - `claim-migration-redetect.json` — ignore the legacy file, re-detect from code
+- `claim-marker-and-legacy-both-present.json` — Case A wins when marker block AND legacy file coexist
 - `cook-persists-discovered-skills.json` — newly discovered skills round-trip back into `bruhs:state`
 
 Run these whenever the migration path, the marker format, or the mirror invariant (CLAUDE.md ≡ AGENTS.md inside the blocks) is touched.

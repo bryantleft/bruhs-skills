@@ -2,7 +2,7 @@
   "skills": ["bruhs"],
   "command": "/bruhs:cook",
   "query": "/bruhs:cook add stripe checkout to the pricing page",
-  "files": ["CLAUDE.md"],
+  "files": ["CLAUDE.md", "AGENTS.md"],
   "context": "Next.js + Drizzle project. CLAUDE.md contains a bruhs:state block with stack.framework='nextjs', tooling.skills=['superpowers','shadcn','vercel-react-best-practices']. The 'stripe-best-practices' skill is installed in the agent's skill marketplace but NOT yet listed in tooling.skills. The feature involves Stripe Checkout, which the stripe-best-practices skill exists to guide.",
   "expected_behavior": [
     "Step 0 reads the bruhs:state block via read_bruhs_block.py, finds existing tooling.skills",
@@ -11,7 +11,7 @@
     "Persists the newly discovered stripe-best-practices skill back into the bruhs:state block by piping the updated state JSON into sync_bruhs_block.py --kind state AND re-deriving the rules block (in case Stripe-related rules are added later)",
     "Both CLAUDE.md and AGENTS.md are updated atomically — same content, same block, mirrored. The state block now lists ['superpowers','shadcn','vercel-react-best-practices','stripe-best-practices']",
     "Hand-written content outside the bruhs:state block is preserved",
-    "Step 7 console.log mentions which skill was added to the state, so the user sees the side effect"
+    "After persisting (still inside Step 2 / Explore), console.log mentions which skill was added to the state, so the user sees the side effect before exploration continues"
   ],
   "failure_modes": [
     "Loads stripe-best-practices for this session but does NOT persist it — next session has to rediscover it",

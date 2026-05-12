@@ -1,0 +1,25 @@
+{
+  "skills": ["bruhs"],
+  "command": "scripts/write_bruhs_config.py",
+  "query": "cat state.json | python3 <PLUGIN_DIR>/scripts/write_bruhs_config.py --root .",
+  "files": [],
+  "context": "Existing project, fresh root. STATE_JSON is a valid bruhs state (stack, tooling, integrations.linear). A caller from an older bruhs version (or a third-party automation) still pipes JSON to write_bruhs_config.py expecting it to write .claude/bruhs.json.",
+  "expected_behavior": [
+    "Exit code matches what sync_bruhs_block.py --kind state would produce — 0 on success, 2 on validation error, 3 on filesystem error",
+    "Stderr contains a deprecation warning naming write_bruhs_config.py and pointing at sync_bruhs_block.py — visible to humans, not buried",
+    "Despite the script being named 'write_bruhs_config.py', it writes the bruhs:state block to CLAUDE.md and AGENTS.md, NOT .claude/bruhs.json",
+    "After success, .claude/bruhs.json does NOT appear at the project root",
+    "Stdout matches sync_bruhs_block.py's stdout (one path per line of the written marker files) so old callers parsing stdout still get a path",
+    "--root flag still works and is forwarded to the underlying script",
+    "--dry-run still works and is forwarded — does not touch disk",
+    "Validation errors are produced by the underlying sync script (same shape, same exit codes), not silently swallowed"
+  ],
+  "failure_modes": [
+    "Still writes .claude/bruhs.json as a side effect — undermines the migration",
+    "Swallows the deprecation warning — old callers never learn to migrate",
+    "Crashes with ModuleNotFoundError because sync_bruhs_block.py isn't located relative to the shim",
+    "Skips validation — accepts invalid JSON that the underlying script would reject",
+    "Stdout output differs from sync_bruhs_block.py output, breaking automated callers that grep the path",
+    "--dry-run actually writes to disk because the flag isn't forwarded"
+  ]
+}

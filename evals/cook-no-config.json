@@ -13,7 +13,7 @@
     "Reminds the user at the end of Step 7 that they can run /bruhs:claim later to enable full features"
   ],
   "failure_modes": [
-    "Crashes when trying to read the missing bruhs:state block instead of catching the ENOENT and prompting",
+    "Crashes when the bruhs:state block is missing instead of catching the empty read_bruhs_block.py result and prompting",
     "Fabricates a default Linear mcpServer name and attempts Linear ticket operations anyway",
     "Silently proceeds without the AskUserQuestion, hiding the fact that config is missing"
   ]

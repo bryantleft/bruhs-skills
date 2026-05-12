@@ -1,0 +1,22 @@
+{
+  "skills": ["bruhs"],
+  "command": "/bruhs:claim",
+  "query": "/bruhs:claim",
+  "files": ["CLAUDE.md", ".claude/bruhs.json"],
+  "context": "Hybrid state: CLAUDE.md already contains a valid bruhs:state marker block (Case A applies). A legacy .claude/bruhs.json ALSO exists from a previous installation — possibly stale, possibly out of sync with the marker block. This can happen if a user ran an old version of /bruhs:claim, then upgraded the plugin and ran the new version mid-rollout (or merged a branch that re-introduced the legacy file).",
+  "expected_behavior": [
+    "Case A takes priority: Step 1's first probe (read_bruhs_block.py --kind state) finds a marker block, so claim immediately enters the Reconfigure prompt (Yes / No) — NOT the migration prompt (Case B)",
+    "Calls out the legacy .claude/bruhs.json in the prompt or in a one-line note BEFORE the user picks Yes/No: 'A legacy .claude/bruhs.json is also present and will be ignored by read_bruhs_block.py — clean it up if you no longer need it.'",
+    "If user picks 'No' (keep existing): exits cleanly, does NOT delete the legacy file silently, does NOT overwrite the marker block. The legacy file remains in place but is dormant",
+    "If user picks 'Yes' (reconfigure): proceeds through Step 2–7, writes a fresh bruhs:state block. After writing, fires the delete-prompt AskUserQuestion for the legacy file (same prompt as the Migrate path)",
+    "Never silently treats the legacy file's stack values as authoritative when the marker block exists — the marker block always wins on conflicts",
+    "Does NOT chain migration on top of reconfigure (no Case B prompt fires when Case A already matched)"
+  ],
+  "failure_modes": [
+    "Fires the Case B migration prompt despite the marker block being present — confuses the user about which is the source of truth",
+    "Silently deletes the legacy .claude/bruhs.json after Reconfigure-Yes without prompting the user (irreversible)",
+    "Reads the legacy file in addition to the marker block and merges them — pollutes the new state with stale fields",
+    "Reports 'No legacy file detected' when the file is in fact present — silently misleading",
+    "Exits on Reconfigure-No without mentioning the dormant legacy file — user is unaware it exists and will be surprised later"
+  ]
+}
