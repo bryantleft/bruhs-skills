@@ -1,7 +1,7 @@
 {
   "name": "bruhs",
   "description": "End-to-end development lifecycle: scaffold projects, plan and build features, create Linear tickets, open and review PRs, clean up after merge, audit codebases, surface architectural deepenings. Use when starting a project, implementing a feature, shipping code, addressing PR reviews, merging, auditing code quality, or finding shallow modules to deepen.",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "author": {
     "name": "Bryant Le",
     "email": "bryantleft@gmail.com"
