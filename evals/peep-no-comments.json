@@ -3,17 +3,27 @@
   "command": "/bruhs:peep",
   "query": "/bruhs:peep",
   "files": [],
-  "context": "User is on branch feat/add-profile-page with open PR #73. The reviewThreads query returns zero unresolved threads. CI is green.",
+  "context": "User is on branch feat/add-profile-page with open PR #73. The reviewThreads query returns zero unresolved threads. CI is green. No prior .claude/.peep-history/PR-73.jsonl exists.",
   "expected_behavior": [
     "Step 1 finds the PR, Step 2 runs the graphql query and counts 0 unresolved threads",
-    "Step 3 fires AskUserQuestion with header 'AI Review' offering 'Yes - full review' (subagent per changed file), 'Yes - quick scan' (single subagent over full diff), and 'Skip to merge'",
+    "Step 2a creates .claude/.peep-history/ if missing and loads PR-73.jsonl (empty since no prior runs)",
+    "Step 3 fires AskUserQuestion with header 'AI Review' offering 'Yes - full review' (subagent per changed file + validator pass), 'Yes - quick scan' (N=3 majority voting over diff), and 'Skip to merge'",
     "If 'Yes - full review': runs `gh pr diff 73 --name-only` then spawns one feature-dev:code-reviewer subagent per changed file, ALL in parallel in one tool-call message, each using the file-scoped review prompt with the priority order (bugs > security > perf anti-patterns > edge cases > API contract) and the local-validation block that sets VALIDATION_STATUS",
-    "If 'Yes - quick scan': spawns a single subagent fed `gh pr diff 73` output, instructed to report only high-confidence (>=4) critical/warning issues",
+    "After reviewers return, Step 3a spawns one validator subagent per proposed issue IN PARALLEL with adversarial 'try to falsify this claim' framing, dropping validator-rejected findings and downgrading validator-unsure confidence by 1",
+    "If 'Yes - quick scan': spawns THREE reviewer subagents in parallel over `gh pr diff 73` output with shuffled file orderings (seeds 1, 2, 3), then merges by consensus — keeps only issues that appear in >=2 of 3 passes (fuzzy-matched by file + line ±3 + summary token overlap), bumps confidence on 3-of-3 agreement, records VOTE_COUNT: n/3 on each surviving issue",
+    "Step 5a applies hard category filter — drops `suggestion`-severity issues whose normalized summary matches lint-territory keywords (naming, formatting, import order, magic number without coupling concern, etc.) and logs the dropped count as a debug line",
+    "Step 5b applies cross-run dedupe against priorFindings — skips findings whose issue_key matches a prior entry with unchanged context_hash and user_action != 'applied'",
+    "Step 5c appends every shown finding (with eventual user_action and validator_verdict) to .claude/.peep-history/PR-73.jsonl as one JSON object per line, and ensures .claude/.peep-history/ is in .gitignore",
     "If 'Skip to merge': jumps straight to Step 12 (gh pr view reviewDecision,mergeable,mergeStateStatus,statusCheckRollup) to check merge readiness"
   ],
   "failure_modes": [
     "Silently exits with 'no comments, nothing to do' instead of offering the AI review branch",
     "Runs 'full review' sequentially rather than dispatching all per-file subagents in parallel",
+    "Skips the validator pass and surfaces unverified reviewer findings directly",
+    "Runs only a single subagent on 'quick scan' instead of three with consensus merging",
+    "Skips the lint-territory category filter and surfaces naming/formatting suggestions",
+    "Re-surfaces findings the user already saw in a prior run (no cross-run dedupe)",
+    "Fails to persist findings to .claude/.peep-history/PR-73.jsonl, breaking future dedupe",
     "Skips the priority hierarchy in the review prompt, reporting style and naming nits instead of real bugs"
   ]
 }
