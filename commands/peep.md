@@ -16,6 +16,9 @@ Uses **isolated subagents** per comment thread to prevent context bleed. Each co
 - [Architecture: Subagent Review Model](#architecture-subagent-review-model)
 - [Local Validation (Key Principle)](#local-validation-key-principle)
 - [Workflow](#workflow)
+  - [Step 2a: Load Prior peep History (cross-run dedupe)](#step-2a-load-prior-peep-history-cross-run-dedupe)
+  - [Step 3a: Validator Pass (full review only)](#step-3a-validator-pass-full-review-only)
+  - [Step 5a/5b/5c: Category Filter, Dedupe, Persist](#step-5-aggregate-and-present-results)
 - [Output Summary](#output-summary)
 - [Design Decisions (from BugBot + Code Review Research)](#design-decisions-from-bugbot--code-review-research)
 - [Tips](#tips)
@@ -32,6 +35,8 @@ Uses **isolated subagents** per comment thread to prevent context bleed. Each co
 - `/bruhs:peep` - Address comments on current branch's PR
 - `/bruhs:peep 42` - Address comments on PR #42 (switches branch if needed)
 - `/bruhs:peep PERDIX-145` - Find PR by Linear ticket ID
+- `/bruhs:peep --land` - After applying fixes, watch `gh pr checks` until green (delegates the CI loop to `/bruhs:land`)
+- `/bruhs:peep --resolve-conflicts` - If the PR is in `MERGEABLE: false / DIRTY` state, run the conflict-resolution path first (see [Merge Conflict Path](#merge-conflict-path)), then address comments
 
 ## Prerequisites
 
@@ -41,25 +46,50 @@ Uses **isolated subagents** per comment thread to prevent context bleed. Each co
 
 ## Architecture: Subagent Review Model
 
+There are two review paths and they have different pipelines:
+
+**Comment-addressing path** (reviewer comments exist → analyze each):
+
 ```
 Main Agent (orchestrator)
 ├── Fetches PR metadata + comment threads
+├── Loads prior peep history for this PR (cross-run dedupe)
 ├── Spawns N subagents in parallel (one per comment thread)
 │   ├── Subagent 1: reads file, analyzes comment, proposes fix, VALIDATES LOCALLY
 │   ├── Subagent 2: reads file, analyzes comment, proposes fix, VALIDATES LOCALLY
 │   └── Subagent N: reads file, analyzes comment, proposes fix, VALIDATES LOCALLY
-├── Aggregates results, filters by confidence + validation status
+├── Aggregates → category filter → dedupe against history
 ├── Presents to user for approval (showing which fixes verified locally)
 ├── Runs full validation suite before commit
-└── Applies approved fixes, commits, pushes
+├── Applies approved fixes, commits, pushes
+└── Persists shown findings to history with user_action
+```
+
+**Discovery path** (no comments → AI surfaces issues):
+
+```
+Main Agent (orchestrator)
+├── Fetches PR diff
+├── Loads prior peep history for this PR
+├── EITHER full review:                 OR  quick scan:
+│   ├── Reviewer subagent per file       ├── 3 reviewer subagents over diff
+│   │   (parallel)                       │   (parallel, shuffled file order)
+│   └── Validator subagent per issue     └── Consensus merge: keep only
+│       (parallel) — tries to disprove       issues appearing in ≥2 of 3
+├── Aggregates → category filter → dedupe → present
+├── (rest same as comment path)
+└── Persists findings to history
 ```
 
 **Why subagents?**
-- **No context bleed**: Each comment is analyzed in a fresh context. Analysis of a type error in `queries.ts` doesn't bias the review of a naming suggestion in `leaderboard-card.tsx`.
-- **Parallel execution**: All comments analyzed concurrently, not sequentially.
+- **No context bleed**: Each comment / file is analyzed in a fresh context. Analysis of a type error in `queries.ts` doesn't bias the review of a naming suggestion in `leaderboard-card.tsx`.
+- **Parallel execution**: All subagents launch concurrently, not sequentially.
 - **Dynamic context discovery**: Each subagent reads what it needs (the file, imports, related types) instead of front-loading everything into one prompt.
 - **Aggressive analysis + natural filtering**: Subagents investigate thoroughly. Their tool use (reading files, checking types) naturally filters false positives — no need for conservative prompting.
 - **Local validation per fix**: Each subagent runs the project's real typecheck/lint/scoped tests against its proposed fix and reverts. Static reasoning is not enough — a fix that "looks right" can still break the build. Only fixes that pass local checks are surfaced as high-confidence.
+- **Adversarial validator (discovery path)**: A second subagent is told to *falsify* each finding before it's surfaced. Approximates BugBot's multi-pass consensus for ~2x the cost of a single pass instead of 8x.
+- **Majority voting (quick-scan path)**: Three parallel reviewers over the diff with shuffled file order; only findings ≥ 2 of 3 agree on survive. Same principle as BugBot's 8-pass voting, dialed down for cost.
+- **Cross-run dedupe**: A per-PR JSONL history at `.claude/.peep-history/PR-<n>.jsonl` prevents re-surfacing issues the user already saw and decided on, unless the surrounding code changed.
 
 ## Local Validation (Key Principle)
 
@@ -174,6 +204,41 @@ gh api graphql -f query='
 gh pr view <number> --json reviews --jq '.reviews[] | {user: .author.login, state: .state, body: .body}'
 ```
 
+### Step 2a: Load Prior peep History (cross-run dedupe)
+
+PRs iterate. Without state between runs, every `/bruhs:peep` invocation re-surfaces the same AI-discovered issues from the previous run — alert fatigue, exactly the failure BugBot solves with its dedupe step.
+
+Maintain a per-PR history file at `.claude/.peep-history/PR-<number>.jsonl` (one JSON object per line). Each entry records a finding the user *saw* in a prior run, plus what they did with it.
+
+```bash
+HISTORY_DIR=".claude/.peep-history"
+HISTORY_FILE="$HISTORY_DIR/PR-${number}.jsonl"
+mkdir -p "$HISTORY_DIR"
+
+# Load prior findings (empty array if file missing)
+priorFindings=$(test -f "$HISTORY_FILE" && cat "$HISTORY_FILE" | jq -s '.' || echo '[]')
+```
+
+Entry shape:
+
+```json
+{
+  "run_id": "2026-05-15T14:22:31Z",
+  "source": "ai-discovery" | "ai-quickscan" | "reviewer-comment",
+  "file": "lib/db/queries.ts",
+  "line": 45,
+  "issue_key": "<sha256(file + ':' + normalized_summary + ':' + context_hash)>",
+  "summary_normalized": "missing orderby clause on agentstats query",
+  "context_hash": "<sha256 of the 3 lines centered on line>",
+  "user_action": "applied" | "skipped" | "rejected" | "deferred",
+  "validator_verdict": "confirmed" | "rejected" | "unsure" | "n/a"
+}
+```
+
+**`issue_key` is what enables dedupe.** Normalize the summary (lowercase, strip punctuation, collapse whitespace, drop stopwords) before hashing — minor wording drift between runs shouldn't break matching.
+
+**`context_hash` invalidates dedupe when the surrounding code changes.** If the user edited the file near the flagged line, the old finding is stale and should be re-surfaced.
+
 ### Step 3: Zero Comments? Offer AI Discovery Review
 
 If there are **0 unresolved comment threads**, offer an AI review pass before skipping to merge readiness. This catches issues that human reviewers missed or haven't gotten to yet.
@@ -279,27 +344,89 @@ FILES_READ: <list of files you read to verify>
 })
 ```
 
-After all subagents return, aggregate and present findings the same way as comment-thread reviews (Step 4), but labeled as "AI-discovered issues" rather than reviewer comments.
+After all file-reviewer subagents return, run the **validator pass** (Step 3a) before aggregation.
+
+#### Step 3a: Validator Pass (full review only)
+
+Discovery-mode findings come from a single reviewer per file with no second opinion. To cut false positives — the failure mode BugBot solves with majority voting + a validator model — spawn one validator subagent per proposed issue **in parallel**, with the explicit job of trying to disprove it.
+
+```javascript
+// For each proposed issue from Step 3 reviewers, spawn in parallel:
+Agent({
+  subagent_type: "feature-dev:code-reviewer",
+  description: `Validate ${issue.file}:${issue.line}`,
+  prompt: `
+You are a skeptical validator. Another reviewer claims this is a bug. Your job is to falsify the claim.
+
+## Proposed Issue
+- File: ${issue.file}
+- Line: ${issue.line}
+- Summary: ${issue.summary}
+- Severity claimed: ${issue.severity}
+- Reviewer's analysis: ${issue.analysis}
+- Reviewer's proposed fix: ${issue.fix_old_string} → ${issue.fix_new_string}
+
+## Your Task
+
+1. **Read the file** at \`${issue.file}\` around line ${issue.line} (read at least 30 lines of surrounding context).
+2. **Read imports, types, callers, and tests** as needed to verify the claim — not to support it. Look for reasons the reviewer is wrong.
+3. **Falsify aggressively.** Consider:
+   - Is there a guard upstream that makes the claimed failure impossible?
+   - Is the "missing" handling actually done elsewhere (framework, decorator, middleware, caller)?
+   - Is the claimed pattern (e.g. N+1) actually batched at a lower layer (DataLoader, view, materialized result)?
+   - Is the proposed fix actually a behavior change disguised as a bug fix?
+   - Does the test suite encode the current behavior as intentional?
+4. **Reach a verdict.**
+
+## Output Format (STRICT)
+
+VERDICT: <confirmed|rejected|unsure>
+REASONING: <2-3 sentences citing what you read>
+FILES_CHECKED: <list of files you read>
+COUNTER_EVIDENCE: <if rejected or unsure: the specific code/test/contract that disproves or weakens the claim, or "N/A">
+CONFIDENCE_DELTA: <-2|-1|0|+1>  // how much to adjust the original reviewer's confidence
+`
+})
+```
+
+Validator decision rules:
+- **confirmed**: keep the issue, apply `CONFIDENCE_DELTA` (typically 0 or +1)
+- **rejected**: drop the issue entirely from aggregation
+- **unsure**: keep but downgrade `CONFIDENCE` by 1 and flag as `validator-unsure`; surface below confirmed items of the same severity
+
+Run validators **in parallel in one tool-call message**, same as the reviewer fanout. Do not await each before spawning the next. Why this works: the validator is given the claim and told to disprove it, not summarize it. Adversarial framing + independent tool use (re-reading the file, imports, tests) is the cheapest false-positive filter that approximates BugBot's multi-pass consensus without paying for 8x reviewers.
+
+After validation, aggregate and present findings the same way as comment-thread reviews (Step 4), but labeled as "AI-discovered issues (validated)". Show the count dropped by the validator in the summary table — it's a useful trust signal.
 
 **If "Yes - quick scan":**
 
-Spawn a single subagent with the full diff:
+Run **N=3 majority voting** over the diff. Spawn 3 reviewer subagents in parallel, each instructed to start from a different file in the diff so path-order bias is randomized. Keep only issues that appear in **≥2 of 3** passes after fuzzy match.
 
 ```bash
 diff=$(gh pr diff <number>)
+files=$(gh pr diff <number> --name-only)
 ```
 
 ```javascript
-Agent({
-  subagent_type: "feature-dev:code-reviewer",
-  description: "Quick scan PR diff",
-  prompt: `
+// Compute three randomized file orderings (deterministic per run via Math.random or just rotate)
+const orderings = [
+  shuffledFileList(files, seed=1),
+  shuffledFileList(files, seed=2),
+  shuffledFileList(files, seed=3),
+];
+
+// Spawn all 3 in a single tool-call message:
+for (const order of orderings) {
+  Agent({
+    subagent_type: "feature-dev:code-reviewer",
+    description: `Quick scan PR diff (pass ${i})`,
+    prompt: `
 Quick review of PR #${number}: "${pr.title}".
 
-## Diff
-\`\`\`
-${diff}
-\`\`\`
+You are one of THREE independent reviewers running in parallel. Your peers do not see your output. Be thorough on your own.
+
+## Diff (review in this file order)
+${order.map(f => `### ${f}\n\`\`\`\n${diffFor(f)}\n\`\`\``).join('\n')}
 
 Scan for critical bugs, security issues, and logic errors only.
 Skip style, naming, and minor suggestions. Only report high-confidence (4+) issues.
@@ -315,8 +442,19 @@ FIX_NEW_STRING: | ...
 
 If clean, output: NO_ISSUES_FOUND: true
 `
-})
+  });
+}
 ```
+
+After all 3 return, **merge by consensus**:
+
+1. Group issues by `(file, line ±3)`.
+2. Within each group, fuzzy-match issue summaries (lowercase, strip whitespace, Jaccard similarity ≥ 0.5 on tokens, or simple "share ≥ 2 content words").
+3. Keep only groups with **≥ 2 matching findings**. Drop singletons — those are the BugBot "single-pass noise" case.
+4. For surviving issues, use the highest-confidence pass's `FIX_OLD_STRING`/`FIX_NEW_STRING`. Set `CONFIDENCE = min(5, max_pass_confidence + (count − 2))` — 3-of-3 agreement bumps confidence by 1.
+5. Record `VOTE_COUNT: <n>/3` on each surviving issue for display.
+
+If singleton drops are common across runs, that's a signal the prompt should be tightened — but a single noisy pass should never reach the user.
 
 **If "Skip to merge":** Jump directly to Step 12 (Check Merge Readiness).
 
@@ -423,10 +561,92 @@ VALIDATION_SKIP_REASON: <dirty-overlap|no-tools-detected|non-code-change|other: 
 Collect all subagent results. Filter and sort:
 
 1. **Drop approval-category results** (no action needed)
-2. **Sort by**: must-fix first, then suggestion, then question
-3. **Within each category**: sort by confidence (highest first), with validation-passed items above validation-failed/skipped at the same confidence
-4. **Flag low-confidence items** (confidence <= 2) for manual review
-5. **Surface any `dirty-cleanup-needed` subagents immediately** and halt the flow — the working tree may be inconsistent. Show the user which file is affected and let them run `git status` / `git diff` before continuing.
+2. **Drop validator-rejected items** (Step 3a) — they failed independent verification
+3. **Apply post-aggregation category filter** (see below) — never trust a prompt to suppress lint-territory noise on its own
+4. **Apply cross-run dedupe** (see below) — drop findings the user already saw and rejected/skipped, unless the surrounding code changed
+5. **Sort by**: must-fix first, then suggestion, then question
+6. **Within each category**: sort by confidence (highest first), with validation-passed items above validation-failed/skipped at the same confidence
+7. **Flag low-confidence items** (confidence <= 2) for manual review
+8. **Surface any `dirty-cleanup-needed` subagents immediately** and halt the flow — the working tree may be inconsistent. Show the user which file is affected and let them run `git status` / `git diff` before continuing.
+
+#### Step 5a: Category Filter (lint-territory suppression)
+
+Drop `suggestion`-severity issues whose normalized summary matches lint-territory keywords. Reviewers are told to skip these in the prompt, but a single non-compliant pass leaks straight to the user — a hard filter at the aggregation boundary is the only reliable defense.
+
+```javascript
+const LINT_TERRITORY = [
+  /\b(rename|renaming|naming|name)\b/,
+  /\bimport order\b/,
+  /\bformatting|whitespace|indentation\b/,
+  /\bmagic number\b/,             // unless paired with state/coupling concern — handled below
+  /\bprefer (const|let)\b/,
+  /\balphabetical\b/,
+  /\bjsdoc|doc comment\b/,
+  /\btypo|spelling\b/,
+  /\bmissing semi(colon)?\b/,
+  /\bsingle vs double quote|quote style\b/,
+  /\btrailing comma\b/,
+];
+
+function isLintTerritory(issue) {
+  if (issue.severity !== 'suggestion') return false;
+  const s = issue.summary.toLowerCase();
+  // Exception: a "magic number" finding that also mentions coupling, sync, or duplication is real
+  if (/\bmagic number\b/.test(s) && /(coupl|sync|duplicat|two places|elsewhere)/.test(s)) return false;
+  return LINT_TERRITORY.some(re => re.test(s));
+}
+
+const filtered = aggregated.filter(i => !isLintTerritory(i));
+const droppedAsLint = aggregated.filter(isLintTerritory);  // keep for debug summary
+```
+
+Show the dropped count in the summary table so the user can spot over-aggressive filtering. Never silently swallow — log to a `[debug] filtered N lint-territory suggestions` line.
+
+#### Step 5b: Cross-Run Dedupe
+
+For each surviving finding, compute its `issue_key` and `context_hash` (same definitions as Step 2a). Compare against `priorFindings`:
+
+```javascript
+function shouldSkip(issue, priorFindings) {
+  const key = sha256(`${issue.file}:${normalize(issue.summary)}:${issue.contextHash}`);
+  const prior = priorFindings.find(p => p.issue_key === key);
+  if (!prior) return false;
+  // Context unchanged AND user already saw it AND user did not apply → skip (stale noise)
+  if (prior.context_hash === issue.contextHash && prior.user_action !== 'applied') {
+    return { reason: `previously ${prior.user_action} on ${prior.run_id}` };
+  }
+  return false;
+}
+
+const deduped = filtered.filter(i => !shouldSkip(i, priorFindings));
+const droppedAsDupe = filtered.length - deduped.length;
+```
+
+Skip rule: an issue is dropped if the user previously saw it AND (a) the surrounding code is unchanged AND (b) they did not apply a fix. If they applied, the issue is presumably resolved; if they skipped/deferred/rejected, they've already decided. Re-surfacing wastes their attention.
+
+If the user wants to force re-review (e.g. they realize a prior "skip" was wrong), document the escape hatch: delete `.claude/.peep-history/PR-<number>.jsonl` or pass a future `--no-dedupe` flag.
+
+#### Step 5c: Persist Findings
+
+After presenting the deduped list to the user (and after they make decisions in Steps 6–9), append every finding shown — with its eventual `user_action` — to `$HISTORY_FILE`:
+
+```bash
+# At the end of the address-comments loop, for each issue shown:
+jq -c -n \
+  --arg run_id "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --arg source "$source" \
+  --arg file "$file" \
+  --argjson line "$line" \
+  --arg issue_key "$issue_key" \
+  --arg summary_normalized "$summary_normalized" \
+  --arg context_hash "$context_hash" \
+  --arg user_action "$user_action" \
+  --arg validator_verdict "$validator_verdict" \
+  '{run_id:$run_id, source:$source, file:$file, line:$line, issue_key:$issue_key, summary_normalized:$summary_normalized, context_hash:$context_hash, user_action:$user_action, validator_verdict:$validator_verdict}' \
+  >> "$HISTORY_FILE"
+```
+
+Add `.claude/.peep-history/` to `.gitignore` on first write (it's per-developer state, not shared). Trim entries older than 90 days on each load to keep the file bounded.
 
 Display summary (include validation status per thread):
 
@@ -1005,10 +1225,12 @@ Ready for your next feature! Run /bruhs:cook to start.
 | Approach | Pros | Cons |
 |----------|------|------|
 | Single context (old) | Simple, sees all comments at once | Context bleed between comments, biased analysis, context window pressure |
-| **Subagent per thread (new)** | **Isolated analysis, parallel, no bias** | More API calls, slightly more orchestration |
-| Multi-pass with voting (BugBot v1) | Good false positive reduction | Overkill for addressing known comments |
+| **Subagent per thread (comment path)** | **Isolated analysis, parallel, no bias** | More API calls, slightly more orchestration |
+| **Subagent per file + validator (discovery full)** | **Independent verification cuts FPs** | 2x reviewer cost |
+| **3-pass voting (discovery quick)** | **Consensus filters single-pass noise** | 3x reviewer cost on diff |
+| 8-pass voting (BugBot v1) | Best false positive reduction | 8x cost — overkill for our scale |
 
-For **addressing existing review comments** (not discovering new bugs), subagent-per-thread is the sweet spot. We're not doing discovery — we're analyzing known feedback — so multi-pass voting is unnecessary overhead.
+For **addressing existing review comments** (not discovering new bugs), subagent-per-thread is the sweet spot — we're analyzing known feedback, not finding bugs. For **discovery** (no comments → AI surfaces issues), we apply BugBot's lessons: a validator pass on full review, majority voting on quick scan.
 
 ### Key learnings applied from Cursor's BugBot:
 
@@ -1016,6 +1238,104 @@ For **addressing existing review comments** (not discovering new bugs), subagent
 2. **Dynamic context discovery** — Each subagent reads the file and related imports on its own, rather than us pre-loading all context. BugBot found this consistently outperformed pre-computed context.
 3. **Confidence scoring** — Self-rated confidence (1-5) enables auto-apply mode for high-confidence fixes and flags uncertain items for manual review.
 4. **Iterate on tool design** — "Even small changes in tool design had outsized impact on outcomes." The structured output format and explicit verification instructions matter more than prompt length.
+5. **Validator pass instead of 8x voting** — Adversarial framing ("disprove this") + independent tool use gives most of the FP-reduction benefit at 2x instead of 8x cost. Applied to discovery full-review.
+6. **Majority voting where individual passes are cheap** — Three parallel diff-scanners with shuffled file order; only findings ≥ 2 of 3 agree on survive. Applied to discovery quick-scan, where each pass is small.
+7. **Hard category filter at aggregation boundary** — Telling subagents to skip lint-territory issues isn't enough. A regex filter on summaries at the aggregator drops the leaks. BugBot's approach: strip categories explicitly rather than relying on prompt compliance.
+8. **Cross-run dedupe with context invalidation** — Persist `(file, summary_hash, context_hash, user_action)` per PR. Skip findings the user already decided on, unless the surrounding code changed. Prevents the iteration-loop fatigue that BugBot calls out explicitly.
+
+### Calibrating the validator (when to retune)
+
+The validator is not free — every issue costs an extra subagent. Watch two signals:
+
+- **Rejection rate**: how often the validator drops a reviewer's finding. If this trends > 50% over many runs, the reviewer prompt is too aggressive — tighten it rather than relying on the validator to clean up.
+- **Resolution rate** (BugBot's metric): of the findings that *are* surfaced, how many does the user apply? Track this in the history JSONL. If applied/(applied+rejected+skipped) drops below ~40%, something upstream is regressing.
+
+Neither metric is wired up automatically yet; both are derivable from `.claude/.peep-history/PR-*.jsonl` whenever it's worth running an analysis.
+
+## Merge Conflict Path
+
+Triggered by `--resolve-conflicts`, or auto-triggered when the PR's `mergeStateStatus` is `DIRTY` and the user opts in. Resolves conflicts non-interactively, validates, and stages — never auto-pushes.
+
+### Detect
+
+```bash
+gh pr view --json mergeable,mergeStateStatus,baseRefName --jq '{mergeable, status: .mergeStateStatus, base: .baseRefName}'
+```
+
+`mergeStateStatus: DIRTY` = conflicts. `BLOCKED` / `BEHIND` = behind base but no conflicts (just merge base in). `CLEAN` = no action.
+
+### Resolve
+
+```bash
+git fetch origin "<base>"
+git merge "origin/<base>" || true   # do not bail on conflict exit code
+git status --short --porcelain | awk '$1 ~ /^(UU|AA|DD|AU|UA|DU|UD)$/ {print $2}' > /tmp/peep-conflicts.txt
+```
+
+For each conflicting file:
+
+1. Read the file, identify the conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`).
+2. Resolve with **minimal, correctness-first** edits.
+3. Default to **preserving both sides** when safe. When the two sides are mutually exclusive, choose the variant that:
+   - compiles
+   - keeps public behavior stable
+   - matches the intent of *this PR* (the one being peeped), not the base
+4. Never leave conflict markers behind. Grep for them before continuing:
+   ```bash
+   grep -rn '^<<<<<<<\|^=======$\|^>>>>>>>' --include='*' .
+   ```
+
+### Lockfile conflicts
+
+Never hand-resolve lockfiles. Regenerate them via the package manager:
+
+| File | Command |
+|---|---|
+| `package-lock.json` | `npm install` |
+| `pnpm-lock.yaml` | `pnpm install` |
+| `yarn.lock` | `yarn install` |
+| `bun.lock` | `bun install` |
+| `Cargo.lock` | `cargo build` (or `cargo update -p <pkg>` for surgical resolution) |
+| `uv.lock` | `uv lock` |
+| `poetry.lock` | `poetry lock --no-update` |
+
+### Validate
+
+After resolution, run the project's typecheck + lint + tests (same harness as Step 5.5 of `yeet`):
+
+```bash
+bash "<PLUGIN_DIR>/scripts/validate_pr_ready.sh"
+```
+
+If validation fails, **do not** stage. Surface the failure to the user — the conflict resolution was wrong, not just lint-noisy.
+
+### Stage and commit
+
+```bash
+git add <resolved-files> <regenerated-lockfiles>
+git commit -m "chore: resolve conflicts with <base>"
+```
+
+### Guardrails
+
+- **Never broad-refactor while resolving conflicts.** That's a separate PR.
+- **Never push automatically** after resolving conflicts. The user should eyeball the resolution commit first. Push happens at the normal peep commit step (or via `--land`).
+- **Never bypass hooks** (`--no-verify`).
+- **Never `git reset --hard` to "make conflicts go away"** — that throws away one side silently.
+
+## Landing After Fixes (`--land`)
+
+When `--land` is passed, after applying review-comment fixes and pushing, hand off to `/bruhs:land`'s CI loop:
+
+```
+1. peep applies fixes → commits → pushes
+2. peep prints: "Handing off to /bruhs:land to watch CI…"
+3. delegates to land's workflow (see commands/land.md)
+4. on success: prints "All checks green — PR ready for merge"
+5. on land hitting --max-iterations: surfaces remaining failures, stops
+```
+
+This is just convenience — running `/bruhs:peep` then `/bruhs:land` manually does the same thing.
 
 ## Tips
 
@@ -1026,3 +1346,5 @@ For **addressing existing review comments** (not discovering new bugs), subagent
 - **Re-request reviews** — After pushing fixes, explicitly request re-review
 - **Let reviewers resolve** — Some teams prefer reviewers mark their own threads resolved
 - **Trust confidence scores** — Scores >= 4 are reliable; scores <= 2 need human judgment
+- **Pair with `/bruhs:verify`** — When a reviewer asks "did this actually fix it?", run verify before responding
+- **Use `--land`** — For the full feedback-to-green loop in one shot

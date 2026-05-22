@@ -26,8 +26,91 @@ Thoroughly analyze the entire codebase and clean up AI-generated code patterns. 
 
 - `/bruhs:slop` - Full codebase analysis
 - `/bruhs:slop src/components` - Analyze specific directory
+- `/bruhs:slop --quick` - **Branch-diff-only fast pass** — only look at lines this branch added vs `origin/<base>`. See [Quick Mode](#quick-mode).
 - `/bruhs:slop --fix` - Auto-fix safe issues, prompt for others
 - `/bruhs:slop --report` - Generate report only, no fixes
+- `/bruhs:slop --severity relaxed|balanced|nitpicky|brutal` - Override the default severity (default: balanced)
+
+## Quick Mode
+
+`--quick` runs slop only against **lines the current branch added or changed vs the base branch**. It's the lightest tier: catches AI patterns introduced on this branch without re-auditing the whole codebase.
+
+### When to use
+
+- Right before `/bruhs:yeet` to catch slop you wrote in the last 30 minutes.
+- After `/bruhs:cook` to clean up a fresh feature branch before opening a PR.
+- When the full slop pass would be too noisy and you only care about *this branch's* contributions.
+- Pre-commit hook context — fast enough to run on every commit.
+
+### What it checks (subset of full slop)
+
+Quick mode focuses on the AI-slop patterns that are most likely to be **introduced by this branch's diff**, not codebase-wide structural issues:
+
+- Extra comments inconsistent with surrounding file style
+- Defensive `try/catch` blocks around trusted internal calls
+- `as any` / `as unknown as X` casts used to bypass real type issues
+- Deeply nested conditionals that should be early returns
+- Re-exported types or `// removed` placeholder comments for deleted code
+- Backwards-compat shims for code paths that no longer exist
+- Test descriptions that restate the function name (`describe('drawCard', () => it('drawCard', …))`)
+- Comments that explain WHAT the code does (the code already shows that), instead of WHY
+
+### What it skips
+
+- Architecture / abstraction quality (use full `/bruhs:slop` or `/bruhs:deepen`)
+- Cross-file consistency or naming patterns
+- Performance anti-patterns introduced outside the diff
+- Type-driven-design violations in files this branch didn't touch
+- File-size thresholds (`/bruhs:slop --severity brutal` for that)
+
+### Workflow
+
+```bash
+# 1. Get the diff vs the upstream/base branch
+BASE=$(git merge-base HEAD origin/main)
+git diff --unified=0 "$BASE"...HEAD > /tmp/slop-quick-diff.patch
+
+# 2. Extract the added/changed line ranges per file
+git diff --name-only "$BASE"...HEAD
+```
+
+For each file in the diff:
+
+1. Read the file.
+2. For each `@@ … +<start>,<count> @@` hunk, look at the **added** lines (and a small window of surrounding context).
+3. Apply the quick-mode pattern checks above.
+4. Emit findings only when the *added* code is responsible — don't flag patterns that pre-existed.
+
+### Guardrails
+
+- **Behavior must stay unchanged.** Quick mode is style and AI-slop cleanup, not refactoring.
+- **Prefer minimal, focused edits** over broad rewrites. If a fix would touch lines this branch didn't change, surface it as a follow-up — don't widen the diff.
+- **Keep the summary concise** (1-3 sentences). Quick mode's job is to be fast, not exhaustive.
+
+### Example
+
+```
+> /bruhs:slop --quick
+
+Diffing son-m7-api-sdk against origin/main…
+  9 files changed, +423 / -287, scanning 67 added hunks
+
+apps/web/src/app/api/v1/route.ts
+  L42: unnecessary try/catch around `parseBody()` — Zod already throws a typed error
+  L78: comment "// validate input" restates obvious code — drop
+  L104: `as any` to silence rate-limit return type — let me fix that
+
+packages/sdk/src/client.ts
+  L23: deep nesting around fetch retry — flatten with early-return on `!response.ok`
+
+Recommended fixes (3 of 4 auto-safe):
+  ✓ Remove try/catch at route.ts:42
+  ✓ Drop comment at route.ts:78
+  ✓ Flatten retry block at client.ts:23
+  ⚠ Replace `as any` at route.ts:104 — needs a real return type, suggesting `Result<RateLimitInfo, RateLimitError>`
+
+Apply auto-safe fixes? [Y/n]
+```
 
 ## Philosophy
 
@@ -627,6 +710,99 @@ async function processOrder(order: Order) {
   // ... business logic continues
 }
 ```
+
+## Brutal Mode (Thermo-Nuclear)
+
+`--severity brutal` is the strictest review tier. Beyond reporting every finding the other tiers would catch, it applies an additional set of **structural** rules with one overarching mandate:
+
+> **Be ambitious about structural simplification.** Don't stop at "this could be a bit cleaner." Look for restructurings that delete whole branches, helpers, conditionals, or layers entirely. Prefer the solution that makes the code feel inevitable in hindsight.
+
+### Code-Judo Mandate
+
+For every meaningful change in the diff, ask:
+
+- Is there a reframing that deletes whole categories of complexity, not just rearranges them?
+- Can this change use the existing architecture more effectively, so fewer concepts are introduced?
+- Is there a clear path to **delete** complexity rather than centralize it?
+
+Refactors that merely move complexity around but fail to reduce the number of concepts a reader must hold in their head are flagged — not approved.
+
+### Brutal-Only Findings
+
+These are reported in `brutal` and only in `brutal`:
+
+1. **File size explosion**
+   - A PR that pushes a file from under 1000 lines to over 1000 lines is a presumptive blocker.
+   - Treat as a strong code-quality smell. Prefer extracting helpers/subcomponents/modules.
+   - Waive only with a compelling structural reason **and** the resulting file is still clearly organized.
+
+2. **Spaghetti growth in existing code**
+   - New ad-hoc conditionals, one-off branches, or special cases inserted into unrelated flows.
+   - "Weird if statements in random places" is a design problem, not a stylistic nit.
+   - Prefer pushing the logic into a dedicated abstraction, helper, state machine, or policy object.
+
+3. **Thin / magical abstractions**
+   - Identity wrappers, pass-through helpers, generic mechanisms that hide simple data-shape assumptions.
+   - Indirection that doesn't buy clarity.
+   - Push back: "this abstraction seems unnecessary, can we just keep the direct flow?"
+
+4. **Canonical-layer leaks**
+   - Feature logic leaking into shared/general-purpose paths.
+   - Implementation details leaking through APIs.
+   - Bespoke helpers where the codebase already has a canonical utility.
+   - Push back: "this looks like feature logic leaking into a shared path — can we isolate it?"
+
+5. **Type / boundary churn**
+   - Unnecessary `any` / `unknown` / casts that obscure the real contract.
+   - Optional params used to paper over an unclear invariant.
+   - Silent fallback branches instead of explicit boundaries.
+
+6. **Sequential orchestration where parallel is obvious**
+   - Independent async work serialized for no good reason.
+   - Non-atomic updates that can leave state half-applied when an atomic structure is achievable.
+
+7. **Refactors that don't actually simplify**
+   - Diff moves code around but doesn't reduce the conceptual surface area.
+   - "Cleaner version of the same messy idea" when a much simpler idea is plausible.
+
+### Approval Bar in Brutal Mode
+
+Brutal does not approve merely because behavior is correct. Treat these as **presumptive blockers** unless explicitly justified:
+
+- The PR pushes a file from below 1000 lines to above 1000 lines.
+- The PR adds ad-hoc branching that tangles an existing flow.
+- The PR solves a local problem by scattering feature checks across shared code.
+- The PR adds an unnecessary wrapper, cast-heavy contract, or thin abstraction.
+- The PR duplicates a canonical helper or puts logic in the wrong layer.
+- The PR preserves a lot of incidental complexity when a code-judo move would delete it.
+
+If any condition above is present, leave explicit, actionable feedback and push for a cleaner decomposition. Do not rubber-stamp.
+
+### Tone (Brutal Only)
+
+Direct, serious, demanding. Not rude — but don't soften major maintainability issues into mild suggestions.
+
+Good phrases for `brutal` output:
+
+- `this pushes the file past 1k lines. can we decompose first?`
+- `this adds another special-case branch into an already busy flow. can we move it behind its own abstraction?`
+- `this works, but it makes the surrounding code more spaghetti. let's keep the behavior and restructure the implementation.`
+- `this feels like feature logic leaking into a shared path. can we isolate it?`
+- `this abstraction seems unnecessary. can we keep the direct flow?`
+- `i think there's a code-judo move here that makes this much simpler. can we reframe this so these branches disappear?`
+- `this refactor moves complexity around but doesn't delete it. is there a way to make the model itself simpler?`
+
+### Output Prioritization (Brutal Only)
+
+In `brutal`, prioritize findings in this order:
+
+1. Structural code-quality regressions (file size, spaghetti, layer leaks)
+2. Missed code-judo opportunities (dramatic simplifications left on the table)
+3. Boundary / abstraction / type-contract problems
+4. Modularity / abstraction issues
+5. Legibility / maintainability concerns
+
+Prefer a smaller number of high-conviction comments over a long list of cosmetic notes. If there's a structural issue, lead with it — don't bury it under nits.
 
 ## Workflow
 

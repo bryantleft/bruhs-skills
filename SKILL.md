@@ -6,7 +6,7 @@ description: End-to-end development lifecycle for AI coding agents — scaffold 
 # bruhs
 
 ## Index
-|commands|spawn,claim,cook,yeet,peep,dip,slop,doodle,deepen,drill
+|commands|spawn,claim,cook,verify,yeet,walk,land,peep,dip,slop,doodle,deepen,drill,recap
 |practices|type-driven-design,architecture-deepening,testing-infrastructure,_common,pr-review,typescript-react,typescript-hono,python,python-fastapi,effect-ts,effect-*,rust,rust-*,ui-design
 |config|CLAUDE.md + AGENTS.md (`bruhs:state` and `bruhs:rules` blocks)
 
@@ -14,22 +14,60 @@ description: End-to-end development lifecycle for AI coding agents — scaffold 
 |spawn|Create project or add to monorepo|commands/spawn.md
 |claim|Initialize config for existing project|commands/claim.md
 |cook|Plan + Build feature end-to-end|commands/cook.md
+|verify|Prove a claim with falsifiable evidence (VERIFIED/NOT VERIFIED/INCONCLUSIVE)|commands/verify.md
 |yeet|Ship: Linear ticket → Branch → Commit → PR|commands/yeet.md
+|walk|Generate reviewer walkthrough (markdown or interactive HTML canvas)|commands/walk.md
+|land|Watch PR checks and iterate on CI failures until green|commands/land.md
 |peep|Address PR review comments and merge|commands/peep.md
 |dip|Clean up after merge, switch to base branch|commands/dip.md
-|slop|Deep codebase analysis, AI slop cleanup|commands/slop.md
+|slop|Deep codebase analysis, AI slop cleanup (--quick for branch-diff only)|commands/slop.md
 |doodle|Visualize architecture as tldraw diagrams (PRs, modules, deps, compare, map, freeform)|commands/doodle.md
 |deepen|Find shallow modules, propose architectural deepenings (explore → candidates → grill)|commands/deepen.md
 |drill|Find missing/weak test-infra layers, propose adoptions (explore → candidates → grill)|commands/drill.md
+|recap|Status update from git log over a time window (bugfix/tech-debt/net-new)|commands/recap.md
+
+## Lifecycle Map
+
+Commands compose into an end-to-end loop. Typical flow:
+
+```
+spawn / claim          → project setup
+        ↓
+cook <feature>         → plan + build
+        ↓
+verify <claim>         → prove the behavior changed (recommended for fixes)
+        ↓
+slop --quick           → clean up branch-diff slop before shipping
+        ↓
+yeet                   → Linear ticket + branch + commit + PR
+        ↓
+walk --post            → reviewer walkthrough comment (large PRs)
+        ↓
+land                   → watch CI to green
+        ↓
+peep                   → address review comments (compose with land via --land)
+        ↓
+dip                    → post-merge cleanup
+```
+
+Out-of-band, any time:
+- `slop` — deep codebase audit
+- `doodle` / `deepen` / `drill` — structural / test-infra investigation
+- `recap` — status update for standup or retro
 
 ## Invocation
 - `/bruhs` → Interactive menu (AskUserQuestion)
 - `/bruhs:<command>` → Direct to command
 - `/bruhs:cook <feature>` or `/bruhs:cook TICKET-123` → With argument
-- `/bruhs:slop [path] [--fix|--report]` → Codebase analysis
+- `/bruhs:verify [claim | PR#] [--keep-artifacts]` → Falsifiable verification
+- `/bruhs:walk [PR#] [--canvas|--post|--commit-body]` → Reviewer walkthrough
+- `/bruhs:land [PR#] [--no-fix|--max-iterations N]` → Watch CI to green
+- `/bruhs:peep [PR# | TICKET] [--land|--resolve-conflicts]` → Address review comments
+- `/bruhs:slop [path] [--quick|--fix|--report] [--severity ...]` → Codebase analysis
 - `/bruhs:doodle <mode> [args] [--out|--gist|--commit|--pr-comment|--format|--depth]` → Render diagram (modes: pr, module, deps, dependents, compare, map, freeform)
 - `/bruhs:deepen [path | module-name] [--no-explore]` → Find shallow modules, propose deepenings
 - `/bruhs:drill [path | layer-name] [--no-explore]` → Find missing/weak test-infra layers, propose adoptions
+- `/bruhs:recap [window] [--all-authors|--linear|--branch <name>]` → Status update from git log
 
 ---
 

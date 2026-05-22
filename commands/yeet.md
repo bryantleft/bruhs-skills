@@ -34,6 +34,9 @@ PR description + commit + reviewer-assignment quality is governed by **`practice
 - **Size discipline:** if the diff is > 400 LOC, warn the user and suggest splitting (or accept with a justification noted in the PR body)
 - **CODEOWNERS:** if `.github/CODEOWNERS` exists, GitHub auto-requests reviewers; don't manually re-request
 - **Diagram:** for non-trivial architectural changes, suggest `/bruhs:doodle pr` after the PR opens to attach a visualization comment
+- **Walkthrough:** for ≥ 10-file PRs or anything with significant moved code, suggest `/bruhs:walk --post` after the PR opens to drop a reviewer-friendly walkthrough comment
+- **Core vs mechanical separation:** when the diff mixes hand-written changes with lockfile/generated/formatting churn, list core files first in the PR body and collapse mechanical files in a `<details>` block (see [Reviewer-Friendly PR Body](#reviewer-friendly-pr-body))
+- **History rewriting (only when asked):** if the user requests a history rewrite before pushing (squash, reorder, fixup), follow the [Tree-Identity Guard](#tree-identity-guard) so the rewritten tree provably matches the original
 
 ## Prerequisites
 
@@ -749,9 +752,118 @@ yeet follows modern git conventions:
 - Include ticket references in commit body, not title
 - Push with `-u` to set upstream tracking
 
+## Reviewer-Friendly PR Body
+
+When the diff mixes core, hand-written changes with mechanical churn (lockfiles, generated code, formatting), front-load the **core** files and collapse the mechanical files. Reviewers skim the body; you owe them a quick "where do I look?".
+
+### Categorize before writing the body
+
+```bash
+# Pull the file list once
+git diff --name-status origin/<base>...HEAD > /tmp/yeet-files.txt
+```
+
+Apply the same heuristics as `/bruhs:walk` (see that command for the full table):
+
+| Category | Examples |
+|---|---|
+| **core** | Hand-written logic, public API edits, schema changes, new components |
+| **mechanical** | `pnpm-lock.yaml`, `Cargo.lock`, `convex/_generated/*`, `*.gen.ts`, codegen output, formatting-only diffs |
+| **test** | `*.test.ts`, `*.spec.ts`, `e2e/` |
+
+### What to add to the PR body
+
+Insert (or replace) a `## Reviewer notes` section in the body between `## What changed` and `## Test plan`:
+
+```markdown
+## Reviewer notes
+
+**Where to start:** `apps/web/src/app/api/v1/route.ts` → `packages/sdk/src/client.ts`
+
+<details>
+<summary>3 mechanical files (lockfiles, generated)</summary>
+
+- pnpm-lock.yaml — +47 / -12
+- convex/_generated/api.d.ts — +18 / -4
+- packages/sdk/tsconfig.json — +9 / -0 (new package)
+</details>
+```
+
+For trivial PRs (< 5 files, no mechanical churn), skip this section — don't add noise.
+
+### Dependency-ordered commits
+
+When the user asks for a clean commit history before pushing, group commits in **dependency order**, not chronological order. The order a reviewer can read top-to-bottom:
+
+1. Schema / storage / generated API definitions
+2. Core logic
+3. Wiring and integration
+4. UI / surface behavior
+5. Tests
+
+If the current branch's commits don't follow this order, offer to reorganize via `git rebase -i`. Only do this when the user explicitly approves — see [Tree-Identity Guard](#tree-identity-guard).
+
+## Tree-Identity Guard
+
+If you rewrite branch history before pushing (squash, fixup, reorder), you can accidentally drop changes. The guard verifies that the **tree** (the snapshot of files at HEAD) is identical before and after the rewrite — same files, same content, just a different commit history.
+
+### Run before rewrite
+
+```bash
+# Snapshot the current tree hash and the upstream tree hash for diffing later
+git fetch origin "$(git branch --show-current)" 2>/dev/null || true
+ORIGINAL_TREE=$(git rev-parse HEAD^{tree})
+ORIGINAL_UPSTREAM_TREE=$(git rev-parse "@{u}^{tree}" 2>/dev/null || echo "(no upstream yet)")
+echo "ORIGINAL_TREE=$ORIGINAL_TREE"
+echo "ORIGINAL_UPSTREAM_TREE=$ORIGINAL_UPSTREAM_TREE"
+```
+
+### Rewrite history
+
+Common operations:
+
+```bash
+# Squash all commits on this branch into one
+git reset --soft "$(git merge-base HEAD origin/<base>)" && git commit -m "<conventional message>"
+
+# Reorder / fixup interactively
+git rebase -i "$(git merge-base HEAD origin/<base>)"
+```
+
+### Verify after rewrite
+
+```bash
+NEW_TREE=$(git rev-parse HEAD^{tree})
+
+if [ "$NEW_TREE" = "$ORIGINAL_TREE" ]; then
+  echo "✓ Tree identity preserved ($NEW_TREE)"
+else
+  echo "✗ Tree changed during rewrite!"
+  echo "  Original: $ORIGINAL_TREE"
+  echo "  Current:  $NEW_TREE"
+  git diff "$ORIGINAL_TREE" "$NEW_TREE" --stat
+  # STOP. Do not push.
+fi
+```
+
+**Never push** if the tree changed unintentionally. Either fix the rewrite (reflog → reset back to the pre-rewrite commit) or roll back entirely:
+
+```bash
+# Roll back to pre-rewrite state
+git reset --hard "HEAD@{<pre-rewrite-index>}"   # find via git reflog
+```
+
+### Guardrails
+
+- **Never force-push to a shared base branch** (`main`, `develop`). Force-pushing your own feature branch is fine after the tree-identity check passes.
+- **Never rewrite history that's already been review-commented.** Reviewers' comments anchor to commits and lines; rewriting orphans them.
+- **Never pass `--no-verify`** to bypass pre-commit hooks during the rewrite.
+
 ## Tips
 
 - **Run after /bruhs:cook** - yeet is designed to follow cook for a complete workflow
 - **Review before yeet** - Make sure you're happy with changes before shipping
 - **One feature per yeet** - Keep commits focused; use interactive mode if needed
 - **Check PR** - Always review the PR link to verify everything looks right
+- **Pair with `/bruhs:land`** - yeet opens the PR; land babysits it to green
+- **Pair with `/bruhs:walk --post`** - drop a reviewer walkthrough comment for large PRs
