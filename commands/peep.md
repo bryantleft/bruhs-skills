@@ -35,6 +35,8 @@ Uses **isolated subagents** per comment thread to prevent context bleed. Each co
 - `/bruhs:peep` - Address comments on current branch's PR
 - `/bruhs:peep 42` - Address comments on PR #42 (switches branch if needed)
 - `/bruhs:peep PERDIX-145` - Find PR by Linear ticket ID
+- `/bruhs:peep --land` - After applying fixes, watch `gh pr checks` until green (delegates the CI loop to `/bruhs:land`)
+- `/bruhs:peep --resolve-conflicts` - If the PR is in `MERGEABLE: false / DIRTY` state, run the conflict-resolution path first (see [Merge Conflict Path](#merge-conflict-path)), then address comments
 
 ## Prerequisites
 
@@ -1250,6 +1252,91 @@ The validator is not free — every issue costs an extra subagent. Watch two sig
 
 Neither metric is wired up automatically yet; both are derivable from `.claude/.peep-history/PR-*.jsonl` whenever it's worth running an analysis.
 
+## Merge Conflict Path
+
+Triggered by `--resolve-conflicts`, or auto-triggered when the PR's `mergeStateStatus` is `DIRTY` and the user opts in. Resolves conflicts non-interactively, validates, and stages — never auto-pushes.
+
+### Detect
+
+```bash
+gh pr view --json mergeable,mergeStateStatus,baseRefName --jq '{mergeable, status: .mergeStateStatus, base: .baseRefName}'
+```
+
+`mergeStateStatus: DIRTY` = conflicts. `BLOCKED` / `BEHIND` = behind base but no conflicts (just merge base in). `CLEAN` = no action.
+
+### Resolve
+
+```bash
+git fetch origin "<base>"
+git merge "origin/<base>" || true   # do not bail on conflict exit code
+git status --short --porcelain | awk '$1 ~ /^(UU|AA|DD|AU|UA|DU|UD)$/ {print $2}' > /tmp/peep-conflicts.txt
+```
+
+For each conflicting file:
+
+1. Read the file, identify the conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`).
+2. Resolve with **minimal, correctness-first** edits.
+3. Default to **preserving both sides** when safe. When the two sides are mutually exclusive, choose the variant that:
+   - compiles
+   - keeps public behavior stable
+   - matches the intent of *this PR* (the one being peeped), not the base
+4. Never leave conflict markers behind. Grep for them before continuing:
+   ```bash
+   grep -rn '^<<<<<<<\|^=======$\|^>>>>>>>' --include='*' .
+   ```
+
+### Lockfile conflicts
+
+Never hand-resolve lockfiles. Regenerate them via the package manager:
+
+| File | Command |
+|---|---|
+| `package-lock.json` | `npm install` |
+| `pnpm-lock.yaml` | `pnpm install` |
+| `yarn.lock` | `yarn install` |
+| `bun.lock` | `bun install` |
+| `Cargo.lock` | `cargo build` (or `cargo update -p <pkg>` for surgical resolution) |
+| `uv.lock` | `uv lock` |
+| `poetry.lock` | `poetry lock --no-update` |
+
+### Validate
+
+After resolution, run the project's typecheck + lint + tests (same harness as Step 5.5 of `yeet`):
+
+```bash
+bash "<PLUGIN_DIR>/scripts/validate_pr_ready.sh"
+```
+
+If validation fails, **do not** stage. Surface the failure to the user — the conflict resolution was wrong, not just lint-noisy.
+
+### Stage and commit
+
+```bash
+git add <resolved-files> <regenerated-lockfiles>
+git commit -m "chore: resolve conflicts with <base>"
+```
+
+### Guardrails
+
+- **Never broad-refactor while resolving conflicts.** That's a separate PR.
+- **Never push automatically** after resolving conflicts. The user should eyeball the resolution commit first. Push happens at the normal peep commit step (or via `--land`).
+- **Never bypass hooks** (`--no-verify`).
+- **Never `git reset --hard` to "make conflicts go away"** — that throws away one side silently.
+
+## Landing After Fixes (`--land`)
+
+When `--land` is passed, after applying review-comment fixes and pushing, hand off to `/bruhs:land`'s CI loop:
+
+```
+1. peep applies fixes → commits → pushes
+2. peep prints: "Handing off to /bruhs:land to watch CI…"
+3. delegates to land's workflow (see commands/land.md)
+4. on success: prints "All checks green — PR ready for merge"
+5. on land hitting --max-iterations: surfaces remaining failures, stops
+```
+
+This is just convenience — running `/bruhs:peep` then `/bruhs:land` manually does the same thing.
+
 ## Tips
 
 - **Run early, run often** — Don't wait for all reviews; address feedback as it comes
@@ -1259,3 +1346,5 @@ Neither metric is wired up automatically yet; both are derivable from `.claude/.
 - **Re-request reviews** — After pushing fixes, explicitly request re-review
 - **Let reviewers resolve** — Some teams prefer reviewers mark their own threads resolved
 - **Trust confidence scores** — Scores >= 4 are reliable; scores <= 2 need human judgment
+- **Pair with `/bruhs:verify`** — When a reviewer asks "did this actually fix it?", run verify before responding
+- **Use `--land`** — For the full feedback-to-green loop in one shot

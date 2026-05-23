@@ -348,6 +348,7 @@ Build the state JSON in memory, then pipe it through the two helper scripts to w
     "testing": ["<detected>"],
     "tooling": ["<detected>"],
     "infra": ["<detected>"],
+    "networking": [],
     "gpu": ["<detected>"],
     "observability": [],
     "llmObservability": null

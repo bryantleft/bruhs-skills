@@ -357,6 +357,15 @@ AskUserQuestion({
       ]
     },
     {
+      question: "Which networking/access layer do you want?",
+      header: "Networking",
+      multiSelect: true,
+      options: [
+        { label: "Tailscale", description: "Private mesh VPN — admin surfaces, self-hosted workers, customer ingest" },
+        { label: "Cloudflare Tunnel", description: "Public-to-private tunnels without opening ports" },
+      ]
+    },
+    {
       question: "Which additional services do you want?",
       header: "Services",
       multiSelect: true,
@@ -806,6 +815,7 @@ Otherwise (fresh project), assemble the state and write both blocks:
     "testing": ["<selected-testing>"],
     "tooling": ["<selected-tooling>"],
     "infra": ["<selected-infra>"],
+    "networking": ["<selected-networking>"],
     "gpu": ["<selected-gpu>"]
   }
 }
@@ -1053,6 +1063,7 @@ Done! 🚀
 | **Payments** | Stripe, Polar | Web, API |
 | **Email** | Resend | Web, API |
 | **Infra** | Vercel, Railway, Docker | Web, API |
+| **Networking** | Tailscale, Cloudflare Tunnel | Web, API |
 | **Observability** | Axiom, Vanta | All |
 | **LLM Observability** | Langfuse, Braintrust | AI/ML projects |
 | **Testing** | Vitest, Playwright | TypeScript |
