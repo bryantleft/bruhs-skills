@@ -132,6 +132,14 @@ RULES: dict[str, tuple[str, list[str]]] = {
             "Cold starts are expensive — batch invocations and cache model weights in the container, don't re-load per request.",
         ],
     ),
+    "tailscale": (
+        "Tailscale",
+        [
+            "Scope ACL tags narrowly (`tag:crawler`, `tag:admin`) — avoid blanket `tag:server` grants.",
+            "Prefer embedding via `tsnet` over running a sidecar daemon when the service is yours to modify.",
+            "Don't hardcode MagicDNS hostnames — read them from env vars so non-tailnet devs and CI can override.",
+        ],
+    ),
 }
 
 # Synonyms: things that show up in stack detection but should map to a
@@ -183,6 +191,7 @@ def collect_signals(state: dict) -> list[str]:
         "testing",
         "tooling",
         "infra",
+        "networking",
         "gpu",
         "observability",
         "llmObservability",
