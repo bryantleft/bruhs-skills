@@ -38,6 +38,7 @@ Uses **isolated subagents** per comment thread to prevent context bleed. Each co
 - `/bruhs:peep 42` - Address comments on PR #42 (switches branch if needed)
 - `/bruhs:peep PERDIX-145` - Find PR by Linear ticket ID
 - `/bruhs:peep --land` - After applying fixes, watch `gh pr checks` until green (delegates the CI loop to `/bruhs:land`)
+- `/bruhs:peep --loop [--max-iterations N]` - Keep reviewing the PR (peep's own review) and fixing findings until a pass turns up nothing new, or N iterations (default 5). Folds in an AI-reviewer bot only if one is installed. See the [Review Loop](#review-loop---loop) section
 - `/bruhs:peep --resolve-conflicts` - If the PR is in `MERGEABLE: false / DIRTY` state, run the conflict-resolution path first (see [Merge Conflict Path](#merge-conflict-path)), then address comments
 
 ## Prerequisites
@@ -1316,6 +1317,8 @@ For **addressing existing review comments** (not discovering new bugs), subagent
 8. **Cross-run dedupe with context invalidation** — Persist `(file, summary_hash, context_hash, user_action)` per PR. Skip findings the user already decided on, unless the surrounding code changed. Prevents the iteration-loop fatigue that BugBot calls out explicitly.
 9. **Reproduction-first evidence beats "the fix compiles"** — The single biggest hallucination risk is a confident bug claim that was never real. Validating that a *fix builds and existing tests pass* does not test that — a cosmetic fix for a fictional bug passes every such check (demonstrated in [Evidence (Key Principle)](#evidence-key-principle)). The only hard evidence is a test that fails on current code (RED) and passes after the fix (GREEN). So bug/must-fix findings must reach `reproduced` or `tooling-confirmed` to be presented as confirmed; the validator re-runs the reproduction rather than re-reasoning; and auto-apply is gated on replayed evidence, not on confidence. Findings without evidence are surfaced honestly as "reasoning only", never as verified.
 
+10. **Keep reviewing; don't stop at one pass (greploop, generalized)** — Greptile's *greploop* loops a reviewer until the PR is clean. `--loop` ([Review Loop](#review-loop---loop)) brings that to peep, but the reviewer is the **coding agent itself** — peep's own discovery review re-run after each fix — so it needs no external bot (it folds one in only when present). It stays honest via the same evidence bar (fix reproduced findings, decline unreproducible ones) and converges via cross-run dedupe plus an anti-thrash "no new fixes → stop" guard.
+
 ### Calibrating the validator (when to retune)
 
 The validator is not free — every issue costs an extra subagent. Watch two signals:
@@ -1410,6 +1413,67 @@ When `--land` is passed, after applying review-comment fixes and pushing, hand o
 
 This is just convenience — running `/bruhs:peep` then `/bruhs:land` manually does the same thing.
 
+## Review Loop (`--loop`)
+
+`--loop` makes peep keep reviewing the PR *itself* — review → fix → re-review — until a pass turns up nothing new worth fixing, or a max-iteration cap is hit. Single-pass peep reviews the diff once; `--loop` re-reviews the *updated* diff after each fix-and-push, the way a careful engineer re-reads their own PR after every change. **The reviewer in the loop is the coding agent** — peep's own discovery review (Step 3) — not an external service. The idea is borrowed from Greptile's [greploop](https://github.com/greptileai/skills/blob/main/greploop/SKILL.md) and generalized: no bot required. If an AI-reviewer bot *is* installed, the loop can fold its findings in too (see below).
+
+**Invocation:** `/bruhs:peep --loop [--max-iterations N]` (default `N=5`). Works with or without human comments or an AI-reviewer bot. Composable with `--land` (each iteration also waits for CI green before re-reviewing) and `--resolve-conflicts`.
+
+### The loop (≤ N iterations)
+
+For each iteration `i` from 1 to N:
+
+1. **Review the PR yourself.** Run peep's own discovery review (Step 3) over the diff: subagent-per-file + adversarial validator (thorough), or 3-pass majority vote (quick). On `i ≥ 2`, focus on what changed since the last iteration's push (plus anything still unresolved), so the loop *converges* instead of re-litigating settled code.
+2. **Address actionable findings** under the **same reproduction-first evidence bar** ([Evidence](#evidence-key-principle)) — fan out one isolated subagent per finding (Step 4). Apply `reproduced` / `tooling-confirmed` fixes; for anything it cannot reproduce, record it and **decline** rather than fabricate a fix. There's no external verdict to chase — the bar is real bugs, not a score.
+3. **Resolve** any addressed threads, **validate** the full suite (Step 10), **commit** `fix: self-review pass (peep loop iteration <i>)`, and **push**.
+4. **Re-review** on the new state (next iteration).
+
+### Optional: fold in an installed bot reviewer
+
+If the repo runs an AI reviewer (Greptile, Cursor BugBot, CodeRabbit, …), each iteration can *also* re-trigger it and merge its unresolved threads into that pass's findings. This is **purely additive** — the loop's spine is the agent's own review and never depends on a bot being present. Detect the bot by its identity on the PR (never invent a mention for a bot that isn't there):
+
+```bash
+gh pr view <number> --json reviews,comments \
+  --jq '[.reviews[].author.login] + [.comments[].author.login] | unique'
+```
+
+| Reviewer | Bot login (examples) | Re-trigger comment |
+|---|---|---|
+| Greptile | `greptileai[bot]` | `@greptile review` |
+| Cursor BugBot | `cursor[bot]` | `@cursor review` |
+| CodeRabbit | `coderabbitai[bot]` | `@coderabbitai review` |
+
+### Termination
+
+Stop and report when **any** holds:
+
+- **Clean** — a full review pass produces **no new actionable** (`reproduced` / `tooling-confirmed`) findings and no unresolved actionable threads remain (and any folded-in bot is satisfied).
+- **Iteration cap** — `i == N`. Summarize what's still open.
+- **No progress (anti-thrash)** — an iteration applied **zero** new fixes. Reviewing again would just resurface the same declined items, so stop and hand back rather than burn the budget.
+- **Validation can't pass** — fixes don't survive the suite and can't be made green. Stop and surface it; never push broken code in a loop.
+
+### Guardrails
+
+- **Evidence over appeasement.** The goal is correct code, not a clean-looking score. Never apply a no-op/cosmetic "fix" just to make a finding disappear; an unreproducible finding is declined honestly, exactly as in single-pass peep.
+- **Converge, don't re-litigate.** Use the per-PR history ([Step 2a](#step-2a-load-prior-peep-history-cross-run-dedupe) / Step 5b) so a finding already declined isn't re-raised every iteration; later passes look at the new changes, not the whole diff afresh.
+- **Cost is bounded by N.** Each iteration is a full self-review + subagent fan-out (+ CI if `--land`). Keep N small — 5 is plenty.
+- **Never bypass hooks or force-push.** Same as the rest of peep.
+
+### Output
+
+```
+PR #42 — self-review loop, max 5 iterations
+
+Iteration 1: 4 findings (agent self-review)
+  ✓ 2 fixed (reproduced) · 1 nit applied · 1 declined (unreproducible — recorded)
+  → pushed: fix: self-review pass (peep loop iteration 1)
+Iteration 2: 1 finding
+  ✓ 1 fixed (tooling-confirmed) → pushed (iteration 2)
+Iteration 3: 0 new actionable findings
+
+✓ Converged in 3 iterations. PR ready for merge.
+```
+
 ## Tips
 
 - **Run early, run often** — Don't wait for all reviews; address feedback as it comes
@@ -1422,3 +1486,4 @@ This is just convenience — running `/bruhs:peep` then `/bruhs:land` manually d
 - **Re-verify UI fixes** — When a fix touches user-visible surface, re-verify it with `/expect` (chrome-devtools) and refresh the PR's `## UI preview` (screenshots + recording) per `practices/ui-preview.md` before resolving the thread
 - **Pair with `/bruhs:verify`** — When a reviewer asks "did this actually fix it?", run verify before responding
 - **Use `--land`** — For the full feedback-to-green loop in one shot
+- **Use `--loop` to keep reviewing** — `/bruhs:peep --loop` re-reviews the PR after each fix until a pass comes up clean, instead of you re-running peep by hand; the reviewer is the agent itself, with or without an AI-reviewer bot
