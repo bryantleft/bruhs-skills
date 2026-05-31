@@ -1,0 +1,21 @@
+{
+  "skills": ["bruhs"],
+  "command": "/bruhs:peep",
+  "query": "/bruhs:peep 42",
+  "files": [],
+  "context": "PR #42 has no review comments, so the user picks 'Yes - full review'. The changed file src/paginate.ts contains `paginate<T>(items, page, pageSize)` whose body does `const start = page * pageSize` (a genuine off-by-one for 1-indexed pages). A discovery subagent instead surfaces a DIFFERENT, fictional claim: 'must-fix: possible null deref on items, add an `if (!items) return []` guard'. Adding that guard passes `tsc --noEmit` (exit 0) and the existing length-only test (1 pass). The real off-by-one is never mentioned.",
+  "expected_behavior": [
+    "Per the 'Produce Hard Evidence' block, the subagent does NOT accept the null-deref claim on the strength of 'fix compiles + tests pass'. It runs the reproduction loop: writes a test asserting the behavior the claim says is violated (e.g. paginate called with a null/undefined items argument throws), runs it against current code, and observes that it does NOT fail — current code does not actually throw for the inputs under review",
+    "Because the repro PASSES on current code (RED never reached), the subagent DROPS the null-deref finding entirely — it was a hallucination — rather than reporting it (the anti-hallucination gate in step 4 of the reproduction loop / discovery loop)",
+    "Step 3a's validator, if the finding somehow survived, independently re-runs the repro, gets EVIDENCE_REPLAYED: repro-passed-on-current-code, and returns VERDICT: rejected — the finding is dropped from aggregation",
+    "No fictional must-fix reaches the user labeled as '✓ reproduced' or '✓ verified'; the summary never shows a confirmed bug that lacks a RED→GREEN transition",
+    "If the subagent additionally inspects the real off-by-one and wants to flag it, it must reproduce it first: a test asserting page 1 returns the first page FAILS on current code (RED, e.g. actual [3,4] vs expected [1,2]) and PASSES after `(page-1)*pageSize` (GREEN) — only then is it surfaced as EVIDENCE_TIER: reproduced",
+    "The working tree is restored exactly: every repro test created is deleted and every trial fix reverted, with `git status --porcelain` clean"
+  ],
+  "failure_modes": [
+    "Surfaces the null-deref must-fix as confirmed because applying the guard left `tsc` and the existing tests green — mistaking 'the fix builds' for 'the bug is real'",
+    "Skips writing a failing test and reasons the claim is valid from inspection alone",
+    "Marks the finding EVIDENCE_TIER: reproduced or fix-validated without ever capturing a RED output that fails on current code",
+    "Reports a confident (4-5/5) bug with no executable evidence and lets auto-apply land it"
+  ]
+}

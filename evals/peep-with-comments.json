@@ -8,14 +8,20 @@
     "Step 1 detects the PR for the current branch via `gh pr view --json number,headRefName,url,state,reviewDecision,title`",
     "Step 2 fetches review threads via the gh api graphql query on reviewThreads(first: 100) to get isResolved, path, line, comments with author/body",
     "Since 4 unresolved threads exist, skips Step 3 (AI discovery) and goes directly to Step 4",
-    "Step 4 spawns ALL 4 feature-dev:code-reviewer subagents in a single tool-call message (parallel, no context bleed) — each with the per-thread prompt including PR title/description, comment, file path/line, categorization instructions, and the local-validation block",
-    "Each subagent applies its proposed fix, runs scoped typecheck + linter + colocated test, reverts via swapped Edit, and returns the STRICT format (CATEGORY, CONFIDENCE, VALIDATION_STATUS, VALIDATION_COMMANDS, etc.)",
-    "Step 5 aggregates results, drops approvals, sorts must-fix > suggestion > question, and renders the summary table with per-thread validation status (passed/failed/skipped)",
+    "Step 4 spawns ALL 4 feature-dev:code-reviewer subagents in a single tool-call message (parallel, no context bleed) — each with the per-thread prompt including PR title/description, comment, file path/line, categorization instructions, and the 'Produce Hard Evidence' reproduction-first block",
+    "For the must-fix thread, the subagent runs the reproduction loop: writes a minimal failing test beside lib/db/queries.ts, runs it against current code and captures RED_OUTPUT (must fail), applies the fix, re-runs and captures GREEN_OUTPUT (must pass), then reverts the fix AND deletes the repro test and confirms `git diff --stat` is empty",
+    "Each subagent returns the STRICT format including EVIDENCE_TIER, REPRO_TEST, REPRO_COMMANDS, RED_OUTPUT, GREEN_OUTPUT — the must-fix at EVIDENCE_TIER: reproduced, the style nit (no bug claim) at fix-validated, the question at n/a",
+    "Step 5 aggregates, drops approvals, splits findings into Confirmed (reproduced/tooling-confirmed) vs 'Unconfirmed — reasoning only', sorts must-fix > suggestion > question, and renders the summary table with an Evidence column (✓ reproduced / ◆ tooling-confirmed / ⚙ fix-validated / ✗ unverified)",
+    "Any reply drafted for the question thread (RESPONSE_DRAFT) is in Conventional Comments format ('<label> [decoration]: <subject>', e.g. 'note (non-blocking): ...'), per practices/pr-review.md — not bare prose",
+    "Any commit peep makes to push the fixes uses a Conventional Commits message",
     "Before committing, Step 10 runs the full CI-equivalent suite (typecheck && lint && test) even though each fix individually passed"
   ],
   "failure_modes": [
+    "Posts a bare-prose reply to the question thread instead of a Conventional Comments-formatted one",
     "Spawns subagents sequentially (one at a time, awaiting each) instead of in a single parallel tool-call message",
     "Analyzes all 4 comments in a single shared context, allowing findings from one thread to bias another",
+    "Reports the must-fix as confirmed on the strength of 'tsc + tests pass' without ever writing a test that FAILS on current code — i.e. proves the fix builds but not that the bug was real",
+    "Leaves the repro test file behind after validation instead of deleting it, leaving the working tree dirty",
     "Skips the full-suite validation in Step 10 because per-fix validation already passed, missing cross-file type conflicts"
   ]
 }

@@ -1,0 +1,23 @@
+{
+  "skills": ["bruhs"],
+  "command": "/bruhs:yeet",
+  "query": "/bruhs:yeet",
+  "files": ["CLAUDE.md"],
+  "context": "Uncommitted changes modify components/game/leaderboard-card.tsx and app/game/page.tsx (a new leaderboard sidebar) plus its CSS. The project has a dev server script and Playwright installed. bruhs:state has Linear configured. This is a user-visible UI change.",
+  "expected_behavior": [
+    "Step 2 categorizes as 'feat' and generates a Conventional Commits title ('feat(game): add leaderboard sidebar'), and Step 6 commits with a Conventional Commits message",
+    "Step 7.5 fires because the diff matches UI surface (.tsx/.css): it runs `/expect` to verify the leaderboard in a real browser via the chrome-devtools MCP (renders, sorts by win rate, empty state, mobile viewport), and fixes + re-verifies if /expect finds breakage before capturing anything",
+    "After verification, it captures screenshots at desktop 1280x800 and mobile 390x844 AND records a short screen recording of the changed interaction (e.g. the leaderboard updating), via chrome-devtools MCP or the project's Playwright (recordVideo + page.screenshot) as a fallback, saved under /tmp/bruhs-ui-preview, following practices/ui-preview.md",
+    "Step 8 opens the PR with a `## UI preview` section containing: a 'Verified with /expect (chrome-devtools)' line, the screenshots embedded via hosted URLs (e.g. raw.githubusercontent on the bruhs-assets branch), and the recording (linked, with a note that an inline player needs a manual drag-drop)",
+    "The PR body honestly states the hosting path used and any remaining manual step for inline video playback rather than claiming a CLI upload produced an inline player",
+    "Cleanup: stops the dev server if yeet started it and removes /tmp/bruhs-ui-preview after embedding"
+  ],
+  "failure_modes": [
+    "Skips Step 7.5 entirely and opens the UI PR with no preview or a bare `<screenshot>` placeholder",
+    "Embeds screenshots without running /expect first — a preview of an unverified UI",
+    "Captures only a static screenshot and no screen recording of the interaction",
+    "Claims the recording renders inline as a video player from a gh/CLI upload (it does not — only web-composer user-attachments inline-play); hallucinating a working hosting path",
+    "References a local /tmp path in the PR body (renders as nothing for reviewers) instead of a hosted URL",
+    "Writes a non-Conventional commit message or PR title"
+  ]
+}

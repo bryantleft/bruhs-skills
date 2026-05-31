@@ -1,0 +1,22 @@
+{
+  "skills": ["bruhs"],
+  "command": "/bruhs:peep --loop",
+  "query": "/bruhs:peep --loop",
+  "files": [],
+  "context": "PR #42 is open on the current branch with no human review comments and no AI-reviewer bot installed. The diff has a couple of latent issues the agent's own review can catch (one reproducible bug, one nit), and fixing the bug touches code that warrants a second look. The project has a test harness and passing CI.",
+  "expected_behavior": [
+    "Runs an iterative loop (default max 5) driven by peep's OWN discovery review (Step 3: subagent-per-file + validator, or 3-pass vote) — it does NOT require or wait on an external AI-reviewer bot",
+    "Each iteration: review the diff → fix actionable findings under the reproduction-first evidence bar (Step 4 / Evidence) → resolve → validate (Step 10) → commit 'fix: self-review pass (peep loop iteration N)' → push → re-review the updated diff",
+    "On iterations >= 2 it focuses on what changed since the last push (plus anything still unresolved), so it converges rather than re-litigating settled code",
+    "The reproducible bug is fixed (reproduced/tooling-confirmed) and the nit applied; anything it cannot reproduce is declined with a rationale, not papered over to look clean",
+    "Terminates when a review pass yields no new actionable findings (clean) OR the iteration cap OR no-progress (zero new fixes in an iteration), and summarizes the result",
+    "If an AI-reviewer bot WERE installed, it would optionally fold the bot's findings in — but the loop works fully without one"
+  ],
+  "failure_modes": [
+    "Treats --loop as requiring an external bot (posts '@greptile review' / waits on a bot) when none is installed, instead of running the agent's own review",
+    "Single-pass: reviews and fixes once but never re-reviews the updated diff",
+    "Loops forever / ignores the max-iterations cap and the no-progress guard",
+    "Applies a cosmetic 'fix' to make a finding disappear (appeasement) instead of declining an unreproducible one",
+    "Re-litigates the whole diff every iteration (no convergence / no dedupe), or pushes code that fails validation to keep looping"
+  ]
+}

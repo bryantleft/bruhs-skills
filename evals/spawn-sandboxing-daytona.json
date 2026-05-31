@@ -1,0 +1,19 @@
+{
+  "skills": ["bruhs"],
+  "command": "/bruhs:spawn",
+  "query": "/bruhs:spawn code-runner — an API that executes AI-generated Python submitted by users",
+  "files": [],
+  "context": "Fresh project (not a monorepo). The whole job of the API is running AI-generated / untrusted user code, so a sandbox is squarely in scope. Linear is configured.",
+  "expected_behavior": [
+    "During Step 2e stack selection, spawn presents the Sandboxing question (header 'Sandboxing') offering Daytona, because the project is an API that runs AI-generated / untrusted code",
+    "If Daytona is selected, the written bruhs:state stack includes \"sandboxing\": [\"Daytona\"] (the selected value)",
+    "derive_stack_rules.py emits the Daytona rules block into bruhs:rules — run AI/untrusted code inside a sandbox, reuse-vs-per-call, delete + idle auto-stop, secrets via env, bounded concurrency",
+    "Both the bruhs:state and bruhs:rules blocks are written to CLAUDE.md and AGENTS.md via the sync helpers"
+  ],
+  "failure_modes": [
+    "Never offers a Sandboxing / Daytona option despite the project being about running untrusted code",
+    "Selects Daytona but omits the \"sandboxing\" key from the stack JSON, so derive_stack_rules.py can't pick it up",
+    "Daytona selected but no Daytona rules appear in the bruhs:rules block (signal not iterated in collect_signals)",
+    "Invents a sandboxing provider that isn't an offered option"
+  ]
+}

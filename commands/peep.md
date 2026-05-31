@@ -1,5 +1,5 @@
 ---
-description: Address PR review comments with isolated subagents and local validation — analyze each thread, propose fixes, verify against project typecheck/lint/tests, apply, commit, optionally merge. Use when responding to PR feedback or checking merge readiness.
+description: Address PR review comments with isolated subagents and reproduction-backed evidence — analyze each thread, propose fixes, prove each bug claim with a RED→GREEN test (zero tolerance for hallucinated findings), apply, commit, optionally merge. Use when responding to PR feedback or checking merge readiness.
 ---
 
 # peep - Address PR Review Comments
@@ -14,7 +14,7 @@ Uses **isolated subagents** per comment thread to prevent context bleed. Each co
 - [Invocation](#invocation)
 - [Prerequisites](#prerequisites)
 - [Architecture: Subagent Review Model](#architecture-subagent-review-model)
-- [Local Validation (Key Principle)](#local-validation-key-principle)
+- [Evidence (Key Principle)](#evidence-key-principle)
 - [Workflow](#workflow)
   - [Step 2a: Load Prior peep History (cross-run dedupe)](#step-2a-load-prior-peep-history-cross-run-dedupe)
   - [Step 3a: Validator Pass (full review only)](#step-3a-validator-pass-full-review-only)
@@ -28,7 +28,9 @@ Uses **isolated subagents** per comment thread to prevent context bleed. Each co
 ## Best Practices
 
 - **`practices/pr-review.md`** — primary lens. Conventional Comments labels (`nit`, `suggestion`, `issue`, `praise`, decorations like `(blocking)` / `(non-blocking)`), reviewer/author etiquette, anti-patterns. Loaded by every subagent so categorization stays consistent.
+- **Conventional Comments — always.** Every reply this command drafts or posts to a PR thread (decline rationales, question answers, "addressed in <sha>" notes) MUST use the [Conventional Comments](https://conventionalcomments.org) format — `<label> [decoration]: <subject>` — per `practices/pr-review.md`. No bare prose replies. Likewise, any commit peep makes follows Conventional Commits (`practices/_common.md`).
 - **Stack practices** — same as `cook` and `slop`. Use the project's stack to inform what counts as a real issue vs preference.
+- **`practices/source-ground-truth.md` — dependency behavior is verified, not assumed.** When a comment or finding turns on what a third-party package does, read its installed source (`opensrc path <pkg>`) and cite it — the same zero-hallucination evidence bar in [Evidence](#evidence-key-principle), applied to library code.
 
 ## Invocation
 
@@ -36,6 +38,7 @@ Uses **isolated subagents** per comment thread to prevent context bleed. Each co
 - `/bruhs:peep 42` - Address comments on PR #42 (switches branch if needed)
 - `/bruhs:peep PERDIX-145` - Find PR by Linear ticket ID
 - `/bruhs:peep --land` - After applying fixes, watch `gh pr checks` until green (delegates the CI loop to `/bruhs:land`)
+- `/bruhs:peep --loop [--max-iterations N]` - Keep reviewing the PR (peep's own review) and fixing findings until a pass turns up nothing new, or N iterations (default 5). Folds in an AI-reviewer bot only if one is installed. See the [Review Loop](#review-loop---loop) section
 - `/bruhs:peep --resolve-conflicts` - If the PR is in `MERGEABLE: false / DIRTY` state, run the conflict-resolution path first (see [Merge Conflict Path](#merge-conflict-path)), then address comments
 
 ## Prerequisites
@@ -55,11 +58,11 @@ Main Agent (orchestrator)
 ├── Fetches PR metadata + comment threads
 ├── Loads prior peep history for this PR (cross-run dedupe)
 ├── Spawns N subagents in parallel (one per comment thread)
-│   ├── Subagent 1: reads file, analyzes comment, proposes fix, VALIDATES LOCALLY
-│   ├── Subagent 2: reads file, analyzes comment, proposes fix, VALIDATES LOCALLY
-│   └── Subagent N: reads file, analyzes comment, proposes fix, VALIDATES LOCALLY
+│   ├── Subagent 1: reads file, analyzes comment, proposes fix, PRODUCES EVIDENCE (repro RED→GREEN)
+│   ├── Subagent 2: reads file, analyzes comment, proposes fix, PRODUCES EVIDENCE (repro RED→GREEN)
+│   └── Subagent N: reads file, analyzes comment, proposes fix, PRODUCES EVIDENCE (repro RED→GREEN)
 ├── Aggregates → category filter → dedupe against history
-├── Presents to user for approval (showing which fixes verified locally)
+├── Presents to user for approval (Confirmed vs "reasoning only", with each finding's evidence)
 ├── Runs full validation suite before commit
 ├── Applies approved fixes, commits, pushes
 └── Persists shown findings to history with user_action
@@ -86,26 +89,64 @@ Main Agent (orchestrator)
 - **Parallel execution**: All subagents launch concurrently, not sequentially.
 - **Dynamic context discovery**: Each subagent reads what it needs (the file, imports, related types) instead of front-loading everything into one prompt.
 - **Aggressive analysis + natural filtering**: Subagents investigate thoroughly. Their tool use (reading files, checking types) naturally filters false positives — no need for conservative prompting.
-- **Local validation per fix**: Each subagent runs the project's real typecheck/lint/scoped tests against its proposed fix and reverts. Static reasoning is not enough — a fix that "looks right" can still break the build. Only fixes that pass local checks are surfaced as high-confidence.
-- **Adversarial validator (discovery path)**: A second subagent is told to *falsify* each finding before it's surfaced. Approximates BugBot's multi-pass consensus for ~2x the cost of a single pass instead of 8x.
+- **Hard evidence per finding (reproduction-first)**: For any bug/must-fix claim, the subagent writes a test that *fails on the current code* (RED) and *passes after the fix* (GREEN), then reverts. Static reasoning is not evidence, and "the fix compiles" is not evidence that the bug was real — only the RED→GREEN transition is. Findings that cannot be reproduced or tooling-confirmed are surfaced separately as "unconfirmed — reasoning only", never as verified. See [Evidence (Key Principle)](#evidence-key-principle).
+- **Adversarial validator (discovery path)**: A second subagent is told to *falsify* each finding before it's surfaced — and to **re-run the reproduction itself**, not just re-reason. If the claimed RED test actually passes on current code, the finding is dropped. Approximates BugBot's multi-pass consensus for ~2x the cost of a single pass instead of 8x.
 - **Majority voting (quick-scan path)**: Three parallel reviewers over the diff with shuffled file order; only findings ≥ 2 of 3 agree on survive. Same principle as BugBot's 8-pass voting, dialed down for cost.
 - **Cross-run dedupe**: A per-PR JSONL history at `.claude/.peep-history/PR-<n>.jsonl` prevents re-surfacing issues the user already saw and decided on, unless the surrounding code changed.
 
-## Local Validation (Key Principle)
+## Evidence (Key Principle)
 
-**Every proposed fix must be verified against the project's actual tooling before it is presented to the user as valid.** Subagents don't just read code and reason — they apply the fix in-place, run scoped checks (typecheck, linter, affected tests), and revert, leaving the working tree exactly as they found it.
+**Zero tolerance for hallucination. No finding reaches the user without hard, reproducible evidence — or an explicit label that it has none.** A claim that "this is a bug" is worthless until it is *demonstrated*. Subagents do not reason their way to a verdict; they edit the code, run commands, and paste the actual output. Every factual assertion in a finding — a line number, a symbol name, an import, a behavior — must be backed by a snippet the subagent read or a command it ran. Anything not backed that way is deleted from the finding before it is emitted.
 
-Validation commands are detected per-project:
-- **TypeScript/JS**: `npm run typecheck` / `tsc --noEmit`, `eslint <file>` / `biome check <file>`, `vitest run <file>` / `jest <file>`
+### Why "the fix compiles" is not evidence
+
+A fix passing `tsc` / `lint` / the existing test suite proves only that the fix *builds*. It does **not** prove the claimed bug was ever real. A hallucinated "must-fix" with a cosmetic or no-op fix passes every one of those checks and gets surfaced as "✓ verified." Demonstrated, repeatedly:
+
+```
+# Buggy paginator (page is 1-indexed; code does page*pageSize — off-by-one).
+# A HALLUCINATED finding ("null-deref, add a guard") with a cosmetic fix:
+$ tsc --noEmit          → exit 0
+$ node --test           → 1 pass, 0 fail
+# "VALIDATION_STATUS: passed" — yet the finding was fiction and the real bug still ships.
+
+# REPRODUCTION-FIRST on the same code — a test asserting documented behavior:
+$ node --test repro     → 1 fail   actual: [3,4]  expected: [1,2]   ← RED: bug is real
+# apply real fix (page-1)*pageSize:
+$ node --test repro     → 1 pass                                     ← GREEN: fix resolves it
+```
+
+The RED→GREEN transition is the evidence. "It compiled" is not.
+
+### Evidence tiers (every finding carries exactly one)
+
+| `EVIDENCE_TIER` | What it means | How to earn it |
+|---|---|---|
+| `reproduced` | A test/script **fails on current code** demonstrating the claim (RED), and **passes after the fix** (GREEN). | Write the repro, capture RED, apply fix, capture GREEN, revert both. **Required for any `must-fix` / bug / security / correctness claim whenever a test harness exists.** |
+| `tooling-confirmed` | The claim *is* the output of a tool run against **current** code (a `tsc`/`clippy`/`mypy`/lint/sanitizer error on the cited line). | Run the tool on the unmodified file; paste the error. The tool output is the evidence. |
+| `fix-validated` | The fix builds and existing tests pass, but the bug was **not** independently reproduced. | Apply fix → scoped checks pass → revert. **This is NOT proof the bug was real** — only that the fix doesn't break the build. |
+| `unverified` | No executable evidence could be produced (no harness, non-code change, pure-reasoning claim). | Reasoning only. Must be labeled as such, shown last, and **never auto-applied**. |
+
+**The bar:** a `must-fix`/bug/security/correctness finding must reach `reproduced` or `tooling-confirmed` to be presented as confirmed. If it can only reach `fix-validated` or `unverified`, it is surfaced under a separate **"Unconfirmed — reasoning only"** heading, and the subagent must say plainly which factual claims it could not demonstrate. Suggestions and style notes (which are not bug claims) may sit at `fix-validated`.
+
+### Reproduction loop (per bug/must-fix finding)
+
+1. Detect the test runner and per-project commands (below). If no harness exists, fall back to `tooling-confirmed`, else `unverified` — and say so.
+2. **Write a minimal failing test** that asserts the *correct/documented* behavior the claim says is violated. Place it beside the file under review.
+3. **Run it against current, unmodified code.** It MUST fail. Capture the assertion (`RED_OUTPUT`). If it passes, the claim is wrong — **drop the finding** (this is the anti-hallucination gate).
+4. **Apply the proposed fix**, re-run the same test. It MUST pass. Capture (`GREEN_OUTPUT`).
+5. **Revert the fix AND delete the repro test.** Confirm `git diff --stat` and `git status --porcelain` show the tree exactly as found.
+
+Per-project commands:
+- **TypeScript/JS**: `tsc --noEmit`, `eslint`/`biome check`, `vitest run <file>` / `jest <file>` / `node --test`
 - **Rust**: `cargo check`, `cargo clippy`, `cargo test <module>`
-- **Python**: `ruff check <file>`, `mypy <file>`, `pytest <file>`
-- **Go**: `go vet ./...`, `go build ./...`, `go test <package>`
+- **Python**: `ruff check <file>`, `mypy <file>`, `pytest <file>::<test>`
+- **Go**: `go vet ./...`, `go build ./...`, `go test -run <Name> <package>`
 
 Safety rules enforced by subagents:
-1. Before modifying, check `git status --porcelain <file>` — if the file has uncommitted changes, skip validation with reason `dirty-overlap`.
-2. Always revert via the reverse Edit (swap `old_string`/`new_string`) after validation runs — pass or fail.
+1. Before modifying, check `git status --porcelain <file>` — if the file has uncommitted changes, skip the loop with reason `dirty-overlap` and report `EVIDENCE_TIER: unverified`.
+2. Always revert via the reverse Edit (swap `old_string`/`new_string`) and delete any repro test you created — pass or fail.
 3. If revert fails, stop and report `dirty-cleanup-needed` so the orchestrator can alert the user.
-4. Never run destructive commands (no `git reset`, no `rm`, no `git clean`).
+4. Never run destructive commands (no `git reset`, no `rm -rf`, no `git clean`); delete only the single repro test file you created, by exact path.
 
 ## Workflow
 
@@ -231,7 +272,8 @@ Entry shape:
   "summary_normalized": "missing orderby clause on agentstats query",
   "context_hash": "<sha256 of the 3 lines centered on line>",
   "user_action": "applied" | "skipped" | "rejected" | "deferred",
-  "validator_verdict": "confirmed" | "rejected" | "unsure" | "n/a"
+  "validator_verdict": "confirmed" | "rejected" | "unsure" | "n/a",
+  "evidence_tier": "reproduced" | "tooling-confirmed" | "fix-validated" | "unverified" | "n/a"
 }
 ```
 
@@ -303,18 +345,27 @@ Your job is to find bugs, security issues, logic errors, and performance problem
 4. Missing edge cases (empty input, null, overflow)
 5. API contract violations (breaking backward compat)
 
-## Validate Every Proposed Fix Locally (REQUIRED)
+## Produce Hard Evidence (REQUIRED — zero tolerance for hallucination)
 
-For each issue where you propose a fix, before emitting the final report:
+You may not report a bug/correctness/security issue you have not *demonstrated*. Every line number, symbol, and behavior you cite must be backed by a snippet you actually read or a command you actually ran — paste it. Assertion without evidence is a hallucination; delete it.
 
-1. Detect the project's validation commands (package.json scripts, tsc, eslint/biome, cargo, ruff/mypy/pytest, go vet/test) — prefer file-scoped invocations.
-2. Check \`git status --porcelain ${file}\` — if dirty, mark \`VALIDATION_STATUS: skipped\` (reason: dirty-overlap) and do not apply.
-3. Apply the fix via Edit.
-4. Run scoped checks (typecheck + linter + colocated test if present). Capture results.
-5. Revert via Edit with old_string/new_string swapped. Confirm \`git diff --stat ${file}\` is empty.
-6. If revert fails, set \`VALIDATION_STATUS: dirty-cleanup-needed\` and STOP — do not process further issues for this file.
+For each candidate bug/must-fix, run the **reproduction loop**:
 
-Downgrade CONFIDENCE by 1 for any fix where validation failed. Never run destructive git commands.
+1. Detect the test runner + validation commands (package.json scripts, tsc, eslint/biome, cargo, ruff/mypy/pytest, go vet/test) — prefer file-scoped invocations.
+2. Check \`git status --porcelain ${file}\` — if dirty, set \`EVIDENCE_TIER: unverified\` (reason: dirty-overlap) and do not modify.
+3. **Write a minimal failing test** asserting the correct behavior the issue claims is violated, beside \`${file}\`.
+4. **Run it against current code.** Capture \`RED_OUTPUT\`. If it PASSES, your claim is false — **drop this issue entirely** and move on.
+5. **Apply the fix**, re-run the same test. Capture \`GREEN_OUTPUT\` (must pass).
+6. **Revert the fix AND delete the repro test.** Confirm \`git diff --stat ${file}\` is empty and \`git status --porcelain\` shows no stray files.
+7. If revert/cleanup fails, set \`EVIDENCE_TIER: dirty-cleanup-needed\` and STOP — do not process further issues for this file.
+
+Assign \`EVIDENCE_TIER\`:
+- \`reproduced\` — you got RED then GREEN (required for must-fix/bug/security where a harness exists).
+- \`tooling-confirmed\` — the issue *is* a tool error (\`tsc\`/\`clippy\`/\`mypy\`/lint/sanitizer) on the current unmodified line; paste it as \`RED_OUTPUT\`.
+- \`fix-validated\` — no harness to reproduce, but the fix builds and existing tests pass. Allowed only for non-bug suggestions; a bug claim at this tier is downgraded to \`unverified\`.
+- \`unverified\` — reasoning only. State explicitly which claims you could not demonstrate.
+
+Never run destructive git commands. Delete only the single repro test file you created, by exact path.
 
 ## Output Format (STRICT)
 
@@ -325,17 +376,21 @@ SEVERITY: <critical|warning|suggestion>
 FILE: ${file}
 LINE: <line number>
 CONFIDENCE: <1-5>
-ANALYSIS: <2-3 sentence explanation, what you verified>
+EVIDENCE_TIER: <reproduced|tooling-confirmed|fix-validated|unverified|dirty-cleanup-needed>
+ANALYSIS: <2-3 sentence explanation, citing what you read/ran>
 FIX_OLD_STRING: |
   <exact string to replace>
 FIX_NEW_STRING: |
   <replacement string>
-VALIDATION_STATUS: <passed|failed|skipped|dirty-cleanup-needed>
-VALIDATION_COMMANDS: |
+REPRO_TEST: |
+  <the failing test you wrote, or "N/A" for tooling-confirmed / unverified>
+REPRO_COMMANDS: |
   <commands run, one per line>
-VALIDATION_OUTPUT: |
-  <"all clean" or last ~20 lines of first failure, or skip reason>
-VALIDATION_SKIP_REASON: <reason|N/A>
+RED_OUTPUT: |
+  <the failure on current code: assertion diff, or the tool error — the actual text>
+GREEN_OUTPUT: |
+  <"pass" output after the fix, or "N/A">
+UNDEMONSTRATED_CLAIMS: <for unverified: list the assertions you could NOT back with evidence | N/A>
 
 If no issues found, output:
 NO_ISSUES_FOUND: true
@@ -356,43 +411,47 @@ Agent({
   subagent_type: "feature-dev:code-reviewer",
   description: `Validate ${issue.file}:${issue.line}`,
   prompt: `
-You are a skeptical validator. Another reviewer claims this is a bug. Your job is to falsify the claim.
+You are a skeptical validator. Another reviewer claims this is a bug. Your job is to falsify the claim — with execution, not opinion.
 
 ## Proposed Issue
 - File: ${issue.file}
 - Line: ${issue.line}
 - Summary: ${issue.summary}
 - Severity claimed: ${issue.severity}
+- Evidence tier claimed: ${issue.evidence_tier}
 - Reviewer's analysis: ${issue.analysis}
 - Reviewer's proposed fix: ${issue.fix_old_string} → ${issue.fix_new_string}
+- Reviewer's repro test: ${issue.repro_test}
+- Reviewer's RED output: ${issue.red_output}
 
 ## Your Task
 
-1. **Read the file** at \`${issue.file}\` around line ${issue.line} (read at least 30 lines of surrounding context).
-2. **Read imports, types, callers, and tests** as needed to verify the claim — not to support it. Look for reasons the reviewer is wrong.
+1. **Re-run the evidence first.** If the reviewer claims \`reproduced\`, re-create their repro test and run it against current, unmodified code. It MUST fail as they claim. If it PASSES — the bug is not real — return \`rejected\`. If they claim \`tooling-confirmed\`, re-run the tool; the cited error must actually appear on that line. Revert/delete anything you create.
+2. **Read the file** at \`${issue.file}\` around line ${issue.line} (at least 30 lines of context), plus imports, types, callers, and tests — to find reasons the reviewer is wrong.
 3. **Falsify aggressively.** Consider:
-   - Is there a guard upstream that makes the claimed failure impossible?
+   - Is there a guard upstream that makes the claimed failure impossible? (If so, the repro should have passed — re-check it.)
    - Is the "missing" handling actually done elsewhere (framework, decorator, middleware, caller)?
    - Is the claimed pattern (e.g. N+1) actually batched at a lower layer (DataLoader, view, materialized result)?
-   - Is the proposed fix actually a behavior change disguised as a bug fix?
-   - Does the test suite encode the current behavior as intentional?
-4. **Reach a verdict.**
+   - Is the proposed fix actually a behavior change disguised as a bug fix? Does the repro test merely encode the reviewer's preference rather than a real contract?
+   - Does the existing test suite encode the current behavior as intentional?
+4. **Reach a verdict.** A finding with no reproducible/tooling evidence cannot be \`confirmed\` — at best \`unsure\`.
 
 ## Output Format (STRICT)
 
 VERDICT: <confirmed|rejected|unsure>
-REASONING: <2-3 sentences citing what you read>
+EVIDENCE_REPLAYED: <reproduced-red|tooling-error-seen|repro-passed-on-current-code|no-executable-evidence>
+REASONING: <2-3 sentences citing what you ran and read>
 FILES_CHECKED: <list of files you read>
-COUNTER_EVIDENCE: <if rejected or unsure: the specific code/test/contract that disproves or weakens the claim, or "N/A">
+COUNTER_EVIDENCE: <if rejected or unsure: the specific command output / code / test that disproves or weakens the claim, or "N/A">
 CONFIDENCE_DELTA: <-2|-1|0|+1>  // how much to adjust the original reviewer's confidence
 `
 })
 ```
 
 Validator decision rules:
-- **confirmed**: keep the issue, apply `CONFIDENCE_DELTA` (typically 0 or +1)
-- **rejected**: drop the issue entirely from aggregation
-- **unsure**: keep but downgrade `CONFIDENCE` by 1 and flag as `validator-unsure`; surface below confirmed items of the same severity
+- **confirmed**: keep the issue, apply `CONFIDENCE_DELTA` (typically 0 or +1). Requires `EVIDENCE_REPLAYED: reproduced-red` or `tooling-error-seen` — the validator independently reproduced the evidence.
+- **rejected**: drop the issue entirely from aggregation. Always reject when `EVIDENCE_REPLAYED: repro-passed-on-current-code` — the claimed RED test does not actually fail, so the bug is fiction.
+- **unsure**: keep but downgrade `CONFIDENCE` by 1, demote `EVIDENCE_TIER` to at most `unverified`, and flag as `validator-unsure`; surface under the "Unconfirmed — reasoning only" heading, never as a verified finding.
 
 Run validators **in parallel in one tool-call message**, same as the reviewer fanout. Do not await each before spawning the next. Why this works: the validator is given the claim and told to disprove it, not summarize it. Adversarial framing + independent tool use (re-reading the file, imports, tests) is the cheapest false-positive filter that approximates BugBot's multi-pass consensus without paying for 8x reviewers.
 
@@ -431,12 +490,16 @@ ${order.map(f => `### ${f}\n\`\`\`\n${diffFor(f)}\n\`\`\``).join('\n')}
 Scan for critical bugs, security issues, and logic errors only.
 Skip style, naming, and minor suggestions. Only report high-confidence (4+) issues.
 
+For each issue, cite the exact code that proves it — quote the lines you are flagging. Do not assert behavior you have not read. If you cannot point to the specific lines, do not report it. (The consensus merge and the post-merge reproduction pass are what turn a survivor into hard evidence; a single unreproducible scanner opinion must not reach the user.)
+
 For each issue:
 ISSUE: <summary>
 SEVERITY: <critical|warning>
 FILE: <path>
 LINE: <number>
 CONFIDENCE: <1-5>
+EVIDENCE_QUOTE: |
+  <the exact lines from the diff that prove the issue>
 FIX_OLD_STRING: | ...
 FIX_NEW_STRING: | ...
 
@@ -453,6 +516,7 @@ After all 3 return, **merge by consensus**:
 3. Keep only groups with **≥ 2 matching findings**. Drop singletons — those are the BugBot "single-pass noise" case.
 4. For surviving issues, use the highest-confidence pass's `FIX_OLD_STRING`/`FIX_NEW_STRING`. Set `CONFIDENCE = min(5, max_pass_confidence + (count − 2))` — 3-of-3 agreement bumps confidence by 1.
 5. Record `VOTE_COUNT: <n>/3` on each surviving issue for display.
+6. **Reproduction pass on survivors.** Consensus across opinions is not evidence — it's correlated opinion. Run the [reproduction loop](#evidence-key-principle) on each surviving bug/must-fix to assign its `EVIDENCE_TIER`. A survivor whose repro test *passes on current code* is dropped (the consensus was a shared hallucination). Only `reproduced`/`tooling-confirmed` survivors are presented as confirmed; the rest go under "Unconfirmed — reasoning only".
 
 If singleton drops are common across runs, that's a signal the prompt should be tightened — but a single noisy pass should never reach the user.
 
@@ -499,37 +563,33 @@ You are analyzing a single PR review comment in isolation. Do NOT search for or 
    - \`approval\`: Positive feedback ("lgtm", "looks good", "nice", ":+1:") — no action needed
 4. **Assess confidence** (1-5) that your categorization and proposed action are correct.
 5. **If must-fix or suggestion**: Propose a concrete fix. Show the exact \`old_string\` and \`new_string\` for an Edit tool call.
-6. **Validate the fix locally** (see next section) — static reasoning alone is not sufficient.
-7. **If question**: Draft a response that explains the reasoning, referencing the code context you discovered.
+6. **Produce hard evidence** (see next section) — static reasoning alone is not sufficient, and "the fix compiles" does not prove the reviewer's bug is real.
+7. **If question**: Draft a response that explains the reasoning, referencing the code context you discovered. Quote the actual lines you read — do not describe behavior you have not confirmed.
 
-## Local Validation (REQUIRED for every fix)
+## Produce Hard Evidence (REQUIRED — zero tolerance for hallucination)
 
-Do this before reporting. If you propose a fix without running validation, the orchestrator treats it as unverified and lowers its confidence.
+Do this before reporting. If a must-fix/bug fix is reported without reproduction or tooling evidence, the orchestrator demotes it to "unconfirmed — reasoning only". Every line/symbol/behavior you cite must be backed by something you read or ran — paste it.
 
-1. **Detect validation commands** by reading project config. Prefer project scripts when defined:
-   - package.json → \`scripts\` for \`typecheck\`, \`lint\`, \`test\`, \`check\`
-   - tsconfig.json → run \`npx tsc --noEmit\` if no project script
-   - biome.json / .eslintrc* → \`npx biome check <file>\` / \`npx eslint <file>\`
+1. **Detect commands** by reading project config. Prefer project scripts when defined:
+   - package.json → \`scripts\` for \`typecheck\`, \`lint\`, \`test\`, \`check\`; test runner via \`vitest run <file>\`/\`jest <file>\`/\`node --test\`
+   - tsconfig.json → \`npx tsc --noEmit\`; biome.json / .eslintrc* → \`npx biome check <file>\` / \`npx eslint <file>\`
    - Cargo.toml → \`cargo check\`, \`cargo clippy -- -D warnings\`, \`cargo test <module>\`
-   - pyproject.toml → \`ruff check <file>\`, \`mypy <file>\`, \`pytest <file>\`
-   - go.mod → \`go vet ./...\`, \`go build ./...\`, \`go test <pkg>\`
-   Prefer file-scoped invocations over whole-repo where the tool supports it, for speed.
+   - pyproject.toml → \`ruff check <file>\`, \`mypy <file>\`, \`pytest <file>::<test>\`
+   - go.mod → \`go vet ./...\`, \`go build ./...\`, \`go test -run <Name> <pkg>\`
+   Prefer file-scoped invocations for speed.
 
-2. **Check for working-tree conflicts**: run \`git status --porcelain ${thread.path}\`. If the file is already modified, skip validation and set \`VALIDATION_STATUS: skipped\` with reason \`dirty-overlap\`. Do not apply your fix.
+2. **Check for working-tree conflicts**: \`git status --porcelain ${thread.path}\`. If already modified, do not touch it; set \`EVIDENCE_TIER: unverified\` (reason \`dirty-overlap\`).
 
-3. **Apply the fix** using the Edit tool with your \`FIX_OLD_STRING\` / \`FIX_NEW_STRING\`.
+3. **Reproduction loop (for a bug/must-fix claim):**
+   a. Write a minimal test asserting the behavior the reviewer says is broken, beside \`${thread.path}\`.
+   b. Run it on current code → it MUST fail; capture \`RED_OUTPUT\`. If it passes, the reviewer's premise is wrong — say so in \`ANALYSIS\`, set \`EVIDENCE_TIER: unverified\`, and draft a respectful reply explaining what you found rather than applying a fix.
+   c. Apply the fix → re-run → it MUST pass; capture \`GREEN_OUTPUT\`.
+   d. Revert the fix AND delete the repro test. Confirm \`git diff --stat ${thread.path}\` is empty and no stray files remain.
+   For a tool-reported issue, run the tool on the current file and paste the error as \`RED_OUTPUT\` (\`tooling-confirmed\`). For a pure style/naming suggestion (no bug claim), applying the fix + scoped checks passing is \`fix-validated\`.
 
-4. **Run the detected checks**. Capture exit codes and the last ~20 lines of output for each. Pick the minimum useful set — typecheck + linter + the test file colocated with the changed file (if one exists). Avoid full-suite runs unless nothing smaller is available.
+4. **Assign `EVIDENCE_TIER`**: \`reproduced\` | \`tooling-confirmed\` | \`fix-validated\` | \`unverified\` | \`dirty-cleanup-needed\`. A must-fix/bug at \`fix-validated\` or below is NOT confirmed.
 
-5. **Revert the fix** by calling Edit with \`old_string\` and \`new_string\` swapped — put the working tree back exactly as you found it. Confirm with \`git diff --stat ${thread.path}\` showing no changes.
-
-6. **Report the outcome**:
-   - All commands exited 0 → \`VALIDATION_STATUS: passed\`
-   - Any command failed → \`VALIDATION_STATUS: failed\` (and downgrade \`CONFIDENCE\` by 1)
-   - Could not run meaningful checks (no tools detected, dirty tree, etc.) → \`VALIDATION_STATUS: skipped\` with a reason
-   - Revert failed → \`VALIDATION_STATUS: dirty-cleanup-needed\` and STOP. Do not continue. The orchestrator will surface this to the user.
-
-**Never** use destructive git commands (reset, clean, checkout --). If revert via Edit doesn't work, report \`dirty-cleanup-needed\` and let the orchestrator handle it.
+5. If revert/cleanup fails → \`EVIDENCE_TIER: dirty-cleanup-needed\` and STOP. **Never** use destructive git commands (reset, clean, checkout --); delete only the repro test you created, by exact path.
 
 ## Output Format (STRICT)
 
@@ -537,21 +597,25 @@ Respond with ONLY this structured format:
 
 CATEGORY: <must-fix|suggestion|question|approval>
 CONFIDENCE: <1-5>
-ANALYSIS: <1-2 sentence explanation of what the reviewer is asking for and whether it's valid>
+EVIDENCE_TIER: <reproduced|tooling-confirmed|fix-validated|unverified|dirty-cleanup-needed|n/a>
+ANALYSIS: <1-2 sentence explanation of what the reviewer is asking for and whether it's valid, citing what you read/ran>
 PROPOSED_ACTION: <fix|respond|skip>
 FIX_OLD_STRING: |
   <exact string to replace, or "N/A" if not a fix>
 FIX_NEW_STRING: |
   <replacement string, or "N/A" if not a fix>
 RESPONSE_DRAFT: |
-  <suggested reply to post on the thread, or "N/A" if not responding>
-REASONING: <why this fix/response is correct, what you verified>
-VALIDATION_STATUS: <passed|failed|skipped|dirty-cleanup-needed|n/a>
-VALIDATION_COMMANDS: |
+  <suggested reply to post on the thread, in Conventional Comments format ("<label> [decoration]: <subject>", e.g. "thought (non-blocking): ..."), or "N/A" if not responding>
+REASONING: <why this fix/response is correct, what you demonstrated>
+REPRO_TEST: |
+  <the failing test you wrote, or "N/A">
+REPRO_COMMANDS: |
   <one shell command per line, in the order run, or "N/A">
-VALIDATION_OUTPUT: |
-  <condensed output: "all clean" on success, or last ~20 lines of the first failure, or skip reason>
-VALIDATION_SKIP_REASON: <dirty-overlap|no-tools-detected|non-code-change|other: ...|N/A>
+RED_OUTPUT: |
+  <the failure on current code: assertion diff or tool error — actual text, or skip reason>
+GREEN_OUTPUT: |
+  <"pass" output after the fix, or "N/A">
+UNDEMONSTRATED_CLAIMS: <for unverified: assertions you could NOT back with evidence | N/A>
 `
 })
 ```
@@ -562,12 +626,13 @@ Collect all subagent results. Filter and sort:
 
 1. **Drop approval-category results** (no action needed)
 2. **Drop validator-rejected items** (Step 3a) — they failed independent verification
-3. **Apply post-aggregation category filter** (see below) — never trust a prompt to suppress lint-territory noise on its own
-4. **Apply cross-run dedupe** (see below) — drop findings the user already saw and rejected/skipped, unless the surrounding code changed
-5. **Sort by**: must-fix first, then suggestion, then question
-6. **Within each category**: sort by confidence (highest first), with validation-passed items above validation-failed/skipped at the same confidence
-7. **Flag low-confidence items** (confidence <= 2) for manual review
-8. **Surface any `dirty-cleanup-needed` subagents immediately** and halt the flow — the working tree may be inconsistent. Show the user which file is affected and let them run `git status` / `git diff` before continuing.
+3. **Split by evidence, not just category.** Findings with `EVIDENCE_TIER` of `reproduced` or `tooling-confirmed` are **Confirmed**. Everything else (`fix-validated` bug claims, `unverified`) goes under a separate **"Unconfirmed — reasoning only"** heading. Never present an unconfirmed finding with a ✓ or as "verified". A bug/must-fix that reached only `fix-validated` is unconfirmed.
+4. **Apply post-aggregation category filter** (see below) — never trust a prompt to suppress lint-territory noise on its own
+5. **Apply cross-run dedupe** (see below) — drop findings the user already saw and rejected/skipped, unless the surrounding code changed
+6. **Sort by**: must-fix first, then suggestion, then question
+7. **Within each category**: Confirmed (`reproduced` > `tooling-confirmed`) above Unconfirmed; within a tier, by confidence (highest first)
+8. **Flag low-confidence items** (confidence <= 2) for manual review
+9. **Surface any `dirty-cleanup-needed` subagents immediately** and halt the flow — the working tree may be inconsistent. Show the user which file is affected and let them run `git status` / `git diff` before continuing.
 
 #### Step 5a: Category Filter (lint-territory suppression)
 
@@ -642,7 +707,8 @@ jq -c -n \
   --arg context_hash "$context_hash" \
   --arg user_action "$user_action" \
   --arg validator_verdict "$validator_verdict" \
-  '{run_id:$run_id, source:$source, file:$file, line:$line, issue_key:$issue_key, summary_normalized:$summary_normalized, context_hash:$context_hash, user_action:$user_action, validator_verdict:$validator_verdict}' \
+  --arg evidence_tier "$evidence_tier" \
+  '{run_id:$run_id, source:$source, file:$file, line:$line, issue_key:$issue_key, summary_normalized:$summary_normalized, context_hash:$context_hash, user_action:$user_action, validator_verdict:$validator_verdict, evidence_tier:$evidence_tier}' \
   >> "$HISTORY_FILE"
 ```
 
@@ -659,15 +725,20 @@ Review Status:
 - @reviewer2: Approved
 
 Comments analyzed by isolated subagents (4 threads, 0 context bleed):
-┌─────────────┬──────┬───────────┬──────────────┬─────────────────────────────────────┐
-│ Category    │ Count│ Confidence│ Validation   │ Files                               │
-├─────────────┼──────┼───────────┼──────────────┼─────────────────────────────────────┤
-│ must-fix    │ 1    │ 5/5       │ ✓ passed     │ lib/db/queries.ts                   │
-│ suggestion  │ 2    │ 4/5, 3/5  │ ✓ / ✗ failed │ components/game/leaderboard-card.tsx│
-│ question    │ 1    │ 4/5       │ n/a          │ lib/hooks/use-leaderboard.ts        │
-└─────────────┴──────┴───────────┴──────────────┴─────────────────────────────────────┘
+┌─────────────┬──────┬───────────┬───────────────────┬─────────────────────────────────────┐
+│ Category    │ Count│ Confidence│ Evidence          │ Files                               │
+├─────────────┼──────┼───────────┼───────────────────┼─────────────────────────────────────┤
+│ must-fix    │ 1    │ 5/5       │ ✓ reproduced      │ lib/db/queries.ts                   │
+│ suggestion  │ 2    │ 4/5, 3/5  │ ⚙ fix-validated   │ components/game/leaderboard-card.tsx│
+│ question    │ 1    │ 4/5       │ n/a               │ lib/hooks/use-leaderboard.ts        │
+└─────────────┴──────┴───────────┴───────────────────┴─────────────────────────────────────┘
 
-Legend: ✓ passed (fix verified locally) · ✗ failed (typecheck/lint/test broke) · ○ skipped (no validator / dirty file)
+Unconfirmed — reasoning only (no reproduction/tooling evidence):
+┌─────────────┬──────┬───────────┬───────────────────┬─────────────────────────────────────┐
+│ must-fix?   │ 1    │ 3/5       │ ✗ unverified      │ lib/api/handler.ts (claim not repro)│
+└─────────────┴──────┴───────────┴───────────────────┴─────────────────────────────────────┘
+
+Legend: ✓ reproduced (RED→GREEN test demonstrates the bug and its fix) · ◆ tooling-confirmed (tool error on current code) · ⚙ fix-validated (fix builds + tests pass; bug NOT independently reproduced) · ✗ unverified (reasoning only — never auto-applied)
 ```
 
 Then use `AskUserQuestion`:
@@ -715,23 +786,26 @@ Subagent analysis:
 
   Verified: desc import exists from drizzle-orm, agentStats.winRate column confirmed.
 
-  Local validation: ✓ passed
-    $ npx tsc --noEmit              → 0
-    $ npx biome check lib/db/queries.ts  → 0
-    $ npx vitest run lib/db/queries.test.ts  → 0 (3 passed)
+  Evidence: ✓ reproduced (RED→GREEN)
+    RED (current code) — repro test fails, proving the bug is real:
+      $ npx vitest run lib/db/queries.repro.test.ts
+        × getTopAgents returns rows ordered by winRate
+          expected first row winRate 0.91, received 0.42 (arbitrary order)
+    GREEN (after fix) — same test passes:
+      $ npx vitest run lib/db/queries.repro.test.ts  → 0 (1 passed)
+    Then reverted fix + deleted repro test; `git diff --stat` empty.
 ```
 
-If validation failed, show the failing command and its tail:
+If the reproduction could NOT be produced, the finding is surfaced under **"Unconfirmed — reasoning only"** and labeled, e.g.:
 
 ```
-  Local validation: ✗ failed
-    $ npx tsc --noEmit              → 2 (type errors)
-
-    lib/db/queries.ts:45:40 - error TS2345: Argument of type 'string' is not
-      assignable to parameter of type 'SQLWrapper | Column | ...'
+  Evidence: ✗ unverified (reasoning only)
+    Could not reproduce: no test harness covers lib/api/handler.ts, and the
+    claimed race depends on concurrent requests I could not drive locally.
+    UNDEMONSTRATED: that two in-flight requests actually interleave here.
 ```
 
-A failing validation does NOT automatically drop the fix — the user may still want to apply it (e.g. the failure is a pre-existing issue the fix surfaced). But it is surfaced prominently and excluded from auto-apply.
+A `fix-validated`/`unverified` bug claim is NOT dropped automatically — the user may still want it — but it is shown without a ✓, kept out of the Confirmed list, and excluded from auto-apply. The user always sees which claims were demonstrated and which are reasoning.
 
 Then use `AskUserQuestion`:
 
@@ -841,10 +915,10 @@ AskUserQuestion({
 
 First, output the suggested response (drafted by the subagent):
 ```
-Suggested response:
-"Thanks for the suggestion! I'm keeping it as-is because this is only used
-in one place and the limit is already parameterized in the query. Adding
-a constant here would be over-abstraction."
+Suggested response (Conventional Comments format):
+"thought (non-blocking): Keeping this as-is — it's used in one place and the
+limit is already parameterized in the query, so extracting a constant would be
+over-abstraction. Happy to revisit if it gets reused."
 ```
 
 Then use `AskUserQuestion`:
@@ -879,10 +953,10 @@ Subagent analysis:
   useGameState (same file, line 28). During active games, matches complete
   frequently. The reviewer may not have seen the game state context.
 
-  Suggested response:
-  "The 5-second interval matches our game state polling. During active games,
-  the leaderboard can change frequently as matches complete. Happy to make
-  this configurable if you think it's too aggressive."
+  Suggested response (Conventional Comments format):
+  "note (non-blocking): The 5-second interval matches our game state polling —
+  during active games the leaderboard changes frequently as matches complete.
+  Happy to make it configurable if you think it's too aggressive."
 ```
 
 Then use `AskUserQuestion`:
@@ -906,20 +980,19 @@ AskUserQuestion({
 
 If the user selected "Auto-apply high confidence" in Step 4:
 
-1. Apply all fixes where **confidence >= 4 AND validation_status == passed** automatically
-2. Kick fixes with validation_status of `failed`, `skipped`, or `dirty-cleanup-needed` to manual review regardless of confidence — the user should see the evidence before the code lands
+1. Apply automatically ONLY fixes where **confidence >= 4 AND `EVIDENCE_TIER` ∈ {`reproduced`, `tooling-confirmed`}** — i.e. only findings with hard, replayed evidence
+2. Kick everything else to manual review regardless of confidence — `fix-validated`, `unverified`, `failed`, `dirty-cleanup-needed`. A high confidence score on an unreproduced claim is exactly the hallucination this gate exists to stop; the user must see the (missing) evidence before the code lands
 3. Show a summary of what was applied
 4. Present remaining items for manual review
 
 ```
-Auto-applied (confidence >= 4, validation passed):
-✓ [must-fix] lib/db/queries.ts:45 - Added orderBy clause (5/5, ✓ tsc + biome + vitest)
-✓ [suggestion] components/game/leaderboard-card.tsx:23 - Added constant (4/5, ✓ tsc + biome)
+Auto-applied (confidence >= 4, evidence reproduced/tooling-confirmed):
+✓ [must-fix] lib/db/queries.ts:45 - Added orderBy clause (5/5, ✓ reproduced RED→GREEN)
 
 Needs manual review:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-[1/2] suggestion | components/game/leaderboard-card.tsx:45 | confidence: 2/5 | validation: ✓ passed
-[2/2] must-fix   | lib/api/handler.ts:88 | confidence: 5/5 | validation: ✗ failed (tsc)
+[1/2] suggestion | components/game/leaderboard-card.tsx:23 | confidence: 4/5 | evidence: ⚙ fix-validated (not a reproduced bug)
+[2/2] must-fix?  | lib/api/handler.ts:88 | confidence: 5/5 | evidence: ✗ unverified (claim not reproduced — held back despite high confidence)
 ...
 ```
 
@@ -1242,6 +1315,9 @@ For **addressing existing review comments** (not discovering new bugs), subagent
 6. **Majority voting where individual passes are cheap** — Three parallel diff-scanners with shuffled file order; only findings ≥ 2 of 3 agree on survive. Applied to discovery quick-scan, where each pass is small.
 7. **Hard category filter at aggregation boundary** — Telling subagents to skip lint-territory issues isn't enough. A regex filter on summaries at the aggregator drops the leaks. BugBot's approach: strip categories explicitly rather than relying on prompt compliance.
 8. **Cross-run dedupe with context invalidation** — Persist `(file, summary_hash, context_hash, user_action)` per PR. Skip findings the user already decided on, unless the surrounding code changed. Prevents the iteration-loop fatigue that BugBot calls out explicitly.
+9. **Reproduction-first evidence beats "the fix compiles"** — The single biggest hallucination risk is a confident bug claim that was never real. Validating that a *fix builds and existing tests pass* does not test that — a cosmetic fix for a fictional bug passes every such check (demonstrated in [Evidence (Key Principle)](#evidence-key-principle)). The only hard evidence is a test that fails on current code (RED) and passes after the fix (GREEN). So bug/must-fix findings must reach `reproduced` or `tooling-confirmed` to be presented as confirmed; the validator re-runs the reproduction rather than re-reasoning; and auto-apply is gated on replayed evidence, not on confidence. Findings without evidence are surfaced honestly as "reasoning only", never as verified.
+
+10. **Keep reviewing; don't stop at one pass (greploop, generalized)** — Greptile's *greploop* loops a reviewer until the PR is clean. `--loop` ([Review Loop](#review-loop---loop)) brings that to peep, but the reviewer is the **coding agent itself** — peep's own discovery review re-run after each fix — so it needs no external bot (it folds one in only when present). It stays honest via the same evidence bar (fix reproduced findings, decline unreproducible ones) and converges via cross-run dedupe plus an anti-thrash "no new fixes → stop" guard.
 
 ### Calibrating the validator (when to retune)
 
@@ -1337,6 +1413,67 @@ When `--land` is passed, after applying review-comment fixes and pushing, hand o
 
 This is just convenience — running `/bruhs:peep` then `/bruhs:land` manually does the same thing.
 
+## Review Loop (`--loop`)
+
+`--loop` makes peep keep reviewing the PR *itself* — review → fix → re-review — until a pass turns up nothing new worth fixing, or a max-iteration cap is hit. Single-pass peep reviews the diff once; `--loop` re-reviews the *updated* diff after each fix-and-push, the way a careful engineer re-reads their own PR after every change. **The reviewer in the loop is the coding agent** — peep's own discovery review (Step 3) — not an external service. The idea is borrowed from Greptile's [greploop](https://github.com/greptileai/skills/blob/main/greploop/SKILL.md) and generalized: no bot required. If an AI-reviewer bot *is* installed, the loop can fold its findings in too (see below).
+
+**Invocation:** `/bruhs:peep --loop [--max-iterations N]` (default `N=5`). Works with or without human comments or an AI-reviewer bot. Composable with `--land` (each iteration also waits for CI green before re-reviewing) and `--resolve-conflicts`.
+
+### The loop (≤ N iterations)
+
+For each iteration `i` from 1 to N:
+
+1. **Review the PR yourself.** Run peep's own discovery review (Step 3) over the diff: subagent-per-file + adversarial validator (thorough), or 3-pass majority vote (quick). On `i ≥ 2`, focus on what changed since the last iteration's push (plus anything still unresolved), so the loop *converges* instead of re-litigating settled code.
+2. **Address actionable findings** under the **same reproduction-first evidence bar** ([Evidence](#evidence-key-principle)) — fan out one isolated subagent per finding (Step 4). Apply `reproduced` / `tooling-confirmed` fixes; for anything it cannot reproduce, record it and **decline** rather than fabricate a fix. There's no external verdict to chase — the bar is real bugs, not a score.
+3. **Resolve** any addressed threads, **validate** the full suite (Step 10), **commit** `fix: self-review pass (peep loop iteration <i>)`, and **push**.
+4. **Re-review** on the new state (next iteration).
+
+### Optional: fold in an installed bot reviewer
+
+If the repo runs an AI reviewer (Greptile, Cursor BugBot, CodeRabbit, …), each iteration can *also* re-trigger it and merge its unresolved threads into that pass's findings. This is **purely additive** — the loop's spine is the agent's own review and never depends on a bot being present. Detect the bot by its identity on the PR (never invent a mention for a bot that isn't there):
+
+```bash
+gh pr view <number> --json reviews,comments \
+  --jq '[.reviews[].author.login] + [.comments[].author.login] | unique'
+```
+
+| Reviewer | Bot login (examples) | Re-trigger comment |
+|---|---|---|
+| Greptile | `greptileai[bot]` | `@greptile review` |
+| Cursor BugBot | `cursor[bot]` | `@cursor review` |
+| CodeRabbit | `coderabbitai[bot]` | `@coderabbitai review` |
+
+### Termination
+
+Stop and report when **any** holds:
+
+- **Clean** — a full review pass produces **no new actionable** (`reproduced` / `tooling-confirmed`) findings and no unresolved actionable threads remain (and any folded-in bot is satisfied).
+- **Iteration cap** — `i == N`. Summarize what's still open.
+- **No progress (anti-thrash)** — an iteration applied **zero** new fixes. Reviewing again would just resurface the same declined items, so stop and hand back rather than burn the budget.
+- **Validation can't pass** — fixes don't survive the suite and can't be made green. Stop and surface it; never push broken code in a loop.
+
+### Guardrails
+
+- **Evidence over appeasement.** The goal is correct code, not a clean-looking score. Never apply a no-op/cosmetic "fix" just to make a finding disappear; an unreproducible finding is declined honestly, exactly as in single-pass peep.
+- **Converge, don't re-litigate.** Use the per-PR history ([Step 2a](#step-2a-load-prior-peep-history-cross-run-dedupe) / Step 5b) so a finding already declined isn't re-raised every iteration; later passes look at the new changes, not the whole diff afresh.
+- **Cost is bounded by N.** Each iteration is a full self-review + subagent fan-out (+ CI if `--land`). Keep N small — 5 is plenty.
+- **Never bypass hooks or force-push.** Same as the rest of peep.
+
+### Output
+
+```
+PR #42 — self-review loop, max 5 iterations
+
+Iteration 1: 4 findings (agent self-review)
+  ✓ 2 fixed (reproduced) · 1 nit applied · 1 declined (unreproducible — recorded)
+  → pushed: fix: self-review pass (peep loop iteration 1)
+Iteration 2: 1 finding
+  ✓ 1 fixed (tooling-confirmed) → pushed (iteration 2)
+Iteration 3: 0 new actionable findings
+
+✓ Converged in 3 iterations. PR ready for merge.
+```
+
 ## Tips
 
 - **Run early, run often** — Don't wait for all reviews; address feedback as it comes
@@ -1345,6 +1482,8 @@ This is just convenience — running `/bruhs:peep` then `/bruhs:land` manually d
 - **Decline gracefully** — It's okay to push back on suggestions with good reasoning
 - **Re-request reviews** — After pushing fixes, explicitly request re-review
 - **Let reviewers resolve** — Some teams prefer reviewers mark their own threads resolved
-- **Trust confidence scores** — Scores >= 4 are reliable; scores <= 2 need human judgment
+- **Trust evidence, not confidence** — A confident-sounding claim with `EVIDENCE_TIER: unverified` is exactly what hallucinates. Confidence breaks ties *within* an evidence tier; it never promotes an unreproduced bug to "confirmed". A reproduced finding at confidence 3 beats an unverified one at confidence 5.
+- **Re-verify UI fixes** — When a fix touches user-visible surface, re-verify it with `/expect` (chrome-devtools) and refresh the PR's `## UI preview` (screenshots + recording) per `practices/ui-preview.md` before resolving the thread
 - **Pair with `/bruhs:verify`** — When a reviewer asks "did this actually fix it?", run verify before responding
 - **Use `--land`** — For the full feedback-to-green loop in one shot
+- **Use `--loop` to keep reviewing** — `/bruhs:peep --loop` re-reviews the PR after each fix until a pass comes up clean, instead of you re-running peep by hand; the reviewer is the agent itself, with or without an AI-reviewer bot

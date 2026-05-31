@@ -140,6 +140,16 @@ RULES: dict[str, tuple[str, list[str]]] = {
             "Don't hardcode MagicDNS hostnames — read them from env vars so non-tailnet devs and CI can override.",
         ],
     ),
+    "daytona": (
+        "Daytona (sandboxing)",
+        [
+            "Run AI-generated or otherwise untrusted code inside a Daytona sandbox — never in the app's own process or host. That isolation is the entire point.",
+            "Reuse one sandbox per session/agent and `exec`/`code_run` into it; creating a sandbox per call is the per-request-client anti-pattern (slow, and it leaks compute).",
+            "Sandboxes you create, you delete — call `sandbox.delete()` in a finally/cleanup path, and set an idle auto-stop so an abandoned sandbox stops billing.",
+            "Pass secrets via the sandbox's env, not baked into the code you upload; treat anything you read back from the sandbox as untrusted input.",
+            "Bound concurrency when fanning out sandboxes over user/agent input — unbounded `create()` is a cost-and-quota DoS.",
+        ],
+    ),
 }
 
 # Synonyms: things that show up in stack detection but should map to a
@@ -154,6 +164,8 @@ SYNONYMS: dict[str, str] = {
     "drizzle": "drizzle-postgres",
     "effect-ts": "effect",
     "@tanstack/react-query": "tanstack-query",
+    "@daytonaio/sdk": "daytona",
+    "daytonaio": "daytona",
 }
 
 
@@ -192,6 +204,7 @@ def collect_signals(state: dict) -> list[str]:
         "tooling",
         "infra",
         "networking",
+        "sandboxing",
         "gpu",
         "observability",
         "llmObservability",

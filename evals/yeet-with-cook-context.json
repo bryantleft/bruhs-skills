@@ -13,8 +13,9 @@
     "Step 2 categorizes the diff as 'feat' (new feature), generates a Conventional Commits title like 'feat: add dark mode toggle to settings page' (under 70 chars) following practices/pr-review.md + _common.md",
     "Step 4 detects the existing ticketContext in conversation memory and SKIPS ticket creation \u2014 reuses branchName='perdix-145-add-dark-mode-toggle-to-settings-page' (the exact gitBranchName Linear generated) rather than re-running linear_create_issue",
     "Step 5 runs `git switch -c perdix-145-add-dark-mode-toggle-to-settings-page` (modern git command, not checkout -b)",
-    "Step 6 commits with 'feat: add dark mode toggle to settings page\\n\\nFixes PERDIX-145' \u2014 ticket reference goes in the commit body, not the title",
-    "Step 8 creates the PR via `gh pr create` using the Feature template (Why / What changed / Design decisions / Linear / Test plan) with 'Linear: PERDIX-145' filled in",
+    "Step 6 commits with 'feat: add dark mode toggle to settings page\\n\\nFixes PERDIX-145' \u2014 Conventional Commits, ticket reference in the commit body not the title",
+    "Step 7.5 detects this is a UI change (a settings-page toggle), verifies it with `/expect` (chrome-devtools), and captures screenshots (desktop + mobile, ideally light/dark) plus a short screen recording of toggling dark mode, per practices/ui-preview.md",
+    "Step 8 creates the PR via `gh pr create` using the Feature template (Why / What changed / Design decisions / UI preview / Linear / Test plan), with the `## UI preview` section populated from Step 7.5 (a verified-with-/expect note + screenshots + recording) and 'Linear: PERDIX-145' filled in",
     "Step 9 calls mcp__linear-perdix__linear_edit_issue with stateId for 'In Review'",
     "Final summary prints '\ud83d\udccb Using existing ticket' flavored output confirming PERDIX-145 was reused"
   ],
@@ -22,6 +23,8 @@
     "Creates a duplicate Linear ticket via linear_create_issue instead of reusing ticketContext from cook",
     "Uses a model-invented branch name instead of Linear's gitBranchName slug",
     "Writes the ticket reference into the commit title (`feat(PERDIX-145): ...`) instead of the commit body",
-    "Skips the full-suite validation gate before pushing \u2014 per the workflow, yeet should have confidence the branch compiles/tests before opening a PR"
+    "Skips the full-suite validation gate before pushing \u2014 per the workflow, yeet should have confidence the branch compiles/tests before opening a PR",
+    "Opens the PR for this UI change with no UI preview (or a `<screenshot>` placeholder), skipping Step 7.5 /expect verification and screenshot/recording capture",
+    "Captures a screenshot without first verifying the toggle with /expect \u2014 a preview of an unverified UI"
   ]
 }
