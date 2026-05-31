@@ -31,6 +31,7 @@ All code produced by cook follows the patterns defined in:
 - **`practices/type-driven-design.md`** - **PRIMARY** - Type signatures, explicit errors, immutability
 - **`practices/_common.md`** - Universal patterns (naming, git, errors, testing)
 - **`practices/pr-review.md`** - PR authoring, reviewer etiquette, Conventional Comments (used by peep)
+- **`practices/source-ground-truth.md`** - Read a dependency's real source (via `opensrc`) instead of trusting memory/docs when using or debugging a library
 - **`practices/typescript-react.md`** - TypeScript + React (incl. TS 5.4+ patterns + Next.js 16 Cache Components)
 - **`practices/typescript-hono.md`** - Hono framework (edge-native, RPC, type-safe middleware)
 - **`practices/python.md`** - Modern Python 3.13+ (uv/ruff/ty, Pydantic v2, PEP 695 generics)
@@ -256,6 +257,7 @@ Use the Task tool with `subagent_type: "feature-dev:code-explorer"` to:
 - Understand existing patterns
 - Map dependencies
 - Identify integration points
+- **Resolve third-party APIs from source** — when the feature uses a library, read its real implementation (`opensrc path <pkg>`, or the installed `node_modules`/site-packages copy at the locked version) rather than relying on memory. See `practices/source-ground-truth.md`.
 
 ### Step 3: Plan
 
@@ -421,7 +423,7 @@ AskUserQuestion({
     header: "Test strategy",
     multiSelect: false,
     options: [
-      { label: "Yes, manual verification only", description: "I'll verify in the browser; skip writing a failing test" },
+      { label: "Yes, verify via /expect + capture", description: "Skip the failing test; verify in-browser with /expect (chrome-devtools) and capture screenshots + recording per practices/ui-preview.md" },
       { label: "No, write a test anyway", description: "Snapshot / visual-regression / interaction test is worth the effort" },
     ]
   }]
@@ -565,6 +567,7 @@ Use feature-dev patterns:
 - Maintain single source of truth
 - Keep functions pure where possible
 - **Follow any skills loaded in Step 2** (shadcn, ai-sdk, etc.)
+- **Code against the real API, not a remembered one** — when calling into a third-party library, confirm its signature/options from source (`opensrc`, or the installed copy) before writing the call. See `practices/source-ground-truth.md`.
 
 **Progress output:**
 ```
@@ -629,25 +632,29 @@ Fix all issues found before proceeding to visual verification.
 
 **Visual Verification (for UI changes):**
 
-If the feature includes UI changes, use the browser agent to verify:
+If the feature includes UI changes, verify and capture per **`practices/ui-preview.md`** — do not eyeball it:
 
 ```javascript
-// Invoke the agent-browser skill for visual verification
-Skill("agent-browser")
+// 1. Adversarial browser verification via the chrome-devtools MCP.
+//    /expect navigates the changed surface and actively tries to break it
+//    (empty states, overflow, rapid clicks, bad input, mobile viewport).
+Skill("expect")
 
-// The browser agent will:
-// - Navigate to the relevant page
-// - Verify the UI renders correctly
-// - Check for visual regressions
-// - Test basic interactions
+// 2. Capture the proof while the dev server is up: screenshots
+//    (desktop 1280×800 + mobile 390×844) AND a screen recording of the
+//    changed interaction — chrome-devtools MCP, or the project's Playwright
+//    (recordVideo + page.screenshot) as a fallback. Save to /tmp/bruhs-ui-preview.
 ```
 
 ```
-Verifying in browser...
-✓ Page loads without errors
-✓ Component renders correctly
-✓ Interactions work as expected
+Verifying with /expect (chrome-devtools)...
+✓ Page loads without console errors
+✓ Component renders correctly (desktop + mobile)
+✓ Interactions work; empty/overflow/error states hold up
+✓ Captured screenshots + recording → /tmp/bruhs-ui-preview (for the PR's UI preview)
 ```
+
+Carry the captured media forward: `/bruhs:yeet` Step 7.5 embeds it as the `## UI preview` section of the PR body. Never mark a UI feature done on a preview you have not verified — a screenshot of a broken interaction is a false "it works".
 
 **If issues found:**
 ```

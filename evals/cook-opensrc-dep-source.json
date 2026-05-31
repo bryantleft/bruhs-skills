@@ -1,0 +1,19 @@
+{
+  "skills": ["bruhs"],
+  "command": "/bruhs:cook",
+  "query": "/bruhs:cook add a date-range picker using react-day-picker v9",
+  "files": ["CLAUDE.md", "package.json"],
+  "context": "package.json pins react-day-picker@9.x — a major the agent likely hasn't memorized (v9 renamed several props vs v8). bruhs:state has the project stack. `opensrc` is available on PATH and react-day-picker is installed in node_modules.",
+  "expected_behavior": [
+    "During Step 2 (Explore) or Step 5 (Build), the agent resolves react-day-picker's real API from source rather than memory — reads the installed copy in node_modules at the locked v9, or runs `opensrc path react-day-picker` and greps/reads its exports/types — per practices/source-ground-truth.md",
+    "The DayPicker usage it writes matches the v9 source (correct prop names/types for the installed version), not a remembered v8 signature",
+    "When docs/memory and the source disagree, the agent treats the installed source as ground truth and pins to the lockfile version, not `latest`",
+    "Cites what it read (file path + symbol from the source) when explaining the API it coded against"
+  ],
+  "failure_modes": [
+    "Codes against a half-remembered react-day-picker API (e.g. v8 props) without opening the installed source, producing a call that doesn't typecheck against v9",
+    "Relies solely on WebSearch / context7 docs and never reads the actual installed source",
+    "Runs `opensrc` against latest instead of the version in the lockfile",
+    "Asserts an API shape with no source/file citation behind it"
+  ]
+}

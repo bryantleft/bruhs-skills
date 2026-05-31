@@ -7,7 +7,7 @@ description: End-to-end development lifecycle for AI coding agents — scaffold 
 
 ## Index
 |commands|spawn,claim,cook,verify,yeet,walk,land,peep,dip,slop,doodle,deepen,drill,recap
-|practices|type-driven-design,architecture-deepening,testing-infrastructure,_common,pr-review,typescript-react,typescript-hono,python,python-fastapi,effect-ts,effect-*,rust,rust-*,ui-design
+|practices|type-driven-design,architecture-deepening,testing-infrastructure,source-ground-truth,_common,pr-review,typescript-react,typescript-hono,python,python-fastapi,effect-ts,effect-*,rust,rust-*,ui-design
 |config|CLAUDE.md + AGENTS.md (`bruhs:state` and `bruhs:rules` blocks)
 
 ## Commands Quick Reference
@@ -282,6 +282,27 @@ For full guidelines → `practices/_common.md`
 10. Parsing config / reading env per request → load once at boot
 
 Per-stack performance patterns → `practices/<stack>.md` (Performance section in each)
+
+---
+
+## Source as Ground Truth
+
+> Code is the best ground truth over docs.
+
+Whenever the work touches a third-party package, repo, or dependency, resolve its real behavior from the **installed source**, not from training memory or docs that may have drifted. Docs orient; the source decides. When they disagree, the version in the lockfile wins.
+
+Use [`opensrc`](https://github.com/vercel-labs/opensrc) to pull a package's source on demand:
+
+```bash
+npm install -g opensrc
+rg "parse" $(opensrc path zod)                    # search the real implementation
+cat $(opensrc path zod)/src/types.ts              # read a specific file
+find $(opensrc path pypi:requests) -name "*.py"   # non-npm via pypi: prefix
+```
+
+Reach for it before citing an API you're unsure of, when docs are thin or contradict behavior, when an error points into a dependency, or when a review finding hinges on what a library actually does. Reading source is not running it — execute untrusted / AI-generated code in a sandbox, never your host (see Config → stack `sandboxing`).
+
+For full guidance (version-matching, context7-vs-source, fallbacks) → `practices/source-ground-truth.md`
 
 ---
 

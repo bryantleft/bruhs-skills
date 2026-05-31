@@ -182,7 +182,7 @@ Without explicit labels, every comment looks the same urgency. Authors waste tim
 - [ ] Test plan in the description — what you tested, what you didn't
 - [ ] Linked to ticket / issue
 - [ ] CI green (or you note what's flaky)
-- [ ] Screenshots/diagrams for UI or architectural changes (try `/bruhs:doodle pr`)
+- [ ] UI changes: verified with `/expect` and a `## UI preview` (screenshots + recording) in the body — see `practices/ui-preview.md`. Architecture changes: diagram (try `/bruhs:doodle pr`)
 - [ ] Under 400 lines, or you've split it, or you've explained why it can't be split
 
 ### Description template
@@ -348,7 +348,7 @@ Distinguish **anti-pattern fixes** from **claimed optimizations**:
 - [ ] Self-reviewed before requesting review
 - [ ] Description includes Why + Test Plan
 - [ ] Linked ticket; CI green
-- [ ] Screenshots/diagrams for UI/architecture changes
+- [ ] UI: `/expect`-verified `## UI preview` (screenshots + recording, see `practices/ui-preview.md`); architecture: diagram
 - [ ] Reviewer assigned (CODEOWNERS or manual)
 
 ### Reviewing

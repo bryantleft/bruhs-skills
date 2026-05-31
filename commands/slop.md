@@ -130,6 +130,7 @@ Slop detects violations of the patterns defined in:
 
 - **`practices/type-driven-design.md`** - **PRIMARY** - Type signatures, explicit errors, immutability
 - **`practices/_common.md`** - Universal patterns (naming, git, errors, testing)
+- **`practices/source-ground-truth.md`** - Before flagging "misuse of `<library>`", confirm against that library's real source (`opensrc`) — a slop finding that misreads a dependency's API is itself slop
 - **`practices/typescript-react.md`** - TypeScript + React (incl. TS 5.4+ + Next.js 16)
 - **`practices/typescript-hono.md`** - Hono framework patterns (loaded when `framework: hono`)
 - **`practices/python.md`** - Modern Python 3.13+ (loaded when `language: python` or Python framework)

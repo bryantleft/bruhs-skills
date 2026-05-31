@@ -15,11 +15,14 @@
     "Step 4 runs git status; since working tree is clean, skips stashing",
     "Step 5 builds with TDD if a test suite is detected (vitest.config.* check), keeps tests when suite exists, otherwise creates then deletes temp test files",
     "Step 6 launches feature-dev:code-reviewer including the fast-path audit for N+1 / await-in-loop / per-request clients",
-    "Step 7 prints 'Ready to ship! Run /bruhs:yeet to create ticket and PR.' (no existing ticket note)"
+    "Because the leaderboard is a UI change, the Visual Verification step runs `/expect` (Skill('expect')) against the running dev server to verify rendering/sorting/empty-state/mobile via chrome-devtools, then captures screenshots + a recording to /tmp/bruhs-ui-preview per practices/ui-preview.md — it does NOT use the stale Skill('agent-browser')",
+    "Step 7 prints 'Ready to ship! Run /bruhs:yeet to create ticket and PR.' (no existing ticket note), and the captured UI media is left for yeet Step 7.5 to embed as the PR's `## UI preview`"
   ],
   "failure_modes": [
     "Tries to fetch a Linear ticket for a plain-English feature description",
     "Skips the AskUserQuestion approach-selection step and picks an approach unilaterally",
+    "Invokes a non-existent Skill('agent-browser') for visual verification instead of /expect",
+    "Marks the UI feature done by eyeballing it, without /expect verification or any screenshot/recording capture",
     "Ends with 'Using existing ticket' text even though cook was not started from a ticket ID"
   ]
 }

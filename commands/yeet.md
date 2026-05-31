@@ -29,7 +29,9 @@ Ship code that's ready to go. Creates Linear ticket, commits, pushes, and opens 
 
 PR description + commit + reviewer-assignment quality is governed by **`practices/pr-review.md`**. Key applications in this command:
 
+- **Conventional Commits — always.** Every commit message and the PR title MUST follow the [Conventional Commits](https://www.conventionalcommits.org/) spec (`feat(scope):`, `fix(scope):`, `chore:`, …) per `practices/_common.md`. This is not optional and has no "quick commit" escape hatch — a non-conventional message is a bug in the ship, not a style preference.
 - **PR title:** Conventional Commits format (`feat(scope):`, `fix(scope):`, etc.) — see `_common.md`
+- **UI preview — always for UI changes.** When the diff touches user-visible surface, verify it with `/expect` and capture screenshots + a screen recording, then embed them as a `## UI preview` section in the PR body. Full procedure: **`practices/ui-preview.md`**. A UI PR with no verified preview is incomplete.
 - **PR description template:** *What / Why / How / Test plan / Screenshots* — derived from the diff and Linear ticket context
 - **Size discipline:** if the diff is > 400 LOC, warn the user and suggest splitting (or accept with a justification noted in the PR body)
 - **CODEOWNERS:** if `.github/CODEOWNERS` exists, GitHub auto-requests reviewers; don't manually re-request
@@ -315,6 +317,21 @@ EOF
 git push -u origin <branchName>
 ```
 
+### Step 7.5: UI Verification & Preview Capture (UI changes only)
+
+If the diff touches user-visible surface (components, pages, routes, styles, templates, emails), produce a verified UI preview **before** writing the PR body. Follow **`practices/ui-preview.md`** in full:
+
+1. **Verify with `/expect`** — adversarial browser tests via the chrome-devtools MCP. Fix any breakage and re-run before capturing. Never capture an unverified UI.
+2. **Capture** screenshots (desktop 1280×800 + mobile 390×844; before/after when modifying existing UI) and a short **screen recording** that shows the changed interaction — via chrome-devtools MCP, or the project's Playwright (`recordVideo` + `page.screenshot`) as a fallback.
+3. **Host** the media (auto-push to the `bruhs-assets` branch for inline images; drag-drop the recording for an inline player — see the practice for the honest hosting limits).
+4. Carry the resulting markdown into the `## UI preview` section in Step 8.
+
+If the diff has no UI surface, skip this step. Detect quickly:
+
+```bash
+git diff --name-only origin/<base>...HEAD | grep -Eiq '\.(tsx|jsx|vue|svelte|css|scss|html|astro)$' && echo "UI diff: run Step 7.5" || echo "no UI surface: skip"
+```
+
 ### Step 8: Create PR
 
 The PR description should be a **historical record** — useful to someone reading `git blame` in 2 years. Lead with *why*, not *what* (the diff already shows what). Scale detail to the size and risk of the change.
@@ -335,9 +352,10 @@ gh pr create --title "<title>" --body "$(cat <<'EOF'
 - <any non-obvious choices: "Used X over Y because Z">
 - <omit this section entirely for straightforward changes>
 
-<!-- Include for UI changes only -->
-## Screenshots
-<before/after screenshots with captions explaining what to look at>
+<!-- Include for UI changes only — produced by Step 7.5 / practices/ui-preview.md -->
+## UI preview
+Verified with `/expect` (chrome-devtools): <1-line result>.
+<before/after screenshots with captions, plus a screen recording of the changed interaction>
 <!-- End UI section -->
 
 ## Linear
@@ -401,7 +419,7 @@ EOF
 - **Why / Problem**: This is the most important section. A reviewer should understand the motivation before reading a single line of code. Write it for someone with no context.
 - **What changed**: High-level bullets only. Don't restate the diff ("changed line 42 from X to Y"). Focus on *what's different about the system now*.
 - **Design decisions**: Only include when the choice isn't obvious. "Used batch query instead of N+1 loop" — yes. "Created a React component" — no.
-- **Screenshots**: Required for any UI change. Always include a caption: "Before: button overflows on mobile. After: wraps correctly." For interactions, use a screen recording.
+- **UI preview**: Required for any UI change, and must be *verified* — run `/expect` (chrome-devtools) first, then embed screenshots **and** a screen recording of the interaction (see `practices/ui-preview.md`). Always include a caption: "Before: button overflows on mobile. After: wraps correctly." A bare screenshot of an unverified or static screen does not satisfy this.
 - **Reviewer guide**: For PRs touching 5+ files. Tell the reviewer where to start and what to skip. "Start with `schema.ts`, then `handler.ts`. The migration file is auto-generated."
 - **Test plan**: Every PR, every time. Not "added tests" — specific verification steps.
 - **Scale to risk**: A one-line typo fix gets a one-line description. A schema migration gets paragraphs.
@@ -418,9 +436,17 @@ Players had no way to see how they rank against other agents. The leaderboard gi
 - Integrated leaderboard into game page sidebar
 - Added `getTopAgents` query with pagination support
 
-## Screenshots
-**Game page with leaderboard sidebar**
-<screenshot>
+## UI preview
+Verified with `/expect` (chrome-devtools): leaderboard renders, sorts by win rate, empty state and mobile layout hold up.
+
+**Game page with leaderboard sidebar (desktop 1280×800)**
+![desktop](https://raw.githubusercontent.com/perdixlabs/gambit/bruhs-assets/.bruhs/pr-media/perdix-140-add-leaderboard/desktop.png)
+
+**Mobile (390×844)**
+![mobile](https://raw.githubusercontent.com/perdixlabs/gambit/bruhs-assets/.bruhs/pr-media/perdix-140-add-leaderboard/mobile.png)
+
+**Recording** — opening the game page and the leaderboard updating after a match
+<!-- drag /tmp/bruhs-ui-preview/video/leaderboard.webm here for an inline player -->
 
 ## Linear
 PERDIX-140

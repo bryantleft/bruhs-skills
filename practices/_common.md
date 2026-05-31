@@ -12,6 +12,7 @@ Universal patterns that apply across all stacks.
 - [Testing](#testing)
 - [Dependencies](#dependencies)
 - [External Searches](#external-searches)
+- [Source as Ground Truth](#source-as-ground-truth)
 - [Performance](#performance)
 - [Quick Reference](#quick-reference)
 
@@ -432,6 +433,25 @@ WebSearch({ query: `Next.js app router documentation` })
 | API references | ✅ Yes |
 | Error message lookups | ✅ Yes (bugs get fixed) |
 | General knowledge (math, algorithms) | ❌ No |
+
+---
+
+## Source as Ground Truth
+
+> Code is the best ground truth over docs.
+
+External Searches (above) get you *docs*; this gets you *truth*. Docs drift and training memory is frozen at an old version — the installed source is what actually runs. Whenever you touch a third-party package, read its real source before asserting how it behaves.
+
+```bash
+npm install -g opensrc                            # one-time
+rg "parse" $(opensrc path zod)                    # search the real implementation
+cat $(opensrc path zod)/src/types.ts              # read a specific file
+find $(opensrc path pypi:requests) -name "*.py"   # non-npm via pypi: prefix
+```
+
+Reach for [`opensrc`](https://github.com/vercel-labs/opensrc) before citing an API you're unsure of, when docs contradict behavior, or when an error points into a dependency. Match the version in the lockfile, and when docs and source disagree, the source wins. Reading source is not running it — execute untrusted / AI-generated code in a sandbox, never your host.
+
+Full guidance → the **Source as Ground Truth** section in `SKILL.md` and `practices/source-ground-truth.md`.
 
 ---
 

@@ -341,6 +341,21 @@ AskUserQuestion({
 })
 ```
 
+**For AI/ML & API - Sandboxing (running AI-generated / untrusted code):**
+
+```javascript
+AskUserQuestion({
+  questions: [{
+    question: "Do you want a sandbox for running AI-generated or untrusted code?",
+    header: "Sandboxing",
+    multiSelect: true,
+    options: [
+      { label: "Daytona", description: "Isolated, elastic sandboxes — execute AI-generated code with zero risk to your infra (daytona.io)" },
+    ]
+  }]
+})
+```
+
 **For Web/API - Infrastructure:**
 
 ```javascript
@@ -816,6 +831,7 @@ Otherwise (fresh project), assemble the state and write both blocks:
     "tooling": ["<selected-tooling>"],
     "infra": ["<selected-infra>"],
     "networking": ["<selected-networking>"],
+    "sandboxing": ["<selected-sandboxing>"],
     "gpu": ["<selected-gpu>"]
   }
 }
@@ -1064,6 +1080,7 @@ Done! 🚀
 | **Email** | Resend | Web, API |
 | **Infra** | Vercel, Railway, Docker | Web, API |
 | **Networking** | Tailscale, Cloudflare Tunnel | Web, API |
+| **Sandboxing** | Daytona | AI/ML, API, Web |
 | **Observability** | Axiom, Vanta | All |
 | **LLM Observability** | Langfuse, Braintrust | AI/ML projects |
 | **Testing** | Vitest, Playwright | TypeScript |
