@@ -140,6 +140,16 @@ RULES: dict[str, tuple[str, list[str]]] = {
             "Don't hardcode MagicDNS hostnames — read them from env vars so non-tailnet devs and CI can override.",
         ],
     ),
+    "auth.md": (
+        "auth.md (agent access)",
+        [
+            "Serve the manifest at a stable, unauthenticated path (`/auth.md` or `/.well-known/auth.md`) — agents discover it by fetching that URL, so don't gate it behind login.",
+            "auth.md describes registration flows; it does not replace your auth provider. Keep issuing real sessions/tokens through the existing provider — auth.md only adds the agent-driven sign-up path on top.",
+            "Issue agents scoped, revocable credentials (narrow API keys or access tokens) — never the same broad session a human browser gets.",
+            "Treat agent-initiated registrations as untrusted: rate-limit them, and require the OTP/user-claimed flow for anything sensitive rather than agent-verified alone.",
+            "Keep the manifest's declared flows and scopes in sync with what the backend actually enforces — a manifest promising a scope the API ignores is a security gap.",
+        ],
+    ),
     "daytona": (
         "Daytona (sandboxing)",
         [
@@ -166,6 +176,9 @@ SYNONYMS: dict[str, str] = {
     "@tanstack/react-query": "tanstack-query",
     "@daytonaio/sdk": "daytona",
     "daytonaio": "daytona",
+    "auth-md": "auth.md",
+    "authmd": "auth.md",
+    "workos auth.md": "auth.md",
 }
 
 
@@ -204,6 +217,7 @@ def collect_signals(state: dict) -> list[str]:
         "tooling",
         "infra",
         "networking",
+        "agentAccess",
         "sandboxing",
         "gpu",
         "observability",

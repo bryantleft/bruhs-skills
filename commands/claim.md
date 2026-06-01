@@ -349,6 +349,7 @@ Build the state JSON in memory, then pipe it through the two helper scripts to w
     "tooling": ["<detected>"],
     "infra": ["<detected>"],
     "networking": [],
+    "agentAccess": [],
     "sandboxing": [],
     "gpu": ["<detected>"],
     "observability": [],
@@ -449,6 +450,7 @@ For **monorepos**, scan all `apps/*/` directories → `frameworks: ["Next.js", "
 | `@tanstack/react-query` in deps | libraries: tanstack-query |
 | `effect` in deps | libraries: effect |
 | `better-auth` in deps | auth: better-auth |
+| `auth.md` / `.well-known/auth.md` / `public/auth.md` | agentAccess: auth.md |
 | `vercel.json` | infra: vercel |
 | `Dockerfile` | infra: docker |
 | `railway.json` | infra: railway |

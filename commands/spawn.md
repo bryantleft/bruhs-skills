@@ -381,6 +381,14 @@ AskUserQuestion({
       ]
     },
     {
+      question: "Which agent-native capabilities do you want?",
+      header: "Agent Access",
+      multiSelect: true,
+      options: [
+        { label: "auth.md", description: "Host /auth.md so AI agents can register users without sign-up forms — open protocol, layers on top of your auth provider (workos.com/auth-md)" },
+      ]
+    },
+    {
       question: "Which additional services do you want?",
       header: "Services",
       multiSelect: true,
@@ -620,6 +628,28 @@ cd apps/web && pnpm dlx shadcn@latest init --style base-mira --base-color neutra
 
 The `base-mira` style provides a clean, modern aesthetic. If user wants a different style, they can specify via "Other" in the styling selection.
 
+**If auth.md (Agent Access) was selected, expose the manifest at an unauthenticated path:**
+
+The manifest is a static Markdown file an app serves so AI agents can discover its registration flows. Drop it at `/auth.md` (or `/.well-known/auth.md`) — it layers on top of the chosen auth provider, it does not replace it.
+
+| Framework | Where the manifest lives |
+|-----------|--------------------------|
+| Next.js (App Router) | `app/auth.md/route.ts` returning `text/markdown`, or a static `public/.well-known/auth.md` |
+| Hono | `app.get('/auth.md', (c) => c.text(MANIFEST, 200, { 'Content-Type': 'text/markdown' }))` |
+| Astro | `src/pages/auth.md.ts` endpoint, or `public/auth.md` |
+| FastAPI | `@app.get('/auth.md')` returning `PlainTextResponse(MANIFEST, media_type='text/markdown')` |
+
+```ts
+// Next.js — app/auth.md/route.ts
+export function GET() {
+  return new Response(MANIFEST, {
+    headers: { "Content-Type": "text/markdown; charset=utf-8" },
+  })
+}
+```
+
+Keep the manifest's declared flows/scopes in sync with what the backend enforces, and issue agents scoped, revocable credentials — not the broad session a human browser gets. Protocol + manifest format: github.com/workos/auth.md (early access via WorkOS AuthKit: authmd@workos.com).
+
 ### Step 7: Reconcile Tooling Conflicts
 
 Framework scaffolders install their own default tooling. Reconcile conflicts by removing tools that were superseded by user selections.
@@ -831,6 +861,7 @@ Otherwise (fresh project), assemble the state and write both blocks:
     "tooling": ["<selected-tooling>"],
     "infra": ["<selected-infra>"],
     "networking": ["<selected-networking>"],
+    "agentAccess": ["<selected-agent-access>"],
     "sandboxing": ["<selected-sandboxing>"],
     "gpu": ["<selected-gpu>"]
   }
@@ -1080,6 +1111,7 @@ Done! 🚀
 | **Email** | Resend | Web, API |
 | **Infra** | Vercel, Railway, Docker | Web, API |
 | **Networking** | Tailscale, Cloudflare Tunnel | Web, API |
+| **Agent Access** | auth.md | Web, API |
 | **Sandboxing** | Daytona | AI/ML, API, Web |
 | **Observability** | Axiom, Vanta | All |
 | **LLM Observability** | Langfuse, Braintrust | AI/ML projects |
