@@ -1,6 +1,6 @@
 {
   "name": "bruhs",
-  "description": "End-to-end development lifecycle: scaffold projects, plan and build features, verify behavior with evidence, ship PRs, walk reviewers through changes, watch CI to green, address review comments, clean up after merge, audit codebases, surface architectural deepenings, recap shipped work. Use when starting a project, implementing a feature, verifying a fix, shipping code, reviewing PRs, addressing review feedback, merging, auditing code quality, or summarizing shipped work.",
+  "description": "End-to-end development lifecycle: scaffold projects, plan and build features, verify behavior with evidence, ship PRs, walk reviewers through changes, watch CI to green, address review comments, clean up after merge, audit codebases, improve UI polish/motion quality, surface architectural deepenings, recap shipped work. Use when starting a project, implementing a feature, verifying a fix, shipping code, reviewing PRs, addressing review feedback, merging, auditing code quality, reviewing animations, or summarizing shipped work.",
   "version": "1.4.0",
   "author": {
     "name": "Bryant Le",
@@ -45,6 +45,10 @@
     "canvas",
     "recap",
     "status-update",
-    "code-judo"
+    "code-judo",
+    "ui",
+    "design",
+    "motion",
+    "animation"
   ]
 }

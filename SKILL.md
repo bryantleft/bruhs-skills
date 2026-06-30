@@ -1,13 +1,13 @@
 ---
 name: bruhs
-description: End-to-end development lifecycle for AI coding agents — scaffold projects, plan and build features, create Linear tickets, open and review PRs, clean up after merge, audit codebases. Works with any agent that reads CLAUDE.md or AGENTS.md. Use when starting a project, implementing a feature, shipping code, addressing PR reviews, merging, or auditing code quality.
+description: End-to-end development lifecycle for AI coding agents — scaffold projects, plan and build features, create Linear tickets, open and review PRs, clean up after merge, audit codebases, and improve UI polish/motion quality. Works with any agent that reads CLAUDE.md or AGENTS.md. Use when starting a project, implementing a feature, shipping code, addressing PR reviews, merging, auditing code quality, designing or reviewing UI polish, or reviewing animations.
 ---
 
 # bruhs
 
 ## Index
 |commands|spawn,claim,cook,verify,yeet,walk,land,peep,dip,slop,doodle,deepen,drill,recap
-|practices|type-driven-design,architecture-deepening,testing-infrastructure,source-ground-truth,_common,pr-review,typescript-react,typescript-hono,python,python-fastapi,effect-ts,effect-*,rust,rust-*,ui-design
+|practices|type-driven-design,architecture-deepening,testing-infrastructure,source-ground-truth,_common,pr-review,typescript-react,typescript-hono,python,python-fastapi,effect-ts,effect-*,rust,rust-*,ui-design,design-engineering
 |config|CLAUDE.md + AGENTS.md (`bruhs:state` and `bruhs:rules` blocks)
 
 ## Commands Quick Reference

@@ -73,6 +73,14 @@ RULES: dict[str, tuple[str, list[str]]] = {
             "Use tokens from the design system (`design-system.json` if present) before introducing arbitrary values like `text-[#abc]`.",
         ],
     ),
+    "motion": (
+        "Motion / Animation",
+        [
+            "Do not animate keyboard-initiated or high-frequency actions; delete or drastically reduce motion users see dozens of times per day.",
+            "UI motion should usually animate only `transform` and `opacity`, stay under 300ms, use strong custom easing, and respect `prefers-reduced-motion`.",
+            "Avoid `ease-in`, `transition: all`, `scale(0)` entrances, centered origins on trigger-anchored overlays, and layout-property animation.",
+        ],
+    ),
     "drizzle-postgres": (
         "Drizzle",
         [
@@ -179,6 +187,11 @@ SYNONYMS: dict[str, str] = {
     "auth-md": "auth.md",
     "authmd": "auth.md",
     "workos auth.md": "auth.md",
+    "framer-motion": "motion",
+    "motion-one": "motion",
+    "@motionone/react": "motion",
+    "@react-spring/web": "motion",
+    "react-spring": "motion",
 }
 
 

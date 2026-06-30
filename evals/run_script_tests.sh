@@ -241,6 +241,12 @@ out=$(echo "$synonym_state" | python3 "$SCRIPTS/derive_stack_rules.py" 2>/dev/nu
 nextjs_count=$(printf '%s' "$out" | grep -c '#### Next.js')
 assert_eq "Next.js / nextjs synonym deduped to one group" "1" "$nextjs_count"
 
+motion_state='{"stack": {"animation": ["framer-motion", "motion"]}, "tooling": {}}'
+out=$(echo "$motion_state" | python3 "$SCRIPTS/derive_stack_rules.py" 2>/dev/null)
+motion_count=$(printf '%s' "$out" | grep -c '#### Motion / Animation')
+assert_eq "framer-motion / motion synonym deduped to one group" "1" "$motion_count"
+assert_contains "motion rules mention reduced motion" "prefers-reduced-motion" "$out"
+
 #─────────────────────────────────────────────────────────────────────────────
 heading "detect_stack.py — Next.js + Tailwind + Drizzle + Convex"
 #─────────────────────────────────────────────────────────────────────────────
@@ -261,6 +267,7 @@ cat > "$ds_root/package.json" <<'EOF'
     "zod": "3.23.0",
     "@tanstack/react-query": "5.0.0",
     "zustand": "5.0.0",
+    "framer-motion": "12.0.0",
     "drizzle-orm": "0.30.0"
   }
 }
@@ -286,6 +293,9 @@ assert_contains "styling includes 'shadcn' (from components/ui marker)" "shadcn"
 
 database=$(printf '%s' "$out" | python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin).get('database', [])))")
 assert_contains "database includes 'drizzle' (from drizzle-orm dep)" "drizzle" "$database"
+
+animation=$(printf '%s' "$out" | python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin).get('animation', [])))")
+assert_contains "animation includes 'framer-motion' (from framer-motion dep)" "framer-motion" "$animation"
 
 # Missing package.json is graceful
 np_root="$WORK/detect-stack-nopkg"

@@ -26,7 +26,7 @@ Invocation from bruhs commands:
 
 Output: pretty-printed JSON to stdout with keys `root`, `structure`,
 `monorepo_tool`, `languages`, `frameworks`, `styling`, `database`,
-`auth`, `testing`, `tooling`, `libraries`, `confidence`.
+`auth`, `testing`, `tooling`, `animation`, `libraries`, `confidence`.
 
 Exit codes: `0` on success, `2` on usage error.
 

@@ -7,7 +7,8 @@ Usage:
 
 Reads config files under PROJECT_ROOT (default: cwd) and prints a JSON
 summary of the detected languages, frameworks, styling, database, auth,
-testing, tooling, libraries, monorepo structure, and confidence levels.
+testing, tooling, animation libraries, general libraries, monorepo structure,
+and confidence levels.
 
 Confidence levels:
     high   — detected from an explicit dependency name
@@ -181,6 +182,17 @@ def detect_node(
         if has(dep) and label not in result["testing"]:
             result["testing"].append(label)
             confidence["testing"] = "high"
+
+    animation_map = [
+        ("framer-motion", "framer-motion"),
+        ("motion", "motion"),
+        ("@motionone/react", "motion-one"),
+        ("@react-spring/web", "react-spring"),
+    ]
+    for dep, label in animation_map:
+        if has(dep) and label not in result["animation"]:
+            result["animation"].append(label)
+            confidence["animation"] = "high"
 
     if (
         ("biome" in dev_deps or "@biomejs/biome" in dev_deps)
@@ -388,6 +400,7 @@ def main(argv: list[str]) -> int:
         "auth": [],
         "testing": [],
         "tooling": [],
+        "animation": [],
         "libraries": [],
         "confidence": {},
     }

@@ -40,6 +40,7 @@ All code produced by cook follows the patterns defined in:
 - **`practices/rust.md`** - Idiomatic Rust patterns (loaded when `language: rust` or Rust framework in stack)
 - **`practices/rust-*.md`** - Deep Rust refs (`rust-ownership-and-borrowing`, `rust-error-design`, `rust-async-patterns`, `rust-type-state-and-newtypes`, `rust-leptos-patterns`, `rust-gpui-patterns`, `rust-axum-patterns`) — loaded conditionally
 - **`practices/ui-design.md`** - UI design quality via impeccable skills (loaded for UI features)
+- **`practices/design-engineering.md`** - Emil-derived component polish, motion standards, animation review, and animation vocabulary (loaded for motion, gestures, component polish, or new UI surfaces)
 
 **Optional integrations** (auto-detected from MCPs available):
 
@@ -187,7 +188,11 @@ if (config.stack?.libraries?.includes('effect')) {
 // Load UI design practices if feature involves visible UI changes
 if (featureInvolvesUI) {
   uiPractices = Read('practices/ui-design.md');
-  console.log("✓ Loaded UI design practices (impeccable skills)")
+  console.log("✓ Loaded UI design practices (impeccable + design engineering)")
+  if (needsMotion || featureIsNewUiSurface || componentPolish || config.stack?.animation) {
+    designEngineering = Read('practices/design-engineering.md');
+    console.log("✓ Loaded design-engineering motion/polish standards")
+  }
 }
 ```
 
@@ -465,6 +470,9 @@ Skill("frontend-design")
 
 // 3. Primary build skills
 if (hasDesignSystem) Skill("normalize")     // match existing tokens/patterns
+if (needsMotion || featureIsNewUiSurface || componentPolish || config.stack?.animation) {
+  Read('practices/design-engineering.md')   // Emil-derived motion/component polish rules
+}
 if (buildingOnboarding) Skill("onboard")    // empty states, first-time UX
 if (needsMotion) Skill("animate")           // entrances, micro-interactions
 if (multiDevice) Skill("adapt")             // responsive, touch targets
@@ -618,6 +626,9 @@ See `practices/ui-design.md` for the full skill map.
 // 1. Diagnose — these produce reports, not code changes
 Skill("critique")    // design director evaluation: hierarchy, IA, AI slop, emotion
 Skill("audit")       // systematic scan: a11y, perf, theming, responsive, anti-patterns
+if (diffTouchesMotion || componentPolish) {
+  Read('practices/design-engineering.md')   // strict animation table + Block/Approve verdict
+}
 
 // 2. Fix — based on what critique/audit found
 Skill("polish")      // always: alignment, spacing, states, transitions, code cleanup
@@ -847,9 +858,9 @@ Ready to ship! Run /bruhs:yeet to create PR.
 |-------|----------------|
 | Plan | `superpowers:brainstorming` patterns |
 | Build | `feature-dev:feature-dev` patterns |
-| Build (UI) | `practices/ui-design.md` — impeccable skills (`frontend-design`, `normalize`, `onboard`, `animate`, `adapt`, `clarify`, + adjustment skills) |
+| Build (UI) | `practices/ui-design.md` + `practices/design-engineering.md` — impeccable skills plus Emil-derived motion/component polish rules |
 | Review | `superpowers:requesting-code-review` patterns |
-| Review (UI) | `practices/ui-design.md` — diagnostic (`critique`, `audit`) then fix (`polish`, `harden`, `optimize`, `extract`) |
+| Review (UI) | `practices/ui-design.md` + `practices/design-engineering.md` — diagnostic (`critique`, `audit`) plus strict motion review, then fix (`polish`, `harden`, `optimize`, `extract`) |
 
 Cook implements its own workflow but draws on these established patterns.
 

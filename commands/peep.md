@@ -30,6 +30,7 @@ Uses **isolated subagents** per comment thread to prevent context bleed. Each co
 - **`practices/pr-review.md`** — primary lens. Conventional Comments labels (`nit`, `suggestion`, `issue`, `praise`, decorations like `(blocking)` / `(non-blocking)`), reviewer/author etiquette, anti-patterns. Loaded by every subagent so categorization stays consistent.
 - **Conventional Comments — always.** Every reply this command drafts or posts to a PR thread (decline rationales, question answers, "addressed in <sha>" notes) MUST use the [Conventional Comments](https://conventionalcomments.org) format — `<label> [decoration]: <subject>` — per `practices/pr-review.md`. No bare prose replies. Likewise, any commit peep makes follows Conventional Commits (`practices/_common.md`).
 - **Stack practices** — same as `cook` and `slop`. Use the project's stack to inform what counts as a real issue vs preference.
+- **UI/motion practices** — if a comment or discovery pass touches visible UI, motion, gestures, popovers, drawers, tooltips, tabs, toasts, loading states, or component feel, load `practices/ui-design.md` and `practices/design-engineering.md`. Subagents still use the strict structured output below; when the orchestrator summarizes animation findings to the user, render them with the `Before | After | Why` table and explicit Block/Approve standard from `design-engineering.md`.
 - **`practices/source-ground-truth.md` — dependency behavior is verified, not assumed.** When a comment or finding turns on what a third-party package does, read its installed source (`opensrc path <pkg>`) and cite it — the same zero-hallucination evidence bar in [Evidence](#evidence-key-principle), applied to library code.
 
 ## Invocation
@@ -326,7 +327,8 @@ Your job is to find bugs, security issues, logic errors, and performance problem
 2. **Read the PR diff for this file** to understand what changed vs what was already there.
 3. **Read imports, types, and related files** as needed to verify correctness.
 4. **Investigate aggressively** — check every suspicious pattern. Your tool use is the false-positive filter. If you read the code and confirm it's fine, don't report it.
-5. **Only report issues you verified are real** after reading the surrounding code.
+5. **If this is UI or motion code**, read \`practices/ui-design.md\` and \`practices/design-engineering.md\` before judging component feel, animation, gestures, or visual polish.
+6. **Only report issues you verified are real** after reading the surrounding code.
 
 ## What to look for (priority order)
 1. Bugs and logic errors (off-by-one, null deref, race conditions, missing error handling)
@@ -344,6 +346,15 @@ Your job is to find bugs, security issues, logic errors, and performance problem
    - Missing cache headers on cacheable GETs
 4. Missing edge cases (empty input, null, overflow)
 5. API contract violations (breaking backward compat)
+6. UI/motion regressions when the file touches visible UI:
+   - animation on keyboard/high-frequency actions
+   - \`transition: all\`, \`ease-in\` on UI, \`scale(0)\` entrances
+   - duration > 300ms without interaction-specific justification
+   - wrong transform origin for trigger-anchored overlays
+   - keyframes where transitions/springs/WAAPI should be interruptible
+   - layout-property animation instead of transform/opacity
+   - missing \`prefers-reduced-motion\` or ungated hover motion
+   - Motion/Framer shorthand \`x\`/\`y\`/\`scale\` under load
 
 ## Produce Hard Evidence (REQUIRED — zero tolerance for hallucination)
 
@@ -556,15 +567,16 @@ You are analyzing a single PR review comment in isolation. Do NOT search for or 
 
 1. **Read the file** at \`${thread.path}\` to understand the full context around line ${thread.line}.
 2. **Read imports and related files** if needed to understand types, dependencies, or contracts.
-3. **Categorize** the comment as one of:
+3. **If the comment is about UI, animation, gesture feel, or component polish**, read \`practices/ui-design.md\` and \`practices/design-engineering.md\` before judging the request. Use the design-engineering motion standards for \`ease-in\`, \`scale(0)\`, transform origins, durations, interruptibility, GPU-only properties, reduced motion, and hover gating.
+4. **Categorize** the comment as one of:
    - \`must-fix\`: Bug, security issue, will break, blocking review ("please fix", "this will break", "bug", "security")
    - \`suggestion\`: Optional improvement ("consider", "might be better", "nit:", "optional")
    - \`question\`: Needs explanation ("why", "what does", "can you explain", "?")
    - \`approval\`: Positive feedback ("lgtm", "looks good", "nice", ":+1:") — no action needed
-4. **Assess confidence** (1-5) that your categorization and proposed action are correct.
-5. **If must-fix or suggestion**: Propose a concrete fix. Show the exact \`old_string\` and \`new_string\` for an Edit tool call.
-6. **Produce hard evidence** (see next section) — static reasoning alone is not sufficient, and "the fix compiles" does not prove the reviewer's bug is real.
-7. **If question**: Draft a response that explains the reasoning, referencing the code context you discovered. Quote the actual lines you read — do not describe behavior you have not confirmed.
+5. **Assess confidence** (1-5) that your categorization and proposed action are correct.
+6. **If must-fix or suggestion**: Propose a concrete fix. Show the exact \`old_string\` and \`new_string\` for an Edit tool call.
+7. **Produce hard evidence** (see next section) — static reasoning alone is not sufficient, and "the fix compiles" does not prove the reviewer's bug is real.
+8. **If question**: Draft a response that explains the reasoning, referencing the code context you discovered. Quote the actual lines you read — do not describe behavior you have not confirmed.
 
 ## Produce Hard Evidence (REQUIRED — zero tolerance for hallucination)
 

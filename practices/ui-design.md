@@ -1,6 +1,8 @@
 # UI Design Best Practices
 
-Integrates [pbakaus/impeccable](https://github.com/pbakaus/impeccable) skills into the bruhs workflow for high-quality UI work.
+Integrates [pbakaus/impeccable](https://github.com/pbakaus/impeccable)
+skills and Emil Kowalski-derived design-engineering guidance into the bruhs
+workflow for high-quality UI work.
 
 **Used by:**
 - `cook` - Invoked automatically when building UI features
@@ -10,6 +12,7 @@ Integrates [pbakaus/impeccable](https://github.com/pbakaus/impeccable) skills in
 
 - [When to Apply](#when-to-apply)
 - [Skill Categories](#skill-categories)
+- [Design Engineering Reference](#design-engineering-reference)
 - [Cook Integration](#cook-integration)
 - [Skill Selection Quick Reference](#skill-selection-quick-reference)
 - [Quick Checklist](#quick-checklist)
@@ -19,6 +22,35 @@ Integrates [pbakaus/impeccable](https://github.com/pbakaus/impeccable) skills in
 ## When to Apply
 
 These practices activate when a feature involves **visible UI changes** — new pages, components, layouts, forms, modals, onboarding flows, etc. Skip for pure backend/API/infra work.
+
+---
+
+## Design Engineering Reference
+
+Read `practices/design-engineering.md` whenever the UI work includes:
+
+- New visible surfaces or component polish where defaults, perceived quality, or
+  interaction feel matter.
+- Motion, transitions, animation review, gestures, hover/press feedback, toasts,
+  popovers, drawers, tooltips, tabs, or loading states.
+- A user asks what an animation/effect is called.
+
+This reference incorporates Emil's design-engineering philosophy, animation
+decision framework, review standards, motion values, performance rules,
+accessibility requirements, and animation vocabulary. It is not a separate
+command; it is part of the existing UI build/review lens.
+
+Key defaults from the reference:
+
+- Do not animate keyboard-initiated or 100+/day actions.
+- Give every animation a purpose: spatial continuity, state indication,
+  explanation, feedback, or smoothing a jarring change.
+- UI motion should usually stay under 300ms and use strong custom easing.
+- Avoid `ease-in`, `transition: all`, `scale(0)`, centered transform origins on
+  anchored overlays, layout-property animation, and missing reduced-motion
+  handling.
+- Motion reviews must start with a `Before | After | Why` markdown table and an
+  explicit Block/Approve verdict.
 
 ---
 
@@ -39,6 +71,7 @@ These guide how to build UI from scratch or make significant changes.
 |-------|---------------|-------------|
 | `frontend-design` | **Always** for new pages/components | Guides distinctive, production-grade UI. Commits to bold aesthetic direction, avoids AI slop |
 | `normalize` | **Always** when project has existing design system | Ensures new work matches existing tokens, components, patterns, spacing, typography |
+| `practices/design-engineering.md` | **Always** for motion or component polish | Emil-derived defaults for motion purpose, easing, duration, origins, physicality, gestures, performance, a11y, and animation vocabulary |
 | `onboard` | Building onboarding flows, empty states, first-time UX, signup wizards | Designs progressive disclosure, contextual teaching, time-to-value optimization |
 | `animate` | Adding motion to entrances, state changes, micro-interactions | Stagger reveals, button feedback, form interactions, scroll effects. Requires `prefers-reduced-motion` |
 | `adapt` | Feature must work across screen sizes/devices/platforms | Rethinks experience per context (not just shrinking). Touch targets, thumb zones, breakpoints |
@@ -64,6 +97,7 @@ These **diagnose only** — they produce reports, not code changes.
 |-------|---------------|-------------|
 | `critique` | **Always** for UI features | Design director-level evaluation: AI slop detection, visual hierarchy, IA, emotional resonance, composition, typography, color purpose, states, microcopy. Outputs priority issues with fix commands |
 | `audit` | **Always** for UI features | Systematic quality scan: a11y (contrast, ARIA, keyboard, semantics), performance (layout thrashing, expensive animations), theming (hard-coded colors, dark mode), responsive (fixed widths, touch targets). Severity-rated report |
+| `practices/design-engineering.md` | **Always** when reviewing motion | Strict animation standards; findings table with Before/After/Why; Block/Approve verdict |
 
 ### Review Phase — Fixes (Step 6, after diagnostic)
 
@@ -90,6 +124,9 @@ Apply these based on what `critique` and `audit` found.
 ```javascript
 if (featureInvolvesUI) {
   uiPractices = Read('practices/ui-design.md');
+  if (needsMotion || featureIsNewUiSurface || reviewingMotion) {
+    designEngineering = Read('practices/design-engineering.md');
+  }
 
   // Check for design context
   if (!CLAUDE_MD.includes('## Design Context')) {
@@ -109,6 +146,7 @@ Skill("frontend-design")
 if (hasDesignSystem) Skill("normalize")
 
 // Situational
+if (needsMotion || featureIsNewUiSurface) Read('practices/design-engineering.md')
 if (buildingOnboarding) Skill("onboard")
 if (needsMotion) Skill("animate")
 if (multiDevice) Skill("adapt")
@@ -128,6 +166,7 @@ if (hasUserFacingCopy) Skill("clarify")
 // 1. Diagnose
 Skill("critique")   // design evaluation → priority issues
 Skill("audit")      // systematic quality scan → severity report
+if (diffTouchesMotion) Read('practices/design-engineering.md')
 
 // 2. Fix based on findings
 Skill("polish")     // always — final detail pass
@@ -149,9 +188,10 @@ Don't invoke every skill — pick what's relevant:
 | Scenario | Skills to invoke |
 |----------|-----------------|
 | **New page from scratch** | `frontend-design` + `normalize` + `clarify` → `critique` + `audit` + `polish` |
-| **New component** | `frontend-design` + `normalize` → `critique` + `polish` |
+| **New component** | `frontend-design` + `normalize` + design-engineering reference → `critique` + `polish` |
 | **Improving existing UI** | `critique` first → targeted adjustment skills → `polish` |
-| **Mobile-facing feature** | add `adapt` + consider `animate` |
+| **Motion/animation review** | `practices/design-engineering.md` + `critique` + `audit`, then `polish` / `optimize` |
+| **Mobile-facing feature** | add `adapt` + consider `animate` + design-engineering gestures/a11y rules |
 | **Onboarding / empty states** | add `onboard` + `clarify` |
 | **Design feels bland** | `bolder` or `colorize` or `delight` |
 | **Design feels noisy** | `quieter` or `distill` |
@@ -166,12 +206,14 @@ Don't invoke every skill — pick what's relevant:
 - [ ] Design context exists in CLAUDE.md (or run `teach-impeccable`)
 - [ ] `frontend-design` loaded before any other design skill
 - [ ] Follows existing design system / component library (`normalize`)
+- [ ] Emil-derived design-engineering reference loaded for motion/component polish
 - [ ] Copy is clear and actionable (`clarify`)
 - [ ] Accessible: keyboard nav, screen readers, contrast (`audit`)
 - [ ] Responsive across breakpoints (`adapt`)
 - [ ] Dark mode support if project uses it (`audit`)
 - [ ] Loading, error, empty states handled (`harden`)
 - [ ] Animations respect `prefers-reduced-motion` (`animate`)
+- [ ] Animations have purpose, frequency fit, strong easing, correct origin, sub-300ms UI timing, and no layout-property animation
 - [ ] Touch targets >= 44px on mobile (`adapt`, `audit`)
 - [ ] No layout shift on load (`optimize`, `polish`)
 - [ ] Doesn't look AI-generated (`critique`, `frontend-design`)

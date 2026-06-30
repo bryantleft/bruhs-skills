@@ -54,6 +54,9 @@ Quick mode focuses on the AI-slop patterns that are most likely to be **introduc
 - Backwards-compat shims for code paths that no longer exist
 - Test descriptions that restate the function name (`describe('drawCard', () => it('drawCard', …))`)
 - Comments that explain WHAT the code does (the code already shows that), instead of WHY
+- UI/motion slop in added visible-surface code: `transition: all`,
+  `ease-in` on UI, `scale(0)` entrances, layout-property animation, missing
+  `prefers-reduced-motion`, ungated hover motion
 
 ### What it skips
 
@@ -138,6 +141,8 @@ Slop detects violations of the patterns defined in:
 - **`practices/effect-ts.md`** - Effect-TS specific patterns (loaded when `effect` in `stack.libraries`)
 - **`practices/rust.md`** - Idiomatic Rust patterns (loaded when `language: rust` or Rust framework in stack)
 - **`practices/rust-*.md`** - Deep Rust refs (`rust-ownership-and-borrowing`, `rust-error-design`, `rust-async-patterns`, `rust-type-state-and-newtypes`, `rust-leptos-patterns`, `rust-gpui-patterns`, `rust-axum-patterns`) — loaded conditionally
+- **`practices/ui-design.md`** - UI quality lens for visible product surfaces
+- **`practices/design-engineering.md`** - Emil-derived motion/component polish standards; load when reviewing UI, animation, gestures, popovers, drawers, tooltips, tabs, toasts, loading states, or component feel
 
 **Read these files for the full pattern catalog.** The sections below summarize what slop detects.
 
@@ -969,6 +974,12 @@ if (['nextjs', 'next.js', 'react-native', 'tauri', 'electron'].includes(stack)) 
 if (config.stack?.libraries?.includes('effect')) {
   effectPractices = Read('practices/effect-ts.md');
 }
+
+// Load UI/motion practices when the target includes user-visible surfaces.
+if (targetTouchesUI || diffTouchesUI || config.stack?.animation) {
+  uiPractices = Read('practices/ui-design.md');
+  designEngineering = Read('practices/design-engineering.md');
+}
 ```
 
 For each file, analyze using the Task tool with code-explorer agent:
@@ -998,6 +1009,15 @@ Analyze this file for AI slop patterns, IN PRIORITY ORDER:
 - Over-engineering (unnecessary abstractions, premature generalization)
 - TypeScript anti-patterns (any, !, as, redundant types)
 - React anti-patterns (derived state, multiple booleans, unnecessary effects)
+- UI/motion slop when visible surfaces are touched:
+  - `transition: all`, `ease-in` on UI, `scale(0)` entrances
+  - animation on keyboard/high-frequency actions
+  - UI duration > 300ms without interaction-specific justification
+  - centered transform origin on trigger-anchored popovers/dropdowns/tooltips
+  - keyframes for rapidly-triggered or gesture-driven motion
+  - layout-property animation instead of transform/opacity
+  - missing `prefers-reduced-motion` or ungated hover motion
+  - Framer Motion/Motion shorthand `x`/`y`/`scale` under load
 - Code noise (over-commenting, verbose names, dead code)
 - Duplication (copy-paste, inconsistent patterns)
 - Security smells

@@ -445,7 +445,7 @@ For **monorepos**, scan all `apps/*/` directories → `frameworks: ["Next.js", "
 | `modal` in deps / `modal.toml` | gpu: modal |
 | `runpod` in deps / `runpod.toml` | gpu: runpod |
 | `lambdalabs` in deps | gpu: lambda |
-| `framer-motion` in deps | animation: framer-motion |
+| `framer-motion`, `motion`, `@motionone/react`, `@react-spring/web` in deps | animation: framer-motion / motion / motion-one / react-spring |
 | `zod` in deps | libraries: zod |
 | `@tanstack/react-query` in deps | libraries: tanstack-query |
 | `effect` in deps | libraries: effect |

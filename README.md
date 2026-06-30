@@ -1,6 +1,6 @@
 # bruhs
 
-End-to-end development lifecycle for AI coding agents — scaffold projects, plan and build features, open and review PRs, clean up after merge, audit codebases, surface architectural deepenings, drill the test safety net. Works with any agent that reads `CLAUDE.md` or `AGENTS.md`.
+End-to-end development lifecycle for AI coding agents — scaffold projects, plan and build features, open and review PRs, clean up after merge, audit codebases, surface architectural deepenings, drill the test safety net, and improve UI polish/motion quality. Works with any agent that reads `CLAUDE.md` or `AGENTS.md`.
 
 ## Installation
 
@@ -132,7 +132,8 @@ Stack-agnostic and stack-specific guidance, loaded conditionally by `cook` and `
 | `practices/python-fastapi.md` | FastAPI specifics (builds on python.md) |
 | `practices/effect-ts.md` + `practices/effect-*.md` | Effect-TS (service, error, schema, layer, RPC, atom, anti-patterns) |
 | `practices/rust.md` + `practices/rust-*.md` | Rust (ownership, errors, async, axum, leptos, gpui, type-state) |
-| `practices/ui-design.md` | UI quality (integrates `pbakaus/impeccable` skills) |
+| `practices/ui-design.md` | UI quality (integrates `pbakaus/impeccable` skills plus Emil-derived design engineering) |
+| `practices/design-engineering.md` | Emil-derived UI polish, motion standards, animation review, gestures, performance, a11y, and animation vocabulary |
 
 ## Utility Scripts
 
