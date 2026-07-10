@@ -156,7 +156,7 @@ AskUserQuestion({
       multiSelect: true,
       options: [
         { label: "Tailwind CSS", description: "Utility-first CSS framework" },
-        { label: "shadcn/ui", description: "Re-usable components (base-mira style by default)" },
+        { label: "shadcn/ui", description: "Re-usable components (mira preset by default)" },
       ]
     },
     {
@@ -616,17 +616,26 @@ For monorepo additions:
 - Packages go in `packages/<name>`
 - Update `turbo.json` pipeline if needed
 
-**If shadcn/ui was selected, initialize with base-mira style:**
+**If shadcn/ui was selected, initialize it via the shadcn skill / current CLI — do NOT hard-code flags:**
+
+The shadcn CLI's init flags change between releases (e.g. `--style base-mira --base-color neutral` has since become `--preset mira`), so never assume flag names from this document.
+
+1. If a `shadcn` skill or MCP server is available, use it for up-to-date init/add guidance and let it drive the commands.
+2. Otherwise, discover the current flags first:
 
 ```bash
-# Initialize shadcn with base-mira style (default)
-pnpm dlx shadcn@latest init --style base-mira --base-color neutral --css-variables
-
-# Or for monorepo, run from the app directory
-cd apps/web && pnpm dlx shadcn@latest init --style base-mira --base-color neutral --css-variables
+pnpm dlx shadcn@latest init --help
 ```
 
-The `base-mira` style provides a clean, modern aesthetic. If user wants a different style, they can specify via "Other" in the styling selection.
+3. Then run init from the app directory (e.g. `apps/web` in a monorepo), non-interactively, using whatever current flags express these defaults: **mira** preset, CSS variables enabled. For example, as of shadcn 4.x:
+
+```bash
+cd apps/web && pnpm dlx shadcn@latest init --preset mira --css-variables --no-monorepo -y
+```
+
+Gotcha: `init` fails without a `@/*` import alias — if the scaffolder didn't create one, add `"baseUrl": "."` and `"paths": { "@/*": ["./*"] }` to the app's `tsconfig.json` first.
+
+The `mira` preset provides a clean, modern aesthetic. If user wants a different preset, they can specify via "Other" in the styling selection.
 
 **If auth.md (Agent Access) was selected, expose the manifest at an unauthenticated path:**
 
