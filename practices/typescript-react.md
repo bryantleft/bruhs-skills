@@ -573,6 +573,21 @@ const itemCount = items.length;
 - `useContext` for frequently-updating values (causes re-renders)
 - Prop drilling more than 2 levels
 
+### Preferred Libraries
+
+Reach for these before hand-rolling or picking alternatives:
+
+| Need | Library |
+|------|---------|
+| Animating numbers | [NumberFlow](https://number-flow.barvian.me) |
+| One-time password input | [input-otp](https://input-otp.rodz.dev) |
+| Real-time charts | [Liveline](https://liveline.framer.wiki) |
+| Customizable GUIs / control panels | [Leva](https://github.com/pmndrs/leva) |
+| Command menus (⌘K) | [cmdk](https://cmdk.paco.me) |
+| List virtualization | [Virtuoso](https://virtuoso.dev) (`react-virtuoso`) |
+| Drag and drop | [dnd kit](https://dndkit.com) |
+| Notifications / toasts | [Sonner](https://sonner.emilkowal.ski) |
+
 ### Form Handling (React 19)
 
 ```tsx
@@ -954,7 +969,7 @@ const results = await Promise.all(ids.map(id => limit(() => fetchOne(id))));
 
 ### DO: Virtualize Lists Above ~100 Rows
 
-Use TanStack Virtual or `react-window`. Rendering 1000 DOM nodes when 20 are visible is pure waste.
+Use Virtuoso (`react-virtuoso`). Rendering 1000 DOM nodes when 20 are visible is pure waste.
 
 ### DO: Code-Split Heavy Leaf Components
 
