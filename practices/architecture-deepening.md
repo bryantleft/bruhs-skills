@@ -134,9 +134,9 @@ Spawn parallel sub-agents (or do this yourself in passes), each with a *distinct
 
 | Alternative | Constraint |
 |---|---|
-| **A. Minimal** | Aim for 1–3 entry points max. What gets cut? |
+| **A. Minimal** | Expose only the entry points required by current callers. What gets cut? |
 | **B. Extensible** | Maximize use cases supported without breaking changes. What costs? |
-| **C. Caller-optimised** | Optimise for the 80% common caller pattern. What does the 20% pay? |
+| **C. Caller-optimised** | Optimise for the measured common caller pattern. What do less common paths pay? |
 | **D. Ports & Adapters** *(only if remote/external dep)* | Treat the seam as load-bearing. What's the port shape? |
 
 Each alternative produces: interface spec, usage examples, implementation sketch, dependency strategy, trade-off analysis.

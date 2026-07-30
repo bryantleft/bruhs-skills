@@ -594,14 +594,16 @@ Then you *must* use `selectinload` / `joinedload` — the compiler does the enfo
 
 ```python
 engine = create_async_engine(
-    settings.database_url,       # postgresql+asyncpg://...
-    pool_size=20,                # default 5 is too low for most apps
-    max_overflow=10,
+    settings.database_url,                 # postgresql+asyncpg://...
+    pool_size=settings.db_pool_size,       # derived from DB capacity + measured demand
+    max_overflow=settings.db_max_overflow, # same receipt; validated at startup
     pool_pre_ping=True,          # drops dead connections
 )
 ```
 
-Size: **`CPU × 2–4`** per worker for I/O-heavy APIs. Too small = queueing. Too large = Postgres gets unhappy around 100-200 connections total.
+Size the pool from the database's connection budget, the number of application
+workers, reserved operational capacity, and measured request concurrency. Record that
+derivation and alert before the budget is exhausted.
 
 ### `BackgroundTasks` for post-response work
 
@@ -649,7 +651,10 @@ await session.commit()
 # app state pattern
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.state.http = httpx.AsyncClient(timeout=10.0, limits=httpx.Limits(max_connections=100))
+    app.state.http = httpx.AsyncClient(
+        timeout=settings.upstream_timeout,
+        limits=httpx.Limits(max_connections=settings.upstream_connection_limit),
+    )
     yield
     await app.state.http.aclose()
 
@@ -663,7 +668,7 @@ from fastapi import Response
 
 @router.get("/stats")
 async def stats(response: Response) -> StatsOut:
-    response.headers["Cache-Control"] = "public, max-age=30, stale-while-revalidate=60"
+    response.headers["Cache-Control"] = settings.stats_cache_control
     return await compute_stats()
 ```
 
@@ -682,7 +687,7 @@ For app-level caching, `aiocache` with Redis backend, keyed deterministically by
 
 - [ ] `ORJSONResponse` as app default
 - [ ] Relations `lazy="raise"`; all ORM paths use `selectinload`/`joinedload`
-- [ ] Async driver (`asyncpg`); `pool_size` tuned above default 5
+- [ ] Async driver (`asyncpg`); pool limits derived from a documented connection-budget receipt
 - [ ] `StreamingResponse` for exports / NDJSON / SSE
 - [ ] `BackgroundTasks` for fire-and-forget post-response work
 - [ ] Batched inserts/updates; no row-by-row writes

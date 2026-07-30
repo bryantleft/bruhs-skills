@@ -317,6 +317,8 @@ const config = Config.all({
 })
 ```
 
+`MAX_RETRIES` still needs a deployment receipt; validation proves shape, not policy.
+
 ---
 
 ## Anti-Patterns (Forbidden)
@@ -396,7 +398,7 @@ const program = Effect.all(
 // ✅ Bounded concurrency for user-driven fan-out
 const results = Effect.all(
   ids.map(fetchOne),
-  { concurrency: 10 }
+  { concurrency: concurrencyLimit } // derived from a documented capacity receipt
 )
 ```
 
@@ -411,7 +413,7 @@ Effect's `RequestResolver` is Dataloader-shaped — multiple requests for the sa
 const config = Effect.cached(loadConfig)
 
 // ✅ TTL-bounded cache
-const rates = Effect.cachedWithTTL(fetchRates, "5 minutes")
+const rates = Effect.cachedWithTTL(fetchRates, cacheTtl) // derived from a freshness receipt
 ```
 
 ### `Stream` for backpressured pipelines

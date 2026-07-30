@@ -9,7 +9,7 @@
     "Phase 2: produces FEW or ZERO deepening candidates here — pass-through modules are deletion candidates per L89 ('if it vanishes → the module was a pass-through and a candidate for elimination/merging'), not interface-design candidates",
     "Names the anti-pattern explicitly: pass-through modules without behavior to hide are not deepening candidates. Cites the deletion test as the basis",
     "Does not invent a domain to wrap these utilities in (no 'TextFormattingModule' or 'NumberUtils' speculative module) — invented domain vocabulary violates the 'use domain vocabulary' rule when no shared invariants exist",
-    "If src/utils has no deepening candidates after the deletion test, Phase 2 is honest about it — refuses to fill the 5–8-candidate slot count with fabricated entries"
+    "If src/utils has no deepening candidates after the deletion test, Phase 2 is honest about it and refuses to fabricate entries"
   ],
   "failure_modes": [
     "Fabricates 8 deepening candidates that each wrap one utility behind a 'service'-style interface",

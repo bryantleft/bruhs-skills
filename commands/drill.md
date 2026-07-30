@@ -124,7 +124,8 @@ N. <short title>
 - **Use the 8-layer vocabulary** from the table below. Don't invent new layer names.
 - **Don't propose tools yet.** Phase 2 is about *which layer to adopt*, not *which library to install*. Tool choice happens in Phase 3.
 - **Rank by bug-class-prevented × cross-layer leverage, not by effort.** A high-impact L beats a low-impact S.
-- **5–8 candidates max.** If you have more, you haven't filtered — re-apply the "what would slip through" test and cut the ones with no concrete answer.
+- **Only evidence-backed candidates.** If the list is noisy, re-apply the “what
+  would slip through” test and remove candidates with no concrete bug class.
 - **Call out advisory-only layers explicitly.** "Exists but ungated" is a candidate, not a check-mark. The CI orchestrator only counts hard gates.
 
 Then ask: *"Which would you like to grill?"*

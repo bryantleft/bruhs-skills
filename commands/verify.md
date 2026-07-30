@@ -6,6 +6,10 @@ description: Verify a specific claim with fresh local evidence — restate it fa
 
 Verification is not a recap. It proves or disproves a **specific, falsifiable claim** with repeatable evidence. Sits between `cook` (build) and `yeet` (ship), or after `peep` (fix) when the user wants proof the fix actually fixed it.
 
+Verification produces **receipts**. Read `practices/engineering-principles.md` first:
+do not invent a pass threshold, and install a tripwire when the verified assumption
+must remain true after this run.
+
 ## Contents
 
 - [Invocation](#invocation)
@@ -44,16 +48,20 @@ Verification is not a recap. It proves or disproves a **specific, falsifiable cl
 
 ### Step 1: Restate the Claim Falsifiably
 
-Convert whatever the user said into the shape `condition → metric → threshold`. If you can't write it falsifiably, ask the user to refine it before proceeding.
+Convert whatever the user said into the shape `condition → metric → expected
+observation`. Use a numeric threshold only when it has a receipt such as an existing
+SLO, acceptance criterion, protocol limit, capacity derivation, prior measurement, or
+explicit user requirement. If the claim needs a number and none has a receipt, measure
+the baseline first or ask the user to define the requirement.
 
 Examples:
 
 | Vague claim | Falsifiable form |
 |---|---|
 | "The fix works" | "When deck size is 0, `drawCard()` triggers reshuffle and returns a card (no `undefined`, no throw)" |
-| "It's faster" | "Cold start of `gambit dev` drops by ≥ 20% on the same machine, same warmup" |
-| "Memory leak gone" | "Heap size after 100 iterations of `evaluateHand()` does not grow by > 5MB" |
-| "Toast renders correctly" | "Toast component renders with `data-state=open` and matches baseline screenshot at 1280×800" |
+| "It's faster" | "Cold start of `gambit dev` meets the repository's documented startup SLO on the same machine and warmup protocol" |
+| "Memory leak gone" | "Under the incident reproduction workload, retained heap returns to the documented steady-state budget after work completes" |
+| "Toast renders correctly" | "Toast renders in the open state and matches the approved viewport-specific reference artifact" |
 
 ### Step 2: Pick the Smallest Local Surface
 
@@ -115,6 +123,17 @@ Compare raw artifacts side-by-side. Acceptable evidence forms:
 ### Step 6: Return Verdict
 
 Exactly one of: `VERIFIED`, `NOT VERIFIED`, `INCONCLUSIVE` — see [Verdict Rules](#verdict-rules). Do not soften a `NOT VERIFIED`.
+
+### Step 7: Preserve the Receipt
+
+When the result justifies an operational limit or correctness-critical assumption:
+
+- link the artifact from the adjacent config comment, ADR, issue, test, or runbook
+- record the command, environment, workload, and date needed to reproduce it
+- add a tripwire that fails when the verified boundary is crossed
+- state what evidence should trigger re-measurement
+
+Do not turn a one-off local measurement into a universal default.
 
 ## Local Surfaces
 

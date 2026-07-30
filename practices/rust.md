@@ -644,7 +644,7 @@ for id in ids { results.push(fetch_one(id).await?); }
 use futures::stream::{self, StreamExt};
 let results: Vec<_> = stream::iter(ids)
     .map(|id| fetch_one(id))
-    .buffer_unordered(16)
+    .buffer_unordered(concurrency_limit) // derived from a documented capacity receipt
     .collect()
     .await;
 ```

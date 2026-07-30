@@ -733,7 +733,10 @@ _client: httpx.AsyncClient | None = None
 def get_client() -> httpx.AsyncClient:
     global _client
     if _client is None:
-        _client = httpx.AsyncClient(timeout=10.0, limits=httpx.Limits(max_connections=100))
+        _client = httpx.AsyncClient(
+            timeout=settings.upstream_timeout,
+            limits=httpx.Limits(max_connections=settings.upstream_connection_limit),
+        )
     return _client
 ```
 
@@ -746,7 +749,7 @@ Same pattern for SQLAlchemy engines, Redis, anything with a pool.
 results = await asyncio.gather(*(fetch_one(id) for id in ids))
 
 # ✅ Bounded with Semaphore
-sem = asyncio.Semaphore(20)
+sem = asyncio.Semaphore(settings.upstream_concurrency_limit)  # capacity receipt
 async def bounded_fetch(id):
     async with sem:
         return await fetch_one(id)

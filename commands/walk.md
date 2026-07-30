@@ -26,7 +26,7 @@ Generate a walkthrough that reads like a peer explaining the PR to a reviewer �
 - `/bruhs:walk --canvas` — Interactive HTML page served locally
 - `/bruhs:walk --post` — Post the markdown walkthrough as a PR comment
 - `/bruhs:walk --commit-body` — Replace the PR body's "What changed" section with the walkthrough
-- `/bruhs:walk --max-pseudocode 200` — Only summarize files larger than N changed lines as pseudocode (default: 150)
+- `/bruhs:walk --max-pseudocode N` — Apply a user-chosen changed-line threshold for pseudocode summaries
 
 ## Output Modes
 
@@ -36,7 +36,9 @@ Generate a walkthrough that reads like a peer explaining the PR to a reviewer �
 | **canvas** (`--canvas`) | Synchronous walkthrough, complex diff with moved code, you want collapsible sections | Local HTML page served at `http://127.0.0.1:8432` |
 | **post** (`--post`) | Auto-post the markdown as a `gh pr comment` so reviewers see it before the diff | Markdown + PR comment URL |
 
-Choose markdown for the 80% case. Use `--canvas` when the PR has > 10 files or contains a big refactor with moved blocks where the GitHub diff view is hard to follow.
+Choose markdown when a linear reading order is clear. Use `--canvas` when the diff's
+dependency shape, moved code, or migration order is materially easier to understand
+spatially. Do not switch modes because of an arbitrary file count.
 
 ## Workflow
 
@@ -62,10 +64,10 @@ gh api "repos/{owner}/{repo}/pulls/${PR_NUMBER}/comments" \
 
 Open each changed file's patch from `/tmp/walk-pr-<N>-files.json`. Build a mental model:
 
-- What is this PR doing? Write a 1-2 sentence TL;DR.
+- What is this PR doing? Write the shortest TL;DR that preserves the behavior and why.
 - Which files contain the **core logic**?
 - Which files are **mechanical** (lockfiles, generated code, formatting, imports)?
-- Are there **moved blocks** (≥ 3 lines deleted in one file and added identically elsewhere)?
+- Are there **moved blocks** deleted in one location and added identically elsewhere?
 - What's the **migration order** if the changes need to land in a specific sequence?
 - Where's the **risk**? New code paths, dropped error handling, behavior changes hidden in refactors?
 
@@ -75,7 +77,10 @@ See [File Categorization](#file-categorization). For each file decide: `core` | 
 
 ### Step 4: Identify Pseudocode Candidates
 
-Any file with > `--max-pseudocode` changed lines that boils down to a recognizable algorithm (retry/backoff, validator, state machine, RPC handler, paginator) is a **pseudocode candidate**. See [Pseudocode Summaries](#pseudocode-summaries).
+Any file that is harder to review as a raw diff and boils down to a recognizable
+algorithm (retry/backoff, validator, state machine, RPC handler, paginator) is a
+**pseudocode candidate**. When the user supplied `--max-pseudocode`, also apply that
+explicit threshold. See [Pseudocode Summaries](#pseudocode-summaries).
 
 ### Step 5: Generate the Walkthrough
 
@@ -100,7 +105,7 @@ For markdown mode, use [Markdown Template](#markdown-template). For canvas mode,
 | Category | What goes here |
 |---|---|
 | **core** | Files where reviewers should spend most of their time. New logic, behavior changes, public API edits, schema/migration files. |
-| **moved** | Files where ≥ 3 consecutive lines moved between locations (often refactor extractions). Tag them and link the source/destination. |
+| **moved** | Files with a meaningful verbatim block moved between locations (often refactor extractions). Tag them and link the source/destination. |
 | **test** | Test files. Useful as evidence the change is covered; usually skim, not read line-by-line. |
 | **mechanical** | Lockfiles (`package-lock.json`, `pnpm-lock.yaml`, `Cargo.lock`, `uv.lock`), generated code (`*.gen.ts`, Convex `_generated/`, GraphQL codegen, `openapi.*.ts`), pure formatting, import-only rearranges, copyright headers. Collapse by default. |
 
@@ -113,7 +118,7 @@ Detection heuristics:
 - file's diff is exclusively renames/case changes
 
 # Moved-block detection
-- find ≥ 3 consecutive `-` lines that match (verbatim, modulo whitespace) ≥ 3 consecutive `+` lines elsewhere in the diff
+- find consecutive `-` lines that match (verbatim, modulo whitespace) consecutive `+` lines elsewhere in the diff
 - if matches found across files, tag both ends with the same `moved:N` group label
 ```
 

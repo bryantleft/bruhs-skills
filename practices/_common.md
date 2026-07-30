@@ -2,6 +2,10 @@
 
 Universal patterns that apply across all stacks.
 
+Read `engineering-principles.md` first. In particular, operational numbers require
+receipts, correctness-critical assumptions require tripwires, and failures must not
+masquerade as success.
+
 ## Contents
 
 - [Naming Conventions](#naming-conventions)
@@ -119,13 +123,15 @@ async function handleCheckout(cart: Cart, user: User) {
 
 - Functions should do ONE thing
 - If you need comments to separate sections, extract functions
-- Target: 20-30 lines max (with exceptions for switch statements, etc.)
+- Treat length as a design smell, not a limit. Split when responsibilities, state, or
+  control flow become easier to understand—not when a generic line count is crossed.
 
 ### File Length
 
 - Files should have ONE purpose
 - If a file has multiple unrelated exports, split it
-- Target: 200-300 lines max
+- Keep cohesive code together. A repository-specific size gate needs a receipt that
+  explains the failure it prevents.
 
 ---
 
@@ -269,8 +275,11 @@ chore/update-dependencies
 ### PR Size
 
 - **Small PRs** are easier to review and less likely to have bugs
-- Target: 200-400 lines changed
-- If larger, consider splitting into stacked PRs
+- Prefer the smallest coherent change a reviewer can verify.
+- If a change is difficult to review in one pass, split it by behavior or explain why
+  splitting would make verification harder.
+- Any numeric PR-size gate belongs in repository policy with its research or
+  review-history receipt.
 
 ---
 
@@ -478,7 +487,7 @@ for (const id of ids) {
 
 // ✅ Parallel with bounded concurrency
 import pLimit from "p-limit";
-const limit = pLimit(10);
+const limit = pLimit(concurrencyLimit); // derived from a documented capacity receipt
 await Promise.all(ids.map(id => limit(() => processUser(id))));
 ```
 
@@ -534,7 +543,7 @@ Start bytes moving before you have them all — SSR, JSON, file I/O, LLM tokens.
 await Promise.all(ids.map(fetchOne));
 
 // ✅ Bounded
-const limit = pLimit(20);
+const limit = pLimit(concurrencyLimit); // derived from a documented capacity receipt
 await Promise.all(ids.map(id => limit(() => fetchOne(id))));
 ```
 

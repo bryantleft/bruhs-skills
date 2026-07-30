@@ -963,7 +963,7 @@ import pLimit from "p-limit";
 const results = await Promise.all(ids.map(fetchOne));
 
 // ✅ Bounded concurrency
-const limit = pLimit(20);
+const limit = pLimit(concurrencyLimit); // derived from a documented capacity receipt
 const results = await Promise.all(ids.map(id => limit(() => fetchOne(id))));
 ```
 

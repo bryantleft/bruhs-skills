@@ -23,7 +23,7 @@ description: Watch PR checks and iterate on CI failures until green — uses `gh
 - `/bruhs:land` — Watch CI for the current branch's PR and fix until green
 - `/bruhs:land <PR#>` — Same, against a specific PR (switches branch if needed)
 - `/bruhs:land --no-fix` — Watch only, surface failures, do not auto-edit
-- `/bruhs:land --max-iterations 3` — Cap the fix loop (default: 5)
+- `/bruhs:land --max-iterations N` — Optional user-chosen work budget for the fix loop; there is no guessed default cap
 
 ## Why `gh pr checks`
 
@@ -142,10 +142,12 @@ After the push, the check set can change (workflows may add/remove checks based 
 gh pr checks --json name,bucket,state,workflow,link
 ```
 
-Loop Step 1 → Step 5 until all checks pass or `--max-iterations` is reached. After each iteration print a one-line progress update:
+Loop Step 1 → Step 5 until all checks pass, a guardrail below trips, or the
+user-supplied `--max-iterations` budget is reached. After each iteration print a
+one-line progress update:
 
 ```
-iteration 2/5 — typecheck ✓, lint ✓, test (1 failure: components/Toast.test.tsx)
+iteration 2 — typecheck ✓, lint ✓, test (1 failure: components/Toast.test.tsx)
 ```
 
 ### Step 7: Output Summary
@@ -162,10 +164,10 @@ Fixes applied:
 https://github.com/sonner-labs/sonner/pull/46
 ```
 
-If hit `--max-iterations`:
+If a user-supplied `--max-iterations` budget is exhausted:
 
 ```
-PR #46 — hit 5/5 iteration cap, 3 still red
+PR #46 — user-supplied iteration budget exhausted, checks still red
 
 Remaining failures:
   • build (vercel) — link: https://vercel.com/...
@@ -186,7 +188,7 @@ Common CI failure shapes → first-line fix:
 | `tsc` error in a file you didn't touch (cascading change) | Trace the breaking export; either fix at source or revert the API change scope. |
 | Lint error (biome/eslint) | Run the project's `lint:fix` if available, then re-check the diff for behavior changes. |
 | Test failure — assertion changed | Decide: is the new behavior correct? Update the test. Is it a regression? Fix the code. |
-| Test failure — flake | Re-run once. If still red, it's not flake — diagnose. |
+| Test failure — suspected flake | Follow the repository's documented flake policy and capture seeds, timestamps, and logs. A passing rerun alone is not a receipt. |
 | Build failure — missing env var in CI | Add it to the workflow's `env`, not to source. |
 | Vercel preview build red | Check the Vercel link. Common: missing dep, missing env var, Edge runtime incompatibility. |
 | Codecov / coverage drop | If the drop is real (uncovered new code), add a focused test; don't disable coverage. |
@@ -208,7 +210,8 @@ Common CI failure shapes → first-line fix:
   # resolve conflicts if any, push
   ```
 - **Failure is on main too (broken main)**: stop. Surface to user — landing this PR won't help. Suggest filing a Linear ticket against main.
-- **Persistent flake (≥ 2 reruns to pass)**: surface flake evidence (timestamps, log excerpts), don't keep retrying. The reviewer needs to see this.
+- **Suspected flake**: surface seeds, timestamps, logs, and the repository's flake-policy result. Do not keep retrying until a failure disappears.
+- **Repeated root cause with no new evidence**: stop editing. Surface the violated assumption and the evidence or authority needed to proceed.
 
 ## Examples
 
@@ -226,7 +229,7 @@ Inspecting checks…
   test        pass
   vercel      pending
 
-iteration 1/5
+iteration 1
   First actionable failure: typecheck
   apps/web/src/lib/people/sources/github.ts:42
     error TS2322: Type 'string | undefined' is not assignable to type 'string'.
@@ -254,16 +257,17 @@ https://github.com/sonner-labs/sonner/pull/46
 ```
 > /bruhs:land
 
-iteration 2/5
+iteration 2
   First actionable failure: e2e
   e2e/people-search.spec.ts › "filters by location"
-    Error: locator.click: Test timeout of 30000ms exceeded.
+    Error: locator.click: repository test timeout exceeded.
 
-  Checking main… origin/main e2e is passing. Local rerun: 3/3 passing.
+  Checking main… origin/main e2e is passing. The repository's flake probe passed locally.
 
   Diagnosis: flake-suspect, unrelated to this PR.
 
-  Recommended: skip this iteration, re-trigger CI once more.
+  Diagnosis is not yet a receipt. Recommended: stop and surface the captured
+  seed/timestamps/logs, or follow the repository's documented flake policy.
 ```
 
 ```javascript
@@ -273,9 +277,9 @@ AskUserQuestion({
     header: "Flake",
     multiSelect: false,
     options: [
-      { label: "Re-trigger CI once (Recommended)", description: "Push an empty commit to retry; if it stays red, it's real" },
-      { label: "Skip and continue waiting", description: "Don't push; just wait — GitHub may rerun on its own" },
-      { label: "Stop and surface", description: "Hand back to me with the evidence" },
+      { label: "Stop and surface (Recommended)", description: "Hand back the evidence without retrying until green" },
+      { label: "Follow flake policy", description: "Run the repository's documented diagnostic procedure" },
+      { label: "Continue watching", description: "Don't push; wait for the existing check state to change" },
     ]
   }]
 })
@@ -286,4 +290,4 @@ AskUserQuestion({
 - **Run `/bruhs:land` right after `/bruhs:yeet`** for the full ship-to-green loop.
 - **Run with `--no-fix` first** if you want to see the failures before letting it edit anything.
 - **Pair with `/bruhs:verify`** when the CI failure looks like a behavior bug — verify in isolation, fix, then `land` to confirm CI agrees.
-- **If you hit `--max-iterations`** that's a signal the PR has multiple unrelated issues; consider splitting it.
+- **If a user-supplied work budget is exhausted**, summarize the evidence and remaining failures. Do not infer a new budget.

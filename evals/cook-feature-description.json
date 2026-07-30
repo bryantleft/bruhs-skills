@@ -10,8 +10,8 @@
   "context": "Next.js + Drizzle project with existing bruhs:state block in CLAUDE.md, Linear configured. Working tree is clean. Game page and agentStats table already exist.",
   "expected_behavior": [
     "Step 1 parses 'add a leaderboard to the game page' as a feature description (not a ticket ID), outputs a Feature/Goal/Scope summary, and does NOT call linear_get_issue",
-    "Step 2 loads practices/type-driven-design.md plus stack practices (typescript-react), loads skills from config.tooling.skills, and spawns feature-dev:code-explorer via Task to find the game page, agentStats schema, and existing stats UI patterns",
-    "Step 3 presents 2-3 concrete approaches with files-to-modify, data-path, and performance notes; uses AskUserQuestion with those approaches as options",
+    "Step 2 loads practices/engineering-principles.md first, then practices/type-driven-design.md plus stack practices (typescript-react), loads skills from config.tooling.skills, and spawns feature-dev:code-explorer via Task to find the game page, agentStats schema, and existing stats UI patterns",
+    "Step 3 presents genuinely distinct approaches only when a real trade-off exists; each plan covers files, data path, landmines, receipts, tripwires, hidden state, and performance, then uses AskUserQuestion for meaningful choices",
     "Step 4 runs git status; since working tree is clean, skips stashing",
     "Step 5 builds with TDD if a test suite is detected (vitest.config.* check), keeps tests when suite exists, otherwise creates then deletes temp test files",
     "Step 6 launches feature-dev:code-reviewer including the fast-path audit for N+1 / await-in-loop / per-request clients",
@@ -21,6 +21,8 @@
   "failure_modes": [
     "Tries to fetch a Linear ticket for a plain-English feature description",
     "Skips the AskUserQuestion approach-selection step and picks an approach unilaterally",
+    "Invents multiple cosmetic variants just to hit an approach count",
+    "Introduces a concurrency, cache, timeout, or pagination number without a receipt",
     "Invokes a non-existent Skill('agent-browser') for visual verification instead of /expect",
     "Marks the UI feature done by eyeballing it, without /expect verification or any screenshot/recording capture",
     "Ends with 'Using existing ticket' text even though cook was not started from a ticket ID"

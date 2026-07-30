@@ -51,7 +51,7 @@ Render architectural diagrams from your codebase: PR changes, module dependency 
 | `--gist` | Upload to a gist, print URL |
 | `--pr-comment [PR#]` | Post into a PR comment (default: current branch's PR) |
 | `--no-render` | Stop after generating shape JSON (`/tmp/bruhs-doodle-shapes.json`) |
-| `--depth N` | For `deps`/`dependents`: max edge depth (default 2) |
+| `--depth N` | User-chosen edge depth for `deps`/`dependents`; otherwise show direct dependencies |
 
 ## Prerequisites
 
@@ -161,7 +161,8 @@ Show the internal structure of one module/package and its 1-hop external boundar
 
 ## Mode: `deps`
 
-Forward dependency graph: starting at `<file>`, walk outgoing imports up to `--depth` (default 2).
+Forward dependency graph: starting at `<file>`, walk direct outgoing imports unless
+the user supplies `--depth`.
 
 ### Pipeline
 
@@ -414,7 +415,10 @@ dest=".bruhs/diagrams/${slugForMode(mode)}.png"
 cp "$path" "$dest"
 git add "$dest"
 git commit -m "chore(doodle): ${mode} diagram"
-git push 2>/dev/null  # silently skip push if not pushable
+if ! git push; then
+  echo "Diagram committed locally but push failed. Fix the remote/auth error, then run: git push" >&2
+  exit 1
+fi
 ```
 
 ### Step 6: Show summary
@@ -445,13 +449,18 @@ When invoking from another command, prefer building shape JSON inline + calling 
 
 ## Edge Cases
 
-- **PR / compare with > 100 changed files** — collapse to module-level only ("Diagram simplified to module level (130 files).")
-- **`map` of huge monorepos** — limit to N=30 top modules by file count, group remainder as "other"
+- **PR / compare exceeds the renderer or readable-canvas budget** — collapse to
+  module-level only and report what was omitted. Derive the budget from renderer
+  errors, output dimensions, or an explicit user setting.
+- **`map` of a large monorepo** — rank modules by relevance to the requested scope;
+  group the remainder as "other" only when the full render fails its readability or
+  renderer tripwire.
 - **Renamed files** — render as one box with both names, label the arrow with the rename
 - **Cross-repo PRs (forks)** — `gh pr view` resolves the head repo automatically
 - **Cyclic dependencies** — render as bidirectional arrows; tldraw auto-routes
 - **No detectable imports** — fall back to "files only" diagram with no edges and a note
-- **Diff > 3000 lines in `pr`/`compare`** — render headline modules + edges; offer `--full` to render every file
+- **Diff cannot be rendered readably in `pr`/`compare`** — render headline modules
+  and edges, state the simplification, and offer `--full`.
 
 ---
 
@@ -465,8 +474,6 @@ Optional in the `bruhs:state` block (in `CLAUDE.md` / `AGENTS.md`):
     "tldrawMcp": "tldraw",                  // MCP server name
     "defaultUpload": "gist",                // gist | commit | none
     "diagramDir": ".bruhs/diagrams",        // when commit
-    "maxModules": 30,                       // collapse beyond
-    "maxDepth": 2,                          // default for deps/dependents
     "modeDefaults": {
       "pr":      { "upload": "pr-comment" },
       "compare": { "upload": "gist" },
@@ -484,6 +491,6 @@ Optional in the `bruhs:state` block (in `CLAUDE.md` / `AGENTS.md`):
 | `gh` not authenticated | Print `gh auth login` hint, abort (only for modes that need it) |
 | PR not found (in `pr` mode) | Confirm PR# / Linear ID, abort |
 | Diagram render failed | Save shape JSON to `/tmp/bruhs-doodle-shapes.json`, print path, abort |
-| Gist creation failed | Fall back to `--commit`; if both fail, save locally and print path |
+| Gist creation failed | Ask before changing delivery mode; otherwise save locally, report the failure, and print the recoverable path |
 | Comment post failed | Print the gist URL so user can paste manually |
 | Module path doesn't exist (in `module`/`map`) | List candidate paths from the workspace, abort |

@@ -89,5 +89,7 @@ Scenarios that span multiple commands or test invariants of the marker-block sys
 - `claim-migration-redetect.json` — ignore the legacy file, re-detect from code
 - `claim-marker-and-legacy-both-present.json` — Case A wins when marker block AND legacy file coexist
 - `cook-persists-discovered-skills.json` — newly discovered skills round-trip back into `bruhs:state`
+- `cook-no-receipt-no-number.json` — operational limits require evidence and missing receipts become measurement work
+- `slop-landmine-tripwire.json` — delayed failures, false success, and unguarded assumptions use the shared vocabulary
 
 Run these whenever the migration path, the marker format, or the mirror invariant (CLAUDE.md ≡ AGENTS.md inside the blocks) is touched.

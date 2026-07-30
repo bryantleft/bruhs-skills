@@ -9,7 +9,7 @@
   ],
   "context": "Python FastAPI service. bruhs:state block has stack.framework='fastapi' and stack.language='python'. Code includes an endpoint that constructs a new httpx.AsyncClient() per request, an `await` inside a for loop over independent items, and a SQL query built via f-string interpolation.",
   "expected_behavior": [
-    "Step 4 detects language=python and framework=fastapi, loads practices/python.md as the base, then stacks practices/python-fastapi.md on top; still loads practices/type-driven-design.md as PRIMARY and practices/_common.md",
+    "Step 4 loads practices/engineering-principles.md as GOVERNING, then detects language=python and framework=fastapi, loads practices/python.md as the base, stacks practices/python-fastapi.md on top, and still loads practices/type-driven-design.md as PRIMARY plus practices/_common.md",
     "Applies the priority hierarchy: Types (P1) > Security (P2) > Performance (P3) > Error Handling (P4) > Architecture (P5) > Immutability (P6) > Style (P7)",
     "Flags the f-string SQL query as a P2 Security issue (SQL injection), the per-request httpx.AsyncClient() as a P3 Performance anti-pattern (should be a module-scope singleton), and the await-in-loop as a P3 Performance anti-pattern (use asyncio.gather)",
     "Does NOT load practices/typescript-react.md or typescript-hono.md since this is a Python project",

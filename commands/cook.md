@@ -28,6 +28,7 @@ Combined planning and building workflow. Wraps brainstorming and feature develop
 
 All code produced by cook follows the patterns defined in:
 
+- **`practices/engineering-principles.md`** - **GOVERNING** - Landmines, receipts, tripwires, simple and obvious design
 - **`practices/type-driven-design.md`** - **PRIMARY** - Type signatures, explicit errors, immutability
 - **`practices/_common.md`** - Universal patterns (naming, git, errors, testing)
 - **`practices/pr-review.md`** - PR authoring, reviewer etiquette, Conventional Comments (used by peep)
@@ -53,6 +54,10 @@ All code produced by cook follows the patterns defined in:
 
 | Principle | Description |
 |-----------|-------------|
+| **No Receipt, No Number** | Operational limits come from measurements, quotas, capacity math, research, incidents, contracts, or explicit requirements |
+| **Tripwires over Assumptions** | Validate correctness-critical beliefs at the earliest useful boundary |
+| **Fail Loudly** | Failures say what broke, why, which assumption or limit was involved, and how to fix it |
+| **Simple and Obvious** | Remove complexity, expose state, and prefer direct designs over clever indirection |
 | **Types as Documentation** | Signatures should tell the full story |
 | **Explicit Errors** | Errors visible in return types, not hidden throws |
 | **Immutability** | Prefer readonly, don't mutate parameters |
@@ -179,6 +184,11 @@ Scope: <what's included/excluded>
 // Load bruhs:state for stack info
 config = JSON.parse(Bash(`python3 <PLUGIN_DIR>/scripts/read_bruhs_block.py --kind state --root .`))
 
+// Governing and primary practices are always loaded
+engineeringPrinciples = Read('practices/engineering-principles.md')
+typePractices = Read('practices/type-driven-design.md')
+commonPractices = Read('practices/_common.md')
+
 // Load Effect practices if stack uses Effect
 if (config.stack?.libraries?.includes('effect')) {
   effectPractices = Read('practices/effect-ts.md');
@@ -266,7 +276,9 @@ Use the Task tool with `subagent_type: "feature-dev:code-explorer"` to:
 
 ### Step 3: Plan
 
-Design 2-3 approaches based on exploration. First, output the approach details:
+Design genuinely distinct approaches based on exploration. Present alternatives when
+there is a real trade-off; if one design follows directly from the constraints, present
+it and explain why extra options would be theater.
 
 ```
 Planning...
@@ -276,6 +288,10 @@ Planning...
 - Files to modify: <list>
 - Data path: <where data flows — any N+1, waterfall, or fan-out hotspots?>
 - Performance notes: <which fast-path patterns apply; any hot-path concerns>
+- Landmines: <delayed failures this design could create>
+- Receipts: <evidence behind limits and important trade-offs; identify evidence still needed>
+- Tripwires: <validation or CI checks that make broken assumptions fail loudly>
+- Hidden state: <caches, retries, mutation, fallbacks, I/O, and lifecycle ownership>
 - Pros: <benefits>
 - Cons: <tradeoffs>
 
@@ -284,6 +300,10 @@ Planning...
 - Files to modify: <list>
 - Data path: <where data flows — any N+1, waterfall, or fan-out hotspots?>
 - Performance notes: <which fast-path patterns apply; any hot-path concerns>
+- Landmines: <delayed failures this design could create>
+- Receipts: <evidence behind limits and important trade-offs; identify evidence still needed>
+- Tripwires: <validation or CI checks that make broken assumptions fail loudly>
+- Hidden state: <caches, retries, mutation, fallbacks, I/O, and lifecycle ownership>
 - Pros: <benefits>
 - Cons: <tradeoffs>
 ```
@@ -296,8 +316,17 @@ Planning...
 - [ ] Streaming vs buffering decided for large payloads
 - [ ] Sync I/O / crypto kept off the event loop
 - [ ] Cache layer identified (edge cache, app cache, none) with justification
+- [ ] Every operational number has a receipt; missing evidence becomes a measurement task, not a guessed default
 
-Then use `AskUserQuestion` for selection:
+**Decision-quality checklist:**
+- [ ] User outcome and invariants are stated independently of the current implementation
+- [ ] Harmless-looking landmines have been named with their delayed failure
+- [ ] Correctness-critical assumptions have tripwires at the earliest useful boundary
+- [ ] Errors say what failed, why, which assumption or limit was involved, and how to fix it
+- [ ] Mutation, caching, retries, fallbacks, I/O, and lifecycle ownership are visible
+- [ ] The design deletes or centralizes complexity instead of moving it behind a new abstraction
+
+When multiple meaningful approaches remain, use `AskUserQuestion` for selection:
 
 ```javascript
 AskUserQuestion({
@@ -314,7 +343,7 @@ AskUserQuestion({
 })
 
 Use brainstorming patterns:
-- Consider multiple solutions
+- Consider multiple solutions when the trade-offs are real
 - Evaluate tradeoffs
 - Present options clearly
 - Let user choose
@@ -610,11 +639,13 @@ Use the Task tool with `subagent_type: "feature-dev:code-reviewer"` to:
 - Ensure code quality
 - Check adherence to project conventions
 - **Fast-path audit**: scan for N+1 queries, `await` in loops, sync-in-async, per-request client construction, unbounded concurrency on user input, fetch waterfalls, unstable references passed to memoized children, defensive `useMemo`, full-body logging in hot paths
+- **Decision audit**: hunt landmines; reject operational numbers without receipts; confirm assumptions have tripwires; flag failures that can look like success; expose hidden state and side effects
 
 ```
 Reviewing code...
 ✓ No high-confidence issues found
 ✓ Fast-path audit: no anti-patterns detected
+✓ Decision audit: receipts and tripwires accounted for
 ```
 
 **UI Design Review (for UI changes):**

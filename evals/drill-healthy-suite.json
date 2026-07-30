@@ -7,7 +7,7 @@
   "expected_behavior": [
     "Phase 1: maps all 8 layers and concludes most are GATED or ADVISORY-WITH-RATCHET in a healthy way",
     "Applies the 'what would slip through' test for each absent or advisory layer and is honest when the answer is 'nothing concrete in this codebase'",
-    "Refuses to fabricate adoption candidates just to fill 5–8 slots — drill.md says 'if you have more, you haven't filtered'; the inverse applies when you have fewer",
+    "Refuses to fabricate adoption candidates and returns only layers with a concrete bug class that could slip through",
     "If Phase 2 produces 1–2 candidates (e.g. complexity composite — only layer absent), they each carry a concrete bug class that would slip through, not a hypothetical",
     "Does NOT propose tightening already-healthy gates (raising coverage from 85% to 90%) without a concrete bug class that the higher threshold catches — drill is about adopting MISSING layers, not over-tuning gated ones",
     "Does NOT propose adding layers redundant with the existing healthy ones — anti-pattern 'leaving old tests when a deeper layer subsumes them' (and its inverse: adding a layer when an existing one already covers the bug class)"

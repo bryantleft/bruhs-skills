@@ -1,0 +1,25 @@
+{
+  "skills": [
+    "bruhs"
+  ],
+  "command": "/bruhs:cook",
+  "query": "/bruhs:cook add retries and a cache to the upstream profile client",
+  "files": [
+    "CLAUDE.md"
+  ],
+  "context": "TypeScript service with no documented upstream SLO, rate limit, retry policy, cache freshness requirement, production latency measurement, or incident receipt.",
+  "expected_behavior": [
+    "Reads practices/engineering-principles.md before planning",
+    "Does not invent retry counts, backoff durations, timeouts, concurrency limits, or cache TTLs",
+    "Names the delayed-failure landmines: retry amplification, stale profile data, hidden degraded behavior, and upstream overload",
+    "Identifies which receipts are missing and proposes concrete measurements or upstream contracts needed to derive each operational value",
+    "Makes retry and cache behavior visible in the interface and proposes tripwires for exhausted policy, stale data, and invalid configuration",
+    "If a temporary safety bound is required, derives it from an explicit worst-case resource budget, instruments it, and labels what evidence must replace the estimate"
+  ],
+  "failure_modes": [
+    "Copies common defaults such as three retries, an exponential delay, or a five-minute TTL without evidence",
+    "Treats environment variables as receipts even though their values have no rationale",
+    "Falls back to stale cache data while returning an indistinguishable success result",
+    "Adds comments describing assumptions without executable validation or monitoring"
+  ]
+}

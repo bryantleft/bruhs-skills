@@ -7,7 +7,7 @@ description: End-to-end development lifecycle for AI coding agents — scaffold 
 
 ## Index
 |commands|spawn,claim,cook,verify,yeet,walk,land,peep,dip,slop,doodle,deepen,drill,recap
-|practices|type-driven-design,architecture-deepening,testing-infrastructure,source-ground-truth,_common,pr-review,typescript-react,typescript-hono,python,python-fastapi,effect-ts,effect-*,rust,rust-*,ui-design,design-engineering
+|practices|engineering-principles,type-driven-design,architecture-deepening,testing-infrastructure,source-ground-truth,_common,pr-review,typescript-react,typescript-hono,python,python-fastapi,effect-ts,effect-*,rust,rust-*,ui-design,design-engineering
 |config|CLAUDE.md + AGENTS.md (`bruhs:state` and `bruhs:rules` blocks)
 
 ## Commands Quick Reference
@@ -68,6 +68,33 @@ Out-of-band, any time:
 - `/bruhs:deepen [path | module-name] [--no-explore]` → Find shallow modules, propose deepenings
 - `/bruhs:drill [path | layer-name] [--no-explore]` → Find missing/weak test-infra layers, propose adoptions
 - `/bruhs:recap [window] [--all-authors|--linear|--branch <name>]` → Status update from git log
+
+---
+
+## Engineering Doctrine
+
+Every command uses this shared vocabulary:
+
+|Term|Meaning|
+|---|---|
+|**Landmine**|A harmless-looking decision that creates a delayed failure|
+|**Receipt**|Inspectable evidence or reasoning behind a decision|
+|**Tripwire**|An executable guardrail that fails actionably when an assumption breaks|
+|**Simple**|Logic that decomposes naturally and removes complexity|
+|**Obvious**|Code whose purpose, state, errors, and next change are visible in one pass|
+
+The governing rules:
+
+- **Think from first principles.** Preserve invariants and user outcomes, not accidental complexity.
+- **No receipt, no operational number.** Timeouts, retries, memory budgets, concurrency limits, queue bounds, cache sizes, and similar values must be derived from measurements, quotas, capacity math, research, incidents, contracts, or an explicit user requirement.
+- **Fail loudly and actionably.** State what failed, why, which assumption or limit was violated, and what fixes it. Degraded behavior must be explicit and observable.
+- **Turn assumptions into tripwires.** Comments describe; validation, constraints, exhaustive handling, assertions, and CI enforce.
+- **Understand before optimizing.** Remove unnecessary work and pathological shapes first; measure when an optimization introduces a real trade-off.
+- **Prefer obvious over clever.** Use direct control flow, narrow interfaces, explicit state, and domain language.
+- **Minimize hidden state.** Make mutation, caching, retries, fallbacks, I/O, and lifecycle ownership visible.
+- **Design for maintenance.** Delete obsolete code. Add abstractions only when they centralize an invariant, remove duplication, or hide real complexity.
+
+Read `practices/engineering-principles.md` before planning, implementing, reviewing, or verifying. It wins when another practice conflicts with it.
 
 ---
 
@@ -218,9 +245,9 @@ For full layer specs, diagnostics, gating posture, rejected framings → `practi
 
 ### Code Organization
 - Functions do ONE thing
-- 20-30 lines max per function
-- 200-300 lines max per file
 - If you need comments to separate sections → extract functions
+- Treat length as a signal, not a rule. Split only when doing so makes responsibilities and state more obvious.
+- Do not introduce line-count limits without a repository-specific receipt.
 
 ### Error Handling
 - Specific messages: `User "${id}" not found` not `Something went wrong`
@@ -259,6 +286,7 @@ For full guidelines → `practices/_common.md`
 - **Obvious perf wins don't require benchmarks.** N+1 queries, `await` in a loop, sync I/O on the event loop, per-request client construction — these are anti-patterns, not "premature optimization."
 - **Measure when the tradeoff is real** (readability cost, complexity cost, risk of regression). Don't measure to justify avoiding an anti-pattern.
 - **Measure at boundaries, not inside** — p50/p95/p99 at ingress/egress; internal timers lie about contention.
+- **Operational bounds need receipts.** Never copy a concurrency, timeout, retry, or cache value from these examples into production without deriving it from the real system.
 
 ### Universal Defaults
 - **Batch at boundaries.** One round-trip of N beats N round-trips (DB, HTTP, IPC, GPU, syscalls).
@@ -313,7 +341,10 @@ Each command's full workflow lives in its own file. Read the specific file when 
 | Command | File |
 |---|---|
 | cook   | `commands/cook.md` |
+| verify | `commands/verify.md` |
 | yeet   | `commands/yeet.md` |
+| walk   | `commands/walk.md` |
+| land   | `commands/land.md` |
 | peep   | `commands/peep.md` |
 | dip    | `commands/dip.md` |
 | spawn  | `commands/spawn.md` |
@@ -322,6 +353,7 @@ Each command's full workflow lives in its own file. Read the specific file when 
 | doodle | `commands/doodle.md` |
 | deepen | `commands/deepen.md` |
 | drill  | `commands/drill.md` |
+| recap  | `commands/recap.md` |
 
 ---
 

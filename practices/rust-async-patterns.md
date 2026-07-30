@@ -169,7 +169,7 @@ while let Some(joined) = set.join_next().await {
 ```rust
 use tokio::sync::Semaphore;
 
-let sem = Arc::new(Semaphore::new(10));  // max 10 concurrent
+let sem = Arc::new(Semaphore::new(concurrency_limit)); // derived from a capacity receipt
 
 let mut set = JoinSet::new();
 for url in urls {
@@ -336,7 +336,7 @@ use futures::stream::{self, StreamExt, TryStreamExt};
 // Process items concurrently with bounded parallelism
 let results: Vec<Output> = stream::iter(items)
     .map(|item| async move { process(item).await })
-    .buffer_unordered(10)  // up to 10 in flight
+    .buffer_unordered(concurrency_limit)
     .try_collect()
     .await?;
 ```
@@ -345,7 +345,7 @@ let results: Vec<Output> = stream::iter(items)
 // Async iteration with try_for_each
 stream::iter(jobs)
     .map(Ok)  // wrap in Result for try_*
-    .try_for_each_concurrent(8, |job| async move { run(job).await })
+    .try_for_each_concurrent(concurrency_limit, |job| async move { run(job).await })
     .await?;
 ```
 

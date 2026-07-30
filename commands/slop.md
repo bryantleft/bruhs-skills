@@ -29,7 +29,7 @@ Thoroughly analyze the entire codebase and clean up AI-generated code patterns. 
 - `/bruhs:slop --quick` - **Branch-diff-only fast pass** — only look at lines this branch added vs `origin/<base>`. See [Quick Mode](#quick-mode).
 - `/bruhs:slop --fix` - Auto-fix safe issues, prompt for others
 - `/bruhs:slop --report` - Generate report only, no fixes
-- `/bruhs:slop --severity relaxed|balanced|nitpicky|brutal` - Override the default severity (default: balanced)
+- `/bruhs:slop --severity relaxed|balanced|nitpicky|brutal` - Override the default severity (default: nitpicky)
 
 ## Quick Mode
 
@@ -46,6 +46,9 @@ Thoroughly analyze the entire codebase and clean up AI-generated code patterns. 
 
 Quick mode focuses on the AI-slop patterns that are most likely to be **introduced by this branch's diff**, not codebase-wide structural issues:
 
+- Operational numbers added without a receipt (timeouts, retries, concurrency, memory, queues, caches, pagination)
+- New assumptions expressed only as comments instead of executable tripwires
+- Fallbacks that can make failure look like success
 - Extra comments inconsistent with surrounding file style
 - Defensive `try/catch` blocks around trusted internal calls
 - `as any` / `as unknown as X` casts used to bypass real type issues
@@ -120,6 +123,9 @@ Apply auto-safe fixes? [Y/n]
 > "AI slop is output that seems adequate on the surface but falls short in substance—code that appears syntactically correct but is missing depth, context, or relevance."
 
 This command embodies the mindset of a senior engineer who:
+- Hunts landmines that delay failure
+- Demands receipts for operational numbers
+- Turns correctness-critical assumptions into tripwires
 - **Reads type signatures first** - Types are the primary documentation
 - Values simplicity over cleverness
 - Removes code rather than adds it
@@ -131,6 +137,7 @@ This command embodies the mindset of a senior engineer who:
 
 Slop detects violations of the patterns defined in:
 
+- **`practices/engineering-principles.md`** - **GOVERNING** - Landmines, receipts, tripwires, simple and obvious design
 - **`practices/type-driven-design.md`** - **PRIMARY** - Type signatures, explicit errors, immutability
 - **`practices/_common.md`** - Universal patterns (naming, git, errors, testing)
 - **`practices/source-ground-truth.md`** - Before flagging "misuse of `<library>`", confirm against that library's real source (`opensrc`) — a slop finding that misreads a dependency's API is itself slop
@@ -148,7 +155,16 @@ Slop detects violations of the patterns defined in:
 
 ## The Priority Hierarchy
 
-**Type signatures are #1. Performance anti-patterns are real bugs, not style nits** — they rank above architecture and style because they're cheap to fix and expensive to leave in.
+Run the **decision-quality gate** across every category before ranking findings:
+
+- **Landmine:** What delayed failure does this choice create?
+- **Receipt:** Which operational number lacks evidence? Do not invent a replacement value.
+- **Tripwire:** Which correctness-critical assumption is not enforced?
+- **Failure honesty:** Can an error, fallback, or partial result still look like success?
+- **Hidden state:** Are mutation, caching, retries, fallbacks, I/O, or lifecycle ownership concealed?
+- **Maintenance:** Does an abstraction remove complexity or merely relocate it?
+
+Then rank findings. **Type signatures are #1. Performance anti-patterns are real bugs, not style nits** — they rank above architecture and style because they're cheap to fix and expensive to leave in.
 
 | Priority | Category | Why |
 |----------|----------|-----|
@@ -168,6 +184,7 @@ Slop analyzes code through these lenses, **in priority order**:
 
 | Pillar | Focus |
 |--------|-------|
+| **Decision Quality** | Landmines named? Operational numbers receipted? Assumptions guarded by tripwires? |
 | **Type Signatures** | Do signatures tell the full story? Are errors explicit? |
 | **Security** | SQL injection, XSS, hardcoded secrets, unbounded input? |
 | **Performance** | N+1 queries, `await`-in-loop, sync-in-async, per-request clients, unbounded concurrency, missing cache headers, render waterfalls |
@@ -176,6 +193,24 @@ Slop analyzes code through these lenses, **in priority order**:
 | **Immutability** | Are mutations visible? Is state predictable? |
 | **Readability** | Can a human understand this in 30 seconds? |
 | **Standards** | Consistent with codebase conventions? |
+
+### Cross-Cutting Decision Failures
+
+Flag these wherever they appear:
+
+- **No-receipt number:** an operational limit exists without a benchmark, quota,
+  capacity derivation, incident, contract, research finding, or explicit requirement.
+  Report the missing evidence and the measurement needed; do not substitute another
+  magic number.
+- **Missing tripwire:** a correctness-critical assumption lives only in prose or is
+  checked after damage can occur. Recommend the earliest boundary that can fail with
+  enough context.
+- **False success:** a catch, fallback, empty result, stale cache, or partial write
+  hides failure without an explicit degraded state in the interface.
+- **Hidden state:** behavior depends on mutation, cache state, retries, globals,
+  environment, ordering, or lifecycle ownership the caller cannot see.
+- **Complexity relocation:** an abstraction adds navigation and indirection without
+  centralizing an invariant, removing duplication, or hiding real complexity.
 
 ## AI Slop Patterns
 
@@ -590,7 +625,7 @@ for (const id of ids) {
 
 // CLEAN: Parallel with bounded concurrency
 import pLimit from "p-limit";
-const limit = pLimit(20);
+const limit = pLimit(concurrencyLimit); // derived from a documented downstream capacity receipt
 const results = await Promise.all(ids.map(id => limit(() => fetchOne(id))));
 ```
 
@@ -622,7 +657,7 @@ const data = await fs.promises.readFile(path);
 await Promise.all(ids.map(fetchOne));
 
 // CLEAN: Bounded
-const limit = pLimit(20);
+const limit = pLimit(concurrencyLimit); // derived from a documented downstream capacity receipt
 await Promise.all(ids.map(id => limit(() => fetchOne(id))));
 ```
 
@@ -922,7 +957,10 @@ grep -rn "eval(" src/ --include="*.ts" --include="*.tsx"
 **Load practices in priority order:**
 
 ```javascript
-// ALWAYS load type-driven design first - it's the primary lens
+// Governing decision-quality lens
+engineeringPrinciples = Read('practices/engineering-principles.md');
+
+// Then load type-driven design - it's the primary code lens
 typePractices = Read('practices/type-driven-design.md');
 
 // Load common practices
@@ -1236,13 +1274,14 @@ Add slop settings to the `bruhs:state` block (in `CLAUDE.md` / `AGENTS.md`):
     ],
     "rules": {
       "no-any": "error",
-      "no-non-null-assertion": "warn",
-      "max-function-lines": 50,
-      "max-file-lines": 300
+      "no-non-null-assertion": "warn"
     }
   }
 }
 ```
+
+Do not add numeric size or complexity gates here without a repository-specific
+receipt and a concrete failure the gate prevents.
 
 **Severity levels:**
 - `relaxed` - Only critical issues

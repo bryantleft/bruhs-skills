@@ -27,6 +27,7 @@ Uses **isolated subagents** per comment thread to prevent context bleed. Each co
 
 ## Best Practices
 
+- **`practices/engineering-principles.md`** — governing lens. Findings name landmines, require receipts for operational numbers, prefer tripwires over comments, and reject false success.
 - **`practices/pr-review.md`** — primary lens. Conventional Comments labels (`nit`, `suggestion`, `issue`, `praise`, decorations like `(blocking)` / `(non-blocking)`), reviewer/author etiquette, anti-patterns. Loaded by every subagent so categorization stays consistent.
 - **Conventional Comments — always.** Every reply this command drafts or posts to a PR thread (decline rationales, question answers, "addressed in <sha>" notes) MUST use the [Conventional Comments](https://conventionalcomments.org) format — `<label> [decoration]: <subject>` — per `practices/pr-review.md`. No bare prose replies. Likewise, any commit peep makes follows Conventional Commits (`practices/_common.md`).
 - **Stack practices** — same as `cook` and `slop`. Use the project's stack to inform what counts as a real issue vs preference.
@@ -39,7 +40,7 @@ Uses **isolated subagents** per comment thread to prevent context bleed. Each co
 - `/bruhs:peep 42` - Address comments on PR #42 (switches branch if needed)
 - `/bruhs:peep PERDIX-145` - Find PR by Linear ticket ID
 - `/bruhs:peep --land` - After applying fixes, watch `gh pr checks` until green (delegates the CI loop to `/bruhs:land`)
-- `/bruhs:peep --loop [--max-iterations N]` - Keep reviewing the PR (peep's own review) and fixing findings until a pass turns up nothing new, or N iterations (default 5). Folds in an AI-reviewer bot only if one is installed. See the [Review Loop](#review-loop---loop) section
+- `/bruhs:peep --loop [--max-iterations N]` - Keep reviewing the PR (peep's own review) and fixing findings until a pass turns up nothing new; `N` is an optional user-chosen work budget, not a guessed default. Folds in an AI-reviewer bot only if one is installed. See the [Review Loop](#review-loop---loop) section
 - `/bruhs:peep --resolve-conflicts` - If the PR is in `MERGEABLE: false / DIRTY` state, run the conflict-resolution path first (see [Merge Conflict Path](#merge-conflict-path)), then address comments
 
 ## Prerequisites
@@ -1427,13 +1428,25 @@ This is just convenience — running `/bruhs:peep` then `/bruhs:land` manually d
 
 ## Review Loop (`--loop`)
 
-`--loop` makes peep keep reviewing the PR *itself* — review → fix → re-review — until a pass turns up nothing new worth fixing, or a max-iteration cap is hit. Single-pass peep reviews the diff once; `--loop` re-reviews the *updated* diff after each fix-and-push, the way a careful engineer re-reads their own PR after every change. **The reviewer in the loop is the coding agent** — peep's own discovery review (Step 3) — not an external service. The idea is borrowed from Greptile's [greploop](https://github.com/greptileai/skills/blob/main/greploop/SKILL.md) and generalized: no bot required. If an AI-reviewer bot *is* installed, the loop can fold its findings in too (see below).
+`--loop` makes peep keep reviewing the PR *itself* — review → fix → re-review —
+until a pass turns up nothing new worth fixing, a guardrail trips, or an optional
+user-supplied work budget is exhausted. Single-pass peep reviews the diff once;
+`--loop` re-reviews the *updated* diff after each fix-and-push, the way a careful
+engineer re-reads their own PR after every change. **The reviewer in the loop is the
+coding agent** — peep's own discovery review (Step 3) — not an external service. The
+idea is borrowed from Greptile's
+[greploop](https://github.com/greptileai/skills/blob/main/greploop/SKILL.md) and
+generalized: no bot required. If an AI-reviewer bot *is* installed, the loop can fold
+its findings in too (see below).
 
-**Invocation:** `/bruhs:peep --loop [--max-iterations N]` (default `N=5`). Works with or without human comments or an AI-reviewer bot. Composable with `--land` (each iteration also waits for CI green before re-reviewing) and `--resolve-conflicts`.
+**Invocation:** `/bruhs:peep --loop [--max-iterations N]`. `N` is optional and comes
+from the user. Works with or without human comments or an AI-reviewer bot. Composable
+with `--land` (each iteration also waits for CI green before re-reviewing) and
+`--resolve-conflicts`.
 
-### The loop (≤ N iterations)
+### The loop
 
-For each iteration `i` from 1 to N:
+For each iteration `i`:
 
 1. **Review the PR yourself.** Run peep's own discovery review (Step 3) over the diff: subagent-per-file + adversarial validator (thorough), or 3-pass majority vote (quick). On `i ≥ 2`, focus on what changed since the last iteration's push (plus anything still unresolved), so the loop *converges* instead of re-litigating settled code.
 2. **Address actionable findings** under the **same reproduction-first evidence bar** ([Evidence](#evidence-key-principle)) — fan out one isolated subagent per finding (Step 4). Apply `reproduced` / `tooling-confirmed` fixes; for anything it cannot reproduce, record it and **decline** rather than fabricate a fix. There's no external verdict to chase — the bar is real bugs, not a score.
@@ -1460,7 +1473,8 @@ gh pr view <number> --json reviews,comments \
 Stop and report when **any** holds:
 
 - **Clean** — a full review pass produces **no new actionable** (`reproduced` / `tooling-confirmed`) findings and no unresolved actionable threads remain (and any folded-in bot is satisfied).
-- **Iteration cap** — `i == N`. Summarize what's still open.
+- **User budget exhausted** — when `--max-iterations N` was supplied and `i == N`.
+  Summarize what's still open.
 - **No progress (anti-thrash)** — an iteration applied **zero** new fixes. Reviewing again would just resurface the same declined items, so stop and hand back rather than burn the budget.
 - **Validation can't pass** — fixes don't survive the suite and can't be made green. Stop and surface it; never push broken code in a loop.
 
@@ -1468,13 +1482,14 @@ Stop and report when **any** holds:
 
 - **Evidence over appeasement.** The goal is correct code, not a clean-looking score. Never apply a no-op/cosmetic "fix" just to make a finding disappear; an unreproducible finding is declined honestly, exactly as in single-pass peep.
 - **Converge, don't re-litigate.** Use the per-PR history ([Step 2a](#step-2a-load-prior-peep-history-cross-run-dedupe) / Step 5b) so a finding already declined isn't re-raised every iteration; later passes look at the new changes, not the whole diff afresh.
-- **Cost is bounded by N.** Each iteration is a full self-review + subagent fan-out (+ CI if `--land`). Keep N small — 5 is plenty.
+- **Respect the user's work budget.** Each iteration is a full self-review +
+  subagent fan-out (+ CI if `--land`). Do not invent or extend a cap.
 - **Never bypass hooks or force-push.** Same as the rest of peep.
 
 ### Output
 
 ```
-PR #42 — self-review loop, max 5 iterations
+PR #42 — self-review loop, user budget: N iterations
 
 Iteration 1: 4 findings (agent self-review)
   ✓ 2 fixed (reproduced) · 1 nit applied · 1 declined (unreproducible — recorded)

@@ -335,7 +335,7 @@ let app = Router::new()
     /* routes */
     .layer(TraceLayer::new_for_http())
     .layer(CompressionLayer::new())
-    .layer(TimeoutLayer::new(Duration::from_secs(30)))
+    .layer(TimeoutLayer::new(settings.request_timeout))
     .layer(CorsLayer::new()
         .allow_origin(["https://app.example.com".parse().unwrap()])
         .allow_methods([Method::GET, Method::POST]));
@@ -360,7 +360,7 @@ let app = Router::new()
                     (StatusCode::INTERNAL_SERVER_ERROR, format!("internal: {err}"))
                 }
             }))
-            .timeout(Duration::from_secs(10))
+            .timeout(settings.request_timeout)
     );
 ```
 
@@ -446,9 +446,9 @@ async fn create_user(
 use sqlx::postgres::{PgPool, PgPoolOptions};
 
 let db = PgPoolOptions::new()
-    .max_connections(20)
-    .min_connections(2)
-    .acquire_timeout(Duration::from_secs(3))
+    .max_connections(settings.db_max_connections)
+    .min_connections(settings.db_min_connections)
+    .acquire_timeout(settings.db_acquire_timeout)
     .connect(&env::var("DATABASE_URL")?)
     .await?;
 

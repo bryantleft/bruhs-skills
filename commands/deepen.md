@@ -76,7 +76,11 @@ Implementation lives in `/bruhs:cook`. Use `/bruhs:deepen` to decide *what* to d
 Walk the codebase organically. Don't run a static linter — read.
 
 1. **Read the domain glossary first.** Look for `CONTEXT.md`, `ARCHITECTURE.md`, `docs/adrs/`, `README.md`. If none exist, infer the domain vocabulary from type names, package boundaries, and tests.
-2. **Trace 2–3 representative call paths end-to-end.** A request from ingress, a job from queue to outcome, a UI action to persistence. You're hunting for **bouncing** — concepts that require the reader to jump between many small modules to understand one operation.
+2. **Trace representative call paths end-to-end until the domain and dependency
+   shape stop changing.** Include materially different paths such as a request from
+   ingress, a job from queue to outcome, or a UI action to persistence. You're
+   hunting for **bouncing** — concepts that require the reader to jump between many
+   small modules to understand one operation.
 3. **Note friction points** as you go. Use the diagnostic table in `practices/architecture-deepening.md`:
    - Bouncing (single concept, many small modules)
    - Pass-through (1:1 forwarding to a dependency)
@@ -113,7 +117,8 @@ N. <short title>
 - **Use architectural language** exactly: module, interface, depth, seam, adapter, leverage, locality.
 - **Don't propose interfaces yet.** Phase 2 is about *what to deepen*, not *what shape*. Interface design happens in Phase 3.
 - **Rank by leverage × locality, not by effort.** A high-impact L beats a low-impact S.
-- **5–8 candidates max.** If you have more, you haven't filtered — re-apply the deletion test and cut the ones that don't pass.
+- **Only high-leverage candidates.** If the list is noisy, re-apply the deletion
+  test and remove candidates that cannot name a concrete maintenance failure.
 
 Then ask: *"Which would you like to grill?"*
 
@@ -128,13 +133,16 @@ Once a candidate is chosen, co-design the deepened module through conversation. 
 - Illustrative caller code — concrete, not abstract
 - Whether the seam needs 1 or 2+ adapters (see seam discipline)
 
-**3b. Design it twice.** Generate radically different alternatives, each with a distinct constraint. Use sub-agents in parallel via `dispatching-parallel-agents` (superpowers) when alternatives are independent and the brief is concrete enough for cold-start work:
+**3b. Design meaningful alternatives.** Generate distinct designs only where a real
+constraint changes the interface. Do not manufacture options to hit a count. Use
+sub-agents in parallel via `dispatching-parallel-agents` (superpowers) when
+alternatives are independent and the brief is concrete enough for cold-start work:
 
 | Alternative | Constraint |
 |---|---|
-| **A. Minimal** | 1–3 entry points max. What gets cut? |
+| **A. Minimal** | Expose only the entry points required by current callers. What gets cut? |
 | **B. Extensible** | Max use cases without breaking changes. What's the cost? |
-| **C. Caller-optimised** | Optimise for the 80% common pattern. What does the 20% pay? |
+| **C. Caller-optimised** | Optimise for the measured common path. What do less common paths pay? |
 | **D. Ports & Adapters** *(only if dependency is remote-owned or true-external)* | Seam as load-bearing. What's the port shape? |
 
 Each alternative produces: interface spec, usage examples, implementation sketch, dependency/test strategy, trade-offs.

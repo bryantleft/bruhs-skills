@@ -452,7 +452,7 @@ app.get("/popular", async (c) => {
 
   const data = await expensiveLookup();
   const res = c.json(data);
-  res.headers.set("cache-control", "public, max-age=60, s-maxage=300, stale-while-revalidate=60");
+  res.headers.set("cache-control", c.env.POPULAR_CACHE_CONTROL); // freshness receipt
   c.executionCtx.waitUntil(cache.put(cacheKey, res.clone()));
   return res;
 });

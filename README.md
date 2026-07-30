@@ -2,6 +2,20 @@
 
 End-to-end development lifecycle for AI coding agents — scaffold projects, plan and build features, open and review PRs, clean up after merge, audit codebases, surface architectural deepenings, drill the test safety net, and improve UI polish/motion quality. Works with any agent that reads `CLAUDE.md` or `AGENTS.md`.
 
+bruhs is built around five shared ideas:
+
+- **Landmine** — a harmless-looking decision that creates a delayed failure
+- **Receipt** — inspectable evidence or reasoning behind a decision
+- **Tripwire** — an executable guardrail that fails actionably when an assumption breaks
+- **Simple** — logic that decomposes naturally and removes complexity
+- **Obvious** — code whose purpose, state, errors, and next change are visible in one pass
+
+The operating rule is “no receipt, no operational number.” Timeouts, retries,
+concurrency limits, queue bounds, memory budgets, and cache sizes must come from
+measurements, quotas, capacity math, research, incidents, contracts, or explicit
+requirements. Correctness-critical assumptions become tripwires, and failures never
+masquerade as success.
+
 ## Installation
 
 ```bash
@@ -15,13 +29,17 @@ npx skills add bryantleft/bruhs-skills
 /bruhs:spawn        # Create new project or add to monorepo
 /bruhs:claim        # Initialize config for existing project
 /bruhs:cook         # Plan + Build a feature end-to-end
+/bruhs:verify       # Prove a claim with falsifiable evidence
 /bruhs:yeet         # Ship: Linear ticket → Branch → Commit → PR
+/bruhs:walk         # Generate a reviewer walkthrough
+/bruhs:land         # Watch CI and fix evidence-backed failures to green
 /bruhs:peep         # Address PR review comments and merge
 /bruhs:dip          # Clean up after merge and switch to base branch
 /bruhs:doodle       # Render architecture diagrams (PR, module, deps, compare, map)
 /bruhs:slop         # Clean up AI slop (senior engineer audit)
 /bruhs:deepen       # Find shallow modules, propose architectural deepenings
 /bruhs:drill        # Find missing/weak test-infra layers, propose adoptions
+/bruhs:recap        # Summarize shipped work from git history
 ```
 
 ## Commands
@@ -42,7 +60,10 @@ Create a new project from scratch or add an app/package to an existing monorepo.
 
 Plan and build a feature end-to-end.
 
-**Workflow:** understand → explore codebase → plan (2–3 approaches, user picks) → setup → **RED-GREEN-REFACTOR** build cycle → self-review → run `scripts/validate_pr_ready.sh` → ready to ship.
+**Workflow:** understand → explore codebase → plan meaningful alternatives when real
+trade-offs exist → document landmines, receipts, tripwires, and hidden state →
+**RED-GREEN-REFACTOR** build cycle → decision-quality review → run
+`scripts/validate_pr_ready.sh` → ready to ship.
 
 For UI-only changes where TDD isn't feasible, the Build step offers an explicit opt-in to manual verification.
 
@@ -99,7 +120,11 @@ Deep codebase audit — acts as a nitpicky senior engineer. Priority hierarchy:
 
 Find **shallow modules** — modules whose interface is nearly as complex as their implementation — and propose **deepening opportunities** that hide more behaviour behind smaller interfaces. Structural audit, distinct from `/bruhs:slop`'s line-level lens. Adapted from Matt Pocock's `improve-codebase-architecture` skill (Ousterhout + Feathers lineage).
 
-**Workflow:** Explore (read the domain glossary, trace 2–3 call paths, note bouncing / pass-through / leaky implementations / scattered invariants) → Present candidates (ranked by leverage × locality, 5–8 max) → Grilling loop (design the deepened module's interface twice — Minimal / Extensible / Caller-optimised / Ports & Adapters — pick one with reasons). Hands off to `/bruhs:cook` for implementation.
+**Workflow:** Explore until the domain and dependency shape stabilizes (read the
+glossary, trace materially different call paths, note bouncing / pass-through / leaky
+implementations / scattered invariants) → Present only high-leverage candidates
+(ranked by leverage × locality) → Grill genuinely distinct interface designs where a
+real constraint changes the shape. Hands off to `/bruhs:cook` for implementation.
 
 **Vocabulary:** module, interface, depth, seam, adapter, leverage, locality. **Use these exactly.**
 
@@ -121,6 +146,7 @@ Stack-agnostic and stack-specific guidance, loaded conditionally by `cook` and `
 
 | File | Scope |
 |---|---|
+| `practices/engineering-principles.md` | **Governing** — landmines, receipts, tripwires, simple and obvious design |
 | `practices/type-driven-design.md` | **Primary** — type signatures, explicit errors, immutability |
 | `practices/architecture-deepening.md` | Module depth, seams, dependency categories (used by deepen) |
 | `practices/testing-infrastructure.md` | The 8 testing layers, gating posture, kill ratio (used by drill) |
@@ -149,7 +175,9 @@ Stack-agnostic and stack-specific guidance, loaded conditionally by `cook` and `
 
 ## Evaluations
 
-`evals/` holds 27 JSON scenarios (3 per command) covering happy path, edge case, and adversarial phrasings. See `evals/README.md` for the manual eval workflow.
+`evals/` holds JSON scenarios covering happy paths, edge cases, adversarial
+phrasings, and cross-cutting engineering principles. See `evals/README.md` for the
+manual eval workflow.
 
 ## Configuration
 
