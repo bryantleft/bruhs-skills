@@ -18,7 +18,7 @@ description: End-to-end development lifecycle for AI coding agents — scaffold 
 |yeet|Ship: Linear ticket → Branch → Commit → PR|commands/yeet.md
 |walk|Generate reviewer walkthrough (markdown or interactive HTML canvas)|commands/walk.md
 |land|Watch PR checks and iterate on CI failures until green|commands/land.md
-|peep|Address PR review comments and merge|commands/peep.md
+|peep|Address PR review comments, or self-review with linked context, evidence gates and a ship verdict, then merge|commands/peep.md
 |dip|Clean up after merge, switch to base branch|commands/dip.md
 |slop|Deep codebase analysis, AI slop cleanup (--quick for branch-diff only)|commands/slop.md
 |doodle|Visualize architecture as tldraw diagrams (PRs, modules, deps, compare, map, freeform)|commands/doodle.md

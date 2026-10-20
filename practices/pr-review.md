@@ -14,6 +14,8 @@ How to author and review PRs. Distilled from Google's [eng-practices](https://go
 - [PR Size: The Single Strongest Predictor](#pr-size-the-single-strongest-predictor)
 - [What to Look For (in priority order)](#what-to-look-for-in-priority-order)
 - [Conventional Comments — The Format](#conventional-comments--the-format)
+- [Reviewer Workflow](#reviewer-workflow)
+- [Review Output](#review-output)
 - [Reviewer Etiquette](#reviewer-etiquette)
 - [Author Etiquette](#author-etiquette)
 - [What](#what)
@@ -80,9 +82,10 @@ Cribbed and adapted from Google's [What to Look For](https://google.github.io/en
 
 | Priority | Question | Why first |
 |----------|----------|-----------|
+| **0. Existing tool** | Does an installed tool, helper, or established pattern already do this job? | Zero prior instances of a pattern is evidence it doesn't belong, not that the PR pioneers it |
 | **1. Design** | Does the change belong here? Is it integrated correctly? | Wrong design wastes everything below |
 | **2. Functionality** | Does it do what it claims? Edge cases handled? | Bugs are cheaper here than in prod |
-| **3. Complexity** | Could it be simpler? Over-engineered for hypothetical futures? | Future you will thank present you |
+| **3. Complexity** | Could it be simpler? Over-engineered for hypothetical futures? Does it destroy an invariant only to rebuild it (partition then re-sort, group then flatten)? | The rebuild reads as load-bearing; the fix usually deletes both halves |
 | **4. Tests** | Are the tests correct, focused, and likely to catch regressions? | Tests are the contract |
 | **5. Naming** | Do names communicate intent? | Bad names rot fastest |
 | **6. Comments** | WHY (not WHAT) where non-obvious? Stale comments removed? | See _common.md |
@@ -107,46 +110,141 @@ Use [Conventional Comments](https://conventionalcomments.org) so authors can tri
 
 | Label | Meaning |
 |-------|---------|
-| `praise` | Highlight something genuinely good. Use sparingly so it lands |
-| `nitpick` | Trivial preference. Author free to ignore |
-| `suggestion` | Concrete proposal — author should consider but may decline |
-| `issue` | Real problem the author should address |
-| `question` | Honest question; might become an issue once answered |
-| `thought` | Reflection that doesn't require action |
-| `chore` | Process/cleanup ask (rebase, update changelog, etc.) |
-| `note` | Pointer the author should read but no action needed |
-| `typo` | Spelling/phrasing |
-| `polish` | Quality improvement that doesn't change behavior |
+| `issue` | A defect, risk, or standard violation with concrete harm |
+| `suggestion` | A specific change; the author chooses |
+| `todo` | Small, uncontroversial required change (missing test, rename, import) |
+| `question` | Genuine uncertainty about *this PR*. Not speculation about hypothetical futures |
+| `nitpick` | Trivial preference (style, typo, naming). Always `(non-blocking)` |
+| `chore` | Required task that isn't code (changelog, owner entry) |
+| `praise` | Optional. Specific and earned, never filler or a quota |
+
+`thought`, `note`, `typo` and `polish` are left out on purpose. `thought` and `note` carry no action and dodge the evidence bar, so they collect half-baked observations: a concrete idea is a `suggestion`, durable future work is a linked follow-up ticket, anything else gets dropped. Typos are `nitpick`s; polish is a `suggestion`.
 
 ### Decorations (what's the urgency?)
 
 | Decoration | Meaning |
 |------------|---------|
-| `(blocking)` | Must be addressed before merge |
+| `(blocking)` | Must be addressed before merge. Reserve for `issue` and occasionally `todo` |
 | `(non-blocking)` | Can be addressed now or in a follow-up |
 | `(if-minor)` | Address only if cheap |
 
 ### Examples
 
 ```
-nitpick: Consider naming this `userIds` to match the rest of the file.
+nitpick (non-blocking): `userIds` over `userIdList`, to match the rest of the file.
 
-suggestion (non-blocking): A `Map<string, User>` would let us drop the linear scan.
+suggestion (non-blocking): a `Map<string, User>` would drop the linear scan.
 
-issue (blocking): This bypasses the auth check on line 42 — any logged-out user
-can hit this endpoint.
+Verified: called once per row in renderRows, 2k rows in the fixture.
 
-praise: The fixture builder here is really clean — I'm going to copy this pattern.
+issue (blocking): this route skips the session check, so a logged-out request
+reaches the handler.
 
-question (blocking): What happens if `request.user` is null? I don't see the
-guard.
+Verified: curl without a cookie returns 200 and the user list on this branch.
+
+question: what happens when `request.user` is null here?
+
+Read at handlers/profile.ts:18; no guard upstream in the middleware chain.
 ```
 
 ### Why this matters
 
 Without explicit labels, every comment looks the same urgency. Authors waste time arguing nits, miss real issues in the noise, or block on opinions. The format costs nothing and removes the entire class of "wait, was that blocking?" miscommunication.
 
-> Default to `non-blocking` if you don't say otherwise. Reviewers earn the right to block by being right.
+> Decoration is required on every `issue`, `suggestion` and `todo`; a missing one reads as blocking. Reviewers earn the right to block by being right.
+
+---
+
+## Reviewer Workflow
+
+Know what the PR is *supposed* to do before critiquing it. Understanding the change is the dominant cost of review (Bacchelli & Bird, MSR 2013), so context is the highest-leverage step.
+
+### 1. Gather context
+
+- **Read the PR body and both comment streams** (`gh api repos/{o}/{r}/issues/<n>/comments` and `.../pulls/<n>/comments`). Settled threads aren't re-raised; cite an existing comment instead of restating it.
+- **Follow every link** in the PR body and ticket: the ticket and its attachments, error-tracker items, design docs, threads. They are ground truth; the prose summary is a subset.
+- **History of the touched files:** `gh pr list --search "in:file <path>" --state merged --limit 10` surfaces prior attempts, reverts, and recurring bugs.
+- **Cite the source** when a finding rests on context outside the diff, or the author can't tell you didn't make it up.
+
+### 2. Check out the branch
+
+The diff shows what changed; the branch shows the world after the change.
+
+```bash
+git status --short                  # dirty? use a worktree, never silently stash
+git worktree add ../review-<n> && cd ../review-<n> && gh pr checkout <n>
+git rev-parse HEAD                  # record the reviewed SHA
+```
+
+On the branch: grep for other callers of anything removed, read config/flags/env guards that change blast radius, and read called code in full. If checkout fails, review the diff and say so under *Not verified*.
+
+### 3. Check scope
+
+Render the ticket's acceptance criteria as a checklist: ✅ met (cite file:line), ⚠️ partial, ❌ missing, ❓ unverifiable from code. No criteria? Infer them and say you did. Also flag scope creep, work dropped without a stated follow-up, and a fix for a different problem than the ticket describes. Product-level gaps (empty/error states, edge cases the criteria skipped, inconsistency with sibling features) are `question:`s; the author and PM own those calls.
+
+### 4. Read in order
+
+1. **Broad pass:** read the diff once, no notes, to map it.
+2. **Design pass:** open the biggest or most architectural file in full. If the approach is wrong, send only that feedback and stop; line comments on a design that will change are wasted.
+3. **Comprehensive pass:** biggest file, then its tests, then the rest in call-graph order, not diff order.
+
+### 5. Investigate, then validate
+
+Investigate aggressively: follow every suspicious pattern and list candidates without pre-filtering. Then validate each one; **a finding is a hypothesis until a probe confirms it.**
+
+| Claim type | Required evidence | No evidence → |
+|---|---|---|
+| Behavioral ("bug on null") | Failing repro on the branch | `question:` or drop |
+| Performance ("N+1", "missing index") | Query count, `EXPLAIN`, benchmark | `question:` |
+| Coverage ("not tested") | Mutate the line, rerun; suite still passes | `question:` |
+| External ("the docs say X") | Fetch the doc, quote the passage | Drop the citation |
+| Structural (layering, dead code) | grep result + line numbers | Drop |
+| Design | The ticket, doc, or decision that frames it | `question:` |
+
+**A probe that contradicts the hypothesis drops the finding** rather than softening it into a `question:`. If a probe can't run, try alternatives first (fetch the source, install the dependency, ask for seed data). Only a physical external block (user input, private doc, third-party answer) earns a place under *Not verified*.
+
+Special cases that produce the most false positives:
+
+- **Re-read the PR body before any `question:`.** Authors often pre-empt it under risks or rollout. Answered → drop.
+- **Spot-check every cited path outside the diff** (`ls`, `grep`). Investigators invent plausible paths.
+- **A repro only proves a bug if its input is reachable in production.** State built by hand (factory overrides, raw column writes) proves behavior on that input, not that the input occurs. When a field's meaning comes from an external system, read the code that decides it before calling it a bug.
+- **Walk upstream before patching an output.** A wrong derived value usually reflects a wrong-shaped input that also feeds other consumers.
+- **Dead-code claims need an intent search.** grep proves nothing calls it, not that nothing intends to: check sibling tickets, docs and the PR body for a planned consumer.
+- **"Use X instead" needs its blast radius.** grep every caller and confirm the full contract (signature, null vs empty, throw vs return, side effects). Can't trace it? Ask instead.
+- **"Looks wrong" may be deliberate.** Search docs and threads for the specific constant or flag before flagging. A finding that contradicts a recorded decision is wrong by default.
+- **Pre-existing patterns aren't justification on safety surfaces.** For authorization, atomicity, audit trails, PII, injection and mass assignment, an existing same-file gap is a second finding, not a reason to drop the first.
+
+**Target 3–8 findings.** Rank by severity and production impact, not by hypothesis length, recency, or how long the probe took.
+
+---
+
+## Review Output
+
+### Comments
+
+- **One concern per comment**, with the `<label> [decoration]: <subject>` line, a *why* body, and a one-line **validation note** stating the probe and its result. Every label carries the note; a finding without one is dropped.
+- **No arrows (`→`) or em dashes (`—`) in finding bodies.** Split clauses into sentences; turn sequences into a numbered list.
+- **Critique the code, never "you".** Ask rather than direct when the author may have a reason.
+- **Don't explain code back to the author.** If it needs explaining, ask for the code or a comment to change so future readers get it.
+- **Skip filler.** "Branch is behind main" is noise (GitHub diffs against the merge base and shows the badge) unless a specific conflict or base-side fix matters. Lint-owned style is noise.
+
+### Shape
+
+Locally: acceptance-criteria checklist, then findings grouped blocking-first (`issue (blocking)`, `issue`/`suggestion`, `todo`, `question`, `nitpick`), then *Not verified*, then the verdict. Omit empty groups.
+
+Close with a **ship verdict**, a judgment call with its reason:
+
+| Verdict | When |
+|---|---|
+| ✅ Ship | No `issue (blocking)` or `todo (blocking)` |
+| ✅ Ship with follow-ups | Safe to merge (flag off, additive) but named items must land before rollout |
+| 🛑 Block | At least one blocker; name what unblocks it |
+
+Before stating it, re-fetch the head SHA (`gh pr view <n> --json headRefOid`). If it moved, re-validate the findings the new commits touch.
+
+### Posting
+
+Output stays local. Post, approve or request changes only after the user asks and confirms; autonomy framings ("address feedback until clean") authorize work, not GitHub writes. When posting, default to inline comments with an empty top-level body, bold the label prefix, and keep the acceptance checklist off GitHub. Use ` ```suggestion ` blocks for one-click mechanical fixes.
 
 ---
 
@@ -160,7 +258,7 @@ Without explicit labels, every comment looks the same urgency. Authors waste tim
 - **Suggest code blocks** with GitHub's `suggestion` syntax when you have an exact alternative — the author can apply with one click
 - **Pull the branch and run it** for non-trivial UI/behavior changes — diffs lie, behavior doesn't
 - **Defer to the author on judgment calls** when both approaches are valid
-- **Praise good work** — use `praise:` so it doesn't read as sarcasm
+- **Praise only when it's specific** — `praise:` for something worth copying, never as a quota
 
 ### DON'T
 
@@ -169,7 +267,8 @@ Without explicit labels, every comment looks the same urgency. Authors waste tim
 - **Don't repeat the same comment** in 10 places — make it once, link the rest: `"Same as line 42."`
 - **Don't make unrelated requests** — "while you're in there" is how PRs balloon
 - **Don't gatekeep on personal style** when the team has no convention — write the convention down first, then enforce it
-- **Don't leave only nits** on a major change — find at least one design-level question or `praise` so the author trusts the read was thorough
+- **Don't leave only nits** on a major change — engage the design so the author trusts the read was thorough
+- **Don't pad** — a clean PR gets a short review
 
 ---
 
@@ -353,11 +452,13 @@ Distinguish **anti-pattern fixes** from **claimed optimizations**:
 
 ### Reviewing
 - [ ] Read the description first; understand the *Why*
-- [ ] Pulled and ran (for non-trivial behavior changes)
+- [ ] Followed linked ticket/resources; checked out the branch and recorded the head SHA
+- [ ] Acceptance criteria rendered as a checklist
+- [ ] Every finding validated by a probe, with a validation note
 - [ ] Used Conventional Comments labels
 - [ ] At most one design-level question; rest are tactical
-- [ ] Praised something genuine
-- [ ] Approved with non-blocking comments OR clearly blocked with action items
+- [ ] Ship verdict stated against the current head SHA
+- [ ] Nothing posted without the user's confirmation
 
 ### Resolving
 - [ ] Every comment replied to (resolved or discussed)
@@ -373,3 +474,6 @@ Distinguish **anti-pattern fixes** from **claimed optimizations**:
 - [GitHub blog: How to review code effectively](https://github.blog/developer-skills/github/how-to-review-code-effectively-a-github-staff-engineers-philosophy/) — staff engineer perspective
 - [Software Engineering at Google, ch. 9](https://abseil.io/resources/swe-book/html/ch09.html) — long-form treatment
 - [Banish "nitpick"](https://www.codetinkerer.com/2024/01/12/nitpick-code-reviews.html) — minority view worth reading
+- [Bacchelli & Bird, *Expectations, Outcomes, and Challenges of Modern Code Review*](https://www.microsoft.com/en-us/research/publication/expectations-outcomes-and-challenges-of-modern-code-review/) — understanding the change dominates review cost
+- [Cursor, *Building Bugbot*](https://cursor.com/blog/building-bugbot) — aggressive investigation plus a strict validation pass
+- [Michael Lynch, *How to Do Code Reviews Like a Human*](https://mtlynch.io/human-code-reviews-1/) — critique code, not people

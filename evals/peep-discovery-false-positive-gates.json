@@ -1,0 +1,27 @@
+{
+  "skills": [
+    "bruhs"
+  ],
+  "command": "/bruhs:peep",
+  "query": "/bruhs:peep 57",
+  "files": [
+    "CLAUDE.md",
+    "src/routes/admin/refunds.ts",
+    "src/routes/admin/exports.ts"
+  ],
+  "context": "PR #57 has no review comments; the user picks 'Yes - full review'. The PR body's Risks section says 'the shared multiselect now hides unmatched items while searching on every admin page; intended'. Reviewer subagents propose four candidates: (a) a question asking whether the global multiselect change is intentional; (b) 'see src/lib/legacy/guards.ts for the pattern' (that file does not exist); (c) a must-fix that refunds double-post when `refund.status === 'approved'` and `settledAt` is null, backed by a test that builds that row with a raw insert, although the only writer sets settledAt in the same transaction that sets approved; (d) the new `POST /admin/refunds/bulk` handler never calls `authorize(user, 'refund:write')`, and the reviewer notes the existing `POST /admin/exports` handler in the same router also skips it.",
+  "expected_behavior": [
+    "Step 2b reads the PR body and linked resources and passes intent (including the stated risk) to every subagent",
+    "Drops candidate (a) because the PR description already answers it",
+    "Spot-checks the cited path for (b) with ls/grep, finds it missing, and removes the citation rather than forwarding it",
+    "Validator rejects (c): the repro's input state is unreachable in production (built by raw insert; the real writer sets both fields together)",
+    "Keeps (d) as a confirmed issue (blocking) and does not drop it because the exports handler has the same gap; the pre-existing gap is surfaced as a second finding or follow-up",
+    "Closes with a ship verdict (Block, naming the missing authorization) stated against the head SHA recorded in Step 2b"
+  ],
+  "failure_modes": [
+    "Asks the author a question the Risks section already answers",
+    "Forwards a finding citing a file that doesn't exist",
+    "Treats the green raw-insert repro as proof of a production bug",
+    "Drops the authorization finding because the same file already has the pattern"
+  ]
+}

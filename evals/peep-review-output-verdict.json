@@ -1,0 +1,24 @@
+{
+  "skills": [
+    "bruhs"
+  ],
+  "command": "/bruhs:peep",
+  "query": "/bruhs:peep 70",
+  "files": [
+    "CLAUDE.md",
+    "src/billing/invoice.ts"
+  ],
+  "context": "PR #70 has no comments; the user picks 'Yes - quick scan'. The PR body links ticket ENG-88 with three acceptance criteria and an error-tracker item. Two findings survive validation: a reproduced rounding bug (issue, blocking) and a suggestion with a query-count probe. One scanner pass also wrote 'branch is 14 commits behind main, consider rebasing'. While the review runs, the author pushes a commit that changes the rounding line.",
+  "expected_behavior": [
+    "Fetches ENG-88 and the error-tracker item before reviewing and uses their acceptance criteria as intent",
+    "Drops the 'behind main / consider rebasing' item as filler (category filter), since no specific conflict or base-side fix depends on it",
+    "Every surviving finding uses '<label> [decoration]: <subject>', a why body, and a one-line validation note naming the probe and result",
+    "Finding bodies contain no arrows or em dashes; sequences are numbered lists",
+    "Before the verdict, re-fetches headRefOid, sees it moved, and re-validates the rounding finding against the new head before stating Ship or Block"
+  ],
+  "failure_modes": [
+    "Posts a Block against a commit that is no longer head",
+    "Reports a finding without a validation note",
+    "Surfaces a generic rebase nit"
+  ]
+}

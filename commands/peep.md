@@ -17,6 +17,7 @@ Uses **isolated subagents** per comment thread to prevent context bleed. Each co
 - [Evidence (Key Principle)](#evidence-key-principle)
 - [Workflow](#workflow)
   - [Step 2a: Load Prior peep History (cross-run dedupe)](#step-2a-load-prior-peep-history-cross-run-dedupe)
+  - [Step 2b: Gather Linked Context](#step-2b-gather-linked-context)
   - [Step 3a: Validator Pass (full review only)](#step-3a-validator-pass-full-review-only)
   - [Step 5a/5b/5c: Category Filter, Dedupe, Persist](#step-5-aggregate-and-present-results)
 - [Output Summary](#output-summary)
@@ -28,8 +29,8 @@ Uses **isolated subagents** per comment thread to prevent context bleed. Each co
 ## Best Practices
 
 - **`practices/engineering-principles.md`** — governing lens. Findings name landmines, require receipts for operational numbers, prefer tripwires over comments, and reject false success.
-- **`practices/pr-review.md`** — primary lens. Conventional Comments labels (`nit`, `suggestion`, `issue`, `praise`, decorations like `(blocking)` / `(non-blocking)`), reviewer/author etiquette, anti-patterns. Loaded by every subagent so categorization stays consistent.
-- **Conventional Comments — always.** Every reply this command drafts or posts to a PR thread (decline rationales, question answers, "addressed in <sha>" notes) MUST use the [Conventional Comments](https://conventionalcomments.org) format — `<label> [decoration]: <subject>` — per `practices/pr-review.md`. No bare prose replies. Reply text follows `practices/writing.md` (lowercase, point first, no AI tells). Likewise, any commit peep makes follows Conventional Commits (`practices/_common.md`).
+- **`practices/pr-review.md`** — primary lens. Conventional Comments labels (`issue`, `suggestion`, `todo`, `question`, `nitpick`, `chore`, decorations like `(blocking)` / `(non-blocking)`), the reviewer workflow (context, evidence by claim type, false-positive special cases), ship verdict, etiquette. Loaded by every subagent so categorization stays consistent.
+- **Conventional Comments — always.** Every reply this command drafts or posts to a PR thread (decline rationales, question answers, "addressed in <sha>" notes) MUST use the [Conventional Comments](https://conventionalcomments.org) format — `<label> [decoration]: <subject>` — per `practices/pr-review.md`. No bare prose replies. A reply that explains or declines without asking for action uses `note:`, the one place that label is allowed (findings never use it). Reply text follows `practices/writing.md` (lowercase, point first, no AI tells). Likewise, any commit peep makes follows Conventional Commits (`practices/_common.md`).
 - **Stack practices** — same as `cook` and `slop`. Use the project's stack to inform what counts as a real issue vs preference.
 - **UI/motion practices** — if a comment or discovery pass touches visible UI, motion, gestures, popovers, drawers, tooltips, tabs, toasts, loading states, or component feel, load `practices/ui-design.md` and `practices/design-engineering.md`. Subagents still use the strict structured output below; when the orchestrator summarizes animation findings to the user, render them with the `Before | After | Why` table and explicit Block/Approve standard from `design-engineering.md`.
 - **`practices/source-ground-truth.md` — dependency behavior is verified, not assumed.** When a comment or finding turns on what a third-party package does, read its installed source (`opensrc path <pkg>`) and cite it — the same zero-hallucination evidence bar in [Evidence](#evidence-key-principle), applied to library code.
@@ -283,6 +284,10 @@ Entry shape:
 
 **`context_hash` invalidates dedupe when the surrounding code changes.** If the user edited the file near the flagged line, the old finding is stale and should be re-surfaced.
 
+### Step 2b: Gather Linked Context
+
+Read the PR body, then fetch every linked resource: the ticket (with its attachments and acceptance criteria), error-tracker items, design docs, threads. Linked resources are ground truth; the PR's prose is a summary of them. Build `intent` (one paragraph: what the PR must accomplish, acceptance criteria, stated risks) and pass it to every subagent below. Record the head SHA (`gh pr view <n> --json headRefOid`) so the verdict and any posting can check it hasn't moved.
+
 ### Step 3: Zero Comments? Offer AI Discovery Review
 
 If there are **0 unresolved comment threads**, offer an AI review pass before skipping to merge readiness. This catches issues that human reviewers missed or haven't gotten to yet.
@@ -319,6 +324,7 @@ Agent({
   prompt: `
 You are reviewing a single file from PR #${number}: "${pr.title}".
 ${pr.description ? `PR description: "${pr.description}"` : ""}
+Intent (from the linked ticket and resources): ${intent}
 
 Your job is to find bugs, security issues, logic errors, and performance problems in this file's changes. Do NOT comment on style, formatting, or naming — those are handled by linters.
 
@@ -330,8 +336,10 @@ Your job is to find bugs, security issues, logic errors, and performance problem
 4. **Investigate aggressively** — check every suspicious pattern. Your tool use is the false-positive filter. If you read the code and confirm it's fine, don't report it.
 5. **If this is UI or motion code**, read \`practices/ui-design.md\` and \`practices/design-engineering.md\` before judging component feel, animation, gestures, or visual polish.
 6. **Only report issues you verified are real** after reading the surrounding code.
+7. **Before reporting, rule out the common false positives** (\`practices/pr-review.md\` → *Special cases*): the PR description or intent already answers it; a path you cite outside the diff doesn't exist (\`ls\` it); your repro builds state production can't reach; a "dead code" claim has an intended consumer; a "looks wrong" value is a recorded decision.
 
 ## What to look for (priority order)
+0. Work an installed tool, existing helper, or established pattern already does
 1. Bugs and logic errors (off-by-one, null deref, race conditions, missing error handling)
 2. Security issues (injection, XSS, hardcoded secrets, improper auth)
 3. Performance anti-patterns — these are bugs, not optimizations. Flag aggressively:
@@ -446,6 +454,9 @@ You are a skeptical validator. Another reviewer claims this is a bug. Your job i
    - Is the claimed pattern (e.g. N+1) actually batched at a lower layer (DataLoader, view, materialized result)?
    - Is the proposed fix actually a behavior change disguised as a bug fix? Does the repro test merely encode the reviewer's preference rather than a real contract?
    - Does the existing test suite encode the current behavior as intentional?
+   - Is the repro's input state reachable in production, built the way production builds it? Hand-built state (fixture overrides, raw writes) proves behavior on that input, not that the input occurs. If unreachable, return \`rejected\`.
+   - Does the PR description, intent, or a recorded decision already answer it? If so, \`rejected\`.
+   - Do **not** reject because the same gap already exists elsewhere in the file. On safety surfaces (authorization, atomicity, audit trails, PII, injection, mass assignment) a pre-existing instance is a second finding, not a defense.
 4. **Reach a verdict.** A finding with no reproducible/tooling evidence cannot be \`confirmed\` — at best \`unsure\`.
 
 ## Output Format (STRICT)
@@ -557,6 +568,7 @@ You are analyzing a single PR review comment in isolation. Do NOT search for or 
 ## PR Context
 - Title: "${pr.title}"
 - Description: "${pr.description}"
+- Intent (linked ticket and resources): ${intent}
 
 ## Review Comment
 - Reviewer: @${thread.comments[0].author.login}
@@ -618,7 +630,7 @@ FIX_OLD_STRING: |
 FIX_NEW_STRING: |
   <replacement string, or "N/A" if not a fix>
 RESPONSE_DRAFT: |
-  <suggested reply to post on the thread, in Conventional Comments format ("<label> [decoration]: <subject>", e.g. "thought (non-blocking): ..."), or "N/A" if not responding>
+  <suggested reply to post on the thread, in Conventional Comments format ("<label> [decoration]: <subject>", e.g. "note: ..." for an explanation or decline), or "N/A" if not responding>
 REASONING: <why this fix/response is correct, what you demonstrated>
 REPRO_TEST: |
   <the failing test you wrote, or "N/A">
@@ -645,7 +657,8 @@ Collect all subagent results. Filter and sort:
 6. **Sort by**: must-fix first, then suggestion, then question
 7. **Within each category**: Confirmed (`reproduced` > `tooling-confirmed`) above Unconfirmed; within a tier, by confidence (highest first)
 8. **Flag low-confidence items** (confidence <= 2) for manual review
-9. **Surface any `dirty-cleanup-needed` subagents immediately** and halt the flow — the working tree may be inconsistent. Show the user which file is affected and let them run `git status` / `git diff` before continuing.
+9. **Close discovery reviews with a ship verdict** (✅ Ship / ✅ Ship with follow-ups / 🛑 Block, per `practices/pr-review.md` → *Review Output*), stated against the head SHA from Step 2b. If the head moved, re-validate the findings the new commits touch first.
+10. **Surface any `dirty-cleanup-needed` subagents immediately** and halt the flow — the working tree may be inconsistent. Show the user which file is affected and let them run `git status` / `git diff` before continuing.
 
 #### Step 5a: Category Filter (lint-territory suppression)
 
@@ -664,6 +677,7 @@ const LINT_TERRITORY = [
   /\bmissing semi(colon)?\b/,
   /\bsingle vs double quote|quote style\b/,
   /\btrailing comma\b/,
+  /\b(behind (main|master)|rebase (onto|on))\b/,  // GitHub diffs against the merge base; staleness alone isn't a finding
 ];
 
 function isLintTerritory(issue) {
@@ -929,9 +943,8 @@ AskUserQuestion({
 First, output the suggested response (drafted by the subagent):
 ```
 Suggested response (Conventional Comments format):
-"thought (non-blocking): Keeping this as-is — it's used in one place and the
-limit is already parameterized in the query, so extracting a constant would be
-over-abstraction. Happy to revisit if it gets reused."
+"note: keeping this as-is. it's used once and the query already parameterizes
+the limit, so a constant would be over-abstraction."
 ```
 
 Then use `AskUserQuestion`:
@@ -967,9 +980,8 @@ Subagent analysis:
   frequently. The reviewer may not have seen the game state context.
 
   Suggested response (Conventional Comments format):
-  "note (non-blocking): The 5-second interval matches our game state polling —
-  during active games the leaderboard changes frequently as matches complete.
-  Happy to make it configurable if you think it's too aggressive."
+  "note: the 5-second interval matches game state polling (useGameState, line 28).
+  during active games the leaderboard changes as matches complete."
 ```
 
 Then use `AskUserQuestion`:
@@ -1450,7 +1462,7 @@ For each iteration `i`:
 
 1. **Review the PR yourself.** Run peep's own discovery review (Step 3) over the diff: subagent-per-file + adversarial validator (thorough), or 3-pass majority vote (quick). On `i ≥ 2`, focus on what changed since the last iteration's push (plus anything still unresolved), so the loop *converges* instead of re-litigating settled code.
 2. **Address actionable findings** under the **same reproduction-first evidence bar** ([Evidence](#evidence-key-principle)) — fan out one isolated subagent per finding (Step 4). Apply `reproduced` / `tooling-confirmed` fixes; for anything it cannot reproduce, record it and **decline** rather than fabricate a fix. There's no external verdict to chase — the bar is real bugs, not a score.
-3. **Resolve** any addressed threads, **validate** the full suite (Step 10), **commit** `fix: self-review pass (peep loop iteration <i>)`, and **push**.
+3. **Validate** the full suite (Step 10), **commit** `fix: self-review pass (peep loop iteration <i>)`, and **push**. Draft thread replies and resolutions; post them only after the user confirms.
 4. **Re-review** on the new state (next iteration).
 
 ### Optional: fold in an installed bot reviewer
@@ -1484,6 +1496,8 @@ Stop and report when **any** holds:
 - **Converge, don't re-litigate.** Use the per-PR history ([Step 2a](#step-2a-load-prior-peep-history-cross-run-dedupe) / Step 5b) so a finding already declined isn't re-raised every iteration; later passes look at the new changes, not the whole diff afresh.
 - **Respect the user's work budget.** Each iteration is a full self-review +
   subagent fan-out (+ CI if `--land`). Do not invent or extend a cap.
+- **Your own PR only.** The loop pushes code, so it runs only on a branch backing one of your open PRs (`gh pr list --author @me --state open`). On someone else's PR, do a single review and keep the output local.
+- **Code pushes are authorized; communication isn't.** Invoking `--loop` (or any "until clean" framing) authorizes pushing fixes to your branch. Replies, thread resolution, reviews and PR-body edits still need the user's explicit yes.
 - **Never bypass hooks or force-push.** Same as the rest of peep.
 
 ### Output
