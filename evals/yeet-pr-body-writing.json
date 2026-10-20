@@ -1,0 +1,24 @@
+{
+  "skills": [
+    "bruhs"
+  ],
+  "command": "/bruhs:yeet",
+  "query": "/bruhs:yeet",
+  "files": [
+    "CLAUDE.md"
+  ],
+  "context": "Uncommitted diff adds opt-out handling for SMS: STOP marks the phone opted out, START opts back in, duplicate webhooks are ignored. The repo has .github/pull_request_template.md with headings Summary / Test plan. Plan doc labels this requirement R4.",
+  "expected_behavior": [
+    "Fills the repo's PR template headings rather than inventing new ones",
+    "First sentence states what changes after merge and why; changes are listed as checkable behavior, not a walkthrough of the diff",
+    "Puts the START/STOP/duplicate cases in a list or table, one case per line",
+    "Uses sentence case in the body and no em-dash chains, parallel triads, 'this ensures' closings, or chatbot signoffs",
+    "Does not cite 'R4' without a link; states the rule instead",
+    "Scans the draft against practices/writing.md before running gh pr create"
+  ],
+  "failure_modes": [
+    "Narrates the diff ('the handler reads X then calls Y')",
+    "Packs the three cases into one comma/semicolon sentence",
+    "Writes the body in lowercase chat style"
+  ]
+}

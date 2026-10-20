@@ -7,7 +7,7 @@ description: End-to-end development lifecycle for AI coding agents — scaffold 
 
 ## Index
 |commands|spawn,claim,cook,verify,yeet,walk,land,peep,dip,slop,doodle,deepen,drill,recap
-|practices|engineering-principles,type-driven-design,architecture-deepening,testing-infrastructure,source-ground-truth,_common,pr-review,typescript-react,typescript-hono,python,python-fastapi,effect-ts,effect-*,rust,rust-*,ui-design,design-engineering
+|practices|engineering-principles,type-driven-design,architecture-deepening,testing-infrastructure,source-ground-truth,_common,writing,pr-review,typescript-react,typescript-hono,python,python-fastapi,effect-ts,effect-*,rust,rust-*,ui-design,design-engineering
 |config|CLAUDE.md + AGENTS.md (`bruhs:state` and `bruhs:rules` blocks)
 
 ## Commands Quick Reference
@@ -270,6 +270,9 @@ Branch: `<type>/<ticket-id>-<short-description>`
 - ❌ Commented-out code
 - ❌ TODO without ticket reference
 - ❌ Plan IDs, people, line numbers (provenance goes in the commit or PR body)
+
+### Writing
+Anything a person reads (PR bodies, tickets, review replies, commits, recaps): fewest words that keep the meaning, point first, lowercase in chat and sentence case in documents, no AI text tells. Scan `practices/writing.md` before sending.
 
 ### External Searches
 Always include current year in WebSearch queries for fresh results.

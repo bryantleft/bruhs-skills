@@ -30,6 +30,7 @@ Ship code that's ready to go. Creates Linear ticket, commits, pushes, and opens 
 PR description + commit + reviewer-assignment quality is governed by **`practices/pr-review.md`**. Key applications in this command:
 
 - **Conventional Commits — always.** Every commit message and the PR title MUST follow the [Conventional Commits](https://www.conventionalcommits.org/) spec (`feat(scope):`, `fix(scope):`, `chore:`, …) per `practices/_common.md`. This is not optional and has no "quick commit" escape hatch — a non-conventional message is a bug in the ship, not a style preference.
+- **PR body and ticket text:** shape and AI-tell scan per **`practices/writing.md`** (sentence case, point first, behavior not diff narration)
 - **PR title:** Conventional Commits format (`feat(scope):`, `fix(scope):`, etc.) — see `_common.md`
 - **UI preview — always for UI changes.** When the diff touches user-visible surface, verify it with `/expect` and capture screenshots + a screen recording, then embed them as a `## UI preview` section in the PR body. Full procedure: **`practices/ui-preview.md`**. A UI PR with no verified preview is incomplete.
 - **PR description template:** *What / Why / How / Test plan / Screenshots* — derived from the diff and Linear ticket context

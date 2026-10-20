@@ -90,7 +90,7 @@ When the user invoked `recap` over a longer window (≥ 5 days) or explicitly as
 
 ### Step 5: Output
 
-Use one of the [Output Templates](#output-templates). Always include the resolved date range.
+Use one of the [Output Templates](#output-templates). Always include the resolved date range. Scan the draft against `practices/writing.md` before showing it.
 
 ## Time Window Resolution
 
