@@ -259,8 +259,12 @@ For full layer specs, diagnostics, gating posture, rejected framings → `practi
 <type>: <description>
 
 Fixes TICKET-123
+
+Assisted-by: Claude:claude-opus-5-5
 ```
 Types: `feat|fix|refactor|chore|docs|test`
+
+Every agent-written commit (including land/peep/doodle fixups) carries `Assisted-by: <Agent>:<model-id>` with the running model, never `Co-Authored-By`. Details → `practices/_common.md` → *AI Attribution*.
 
 Branch: `<type>/<ticket-id>-<short-description>`
 

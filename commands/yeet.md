@@ -284,12 +284,14 @@ git add <file1> <file2> ...
 git add -A
 ```
 
-Commit with ticket reference:
+Commit with ticket reference and an `Assisted-by:` trailer (see `practices/_common.md` → *AI attribution*):
 ```bash
 git commit -m "$(cat <<'EOF'
 <type>: <description>
 
 Fixes <TICKET-ID>
+
+Assisted-by: <Agent>:<model-id>
 EOF
 )"
 ```
@@ -300,6 +302,8 @@ git commit -m "$(cat <<'EOF'
 feat: add leaderboard to game page
 
 Fixes PERDIX-140
+
+Assisted-by: Claude:claude-opus-5-5
 EOF
 )"
 ```
@@ -308,6 +312,8 @@ Without Linear:
 ```bash
 git commit -m "$(cat <<'EOF'
 feat: add leaderboard to game page
+
+Assisted-by: Claude:claude-opus-5-5
 EOF
 )"
 ```

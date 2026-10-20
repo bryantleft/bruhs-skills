@@ -262,6 +262,18 @@ chore(deps): update effect-ts to 3.15
 - Fixes layer composition edge case
 ```
 
+### AI Attribution
+
+Append an `Assisted-by:` trailer to commits an agent wrote, per the [kernel coding-assistants convention](https://docs.kernel.org/process/coding-assistants.html). It documents the tool rather than crediting a person, so never add `Co-Authored-By` for the agent.
+
+```
+Assisted-by: AGENT_NAME:MODEL_ID [tool ...]
+```
+
+- `MODEL_ID` is the model the agent actually ran on, never a CLI or package version: `Assisted-by: Claude:claude-opus-5-5`, `Assisted-by: Codex:gpt-5.6-sol`, not `Codex (codex-cli 0.142.5)`. For a CLI agent, read its configured model (Codex: `model` in `~/.codex/config.toml`).
+- The tool list is optional and only for specialized analysis tools (`semgrep`, `coccinelle`), never git or editors.
+- `Signed-off-by` stays human-only.
+
 ### Branch Names
 
 ```
