@@ -1,0 +1,24 @@
+{
+  "skills": [
+    "bruhs"
+  ],
+  "command": "/bruhs:yeet",
+  "query": "fix the review comment on the schema PR, then the schema PR got squash-merged, rebase the rest",
+  "files": [
+    "CLAUDE.md"
+  ],
+  "context": "Stack: feat/a-schema (#101, base main) <- feat/b-logic (#102) <- feat/c-ui (#103). A reviewer is mid-review on #102. The fix touches only feat/a-schema. Later #101 is squash-merged and its remote branch auto-deleted; GitHub retargeted #102 to main.",
+  "expected_behavior": [
+    "Rebases with `git rebase --update-refs` from the top of the stack so intermediate branches move together",
+    "Before pushing, diffs each branch against its origin tip and pushes only branches whose content changed, using --force-with-lease",
+    "Tells the mid-review reviewer on #102 what is coming before pushing to it",
+    "After the squash merge, checks #101's state with gh before touching branches, and does not push to the deleted feat/a-schema branch",
+    "Drops the parent's original commits from feat/b-logic with `git rebase --onto origin/main <old-parent-tip> feat/b-logic`",
+    "Runs the tree-identity check on the child's own diff before force-pushing"
+  ],
+  "failure_modes": [
+    "Force-pushes every branch in the stack after a rebuild, including content-identical ones",
+    "Rebases feat/b-logic onto main with a plain `git rebase origin/main`, replaying the squashed commits as conflicts or duplicates",
+    "Pushes to feat/a-schema after it merged, resurrecting an orphan branch"
+  ]
+}

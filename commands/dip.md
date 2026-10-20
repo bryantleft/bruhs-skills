@@ -98,9 +98,13 @@ git pull origin <baseBranch>
 
 ### Step 5: Delete Feature Branch
 
-Get the branch we were on:
+Get the branch we were on. If open PRs are stacked on it, record its tip first: the children need it to drop the squashed commits (`commands/yeet.md` → *Stacked PRs* → *Merge bottom-up*).
 
 ```bash
+# Stacked children? Save the tip before deleting
+gh pr list --base <featureBranch> --json number,headRefName
+git rev-parse <featureBranch>    # <old-parent-tip>
+
 # Delete local branch
 git branch -d <featureBranch>
 

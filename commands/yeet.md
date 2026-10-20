@@ -16,6 +16,8 @@ Ship code that's ready to go. Creates Linear ticket, commits, pushes, and opens 
 - [Git-Only Mode](#git-only-mode)
 - [Examples](#examples)
 - [Git Best Practices](#git-best-practices)
+- [Stacked PRs](#stacked-prs)
+- [Tree-Identity Guard](#tree-identity-guard)
 - [Tips](#tips)
 
 ---
@@ -34,7 +36,7 @@ PR description + commit + reviewer-assignment quality is governed by **`practice
 - **PR title:** Conventional Commits format (`feat(scope):`, `fix(scope):`, etc.) — see `_common.md`
 - **UI preview — always for UI changes.** When the diff touches user-visible surface, verify it with `/expect` and capture screenshots + a screen recording, then embed them as a `## UI preview` section in the PR body. Full procedure: **`practices/ui-preview.md`**. A UI PR with no verified preview is incomplete.
 - **PR description template:** *What / Why / How / Test plan / Screenshots* — derived from the diff and Linear ticket context
-- **Size discipline:** if the diff is > 400 LOC, warn the user and suggest splitting (or accept with a justification noted in the PR body)
+- **Size discipline:** if the diff is > 400 LOC, warn the user and suggest splitting into a [stack](#stacked-prs) (or accept with a justification noted in the PR body)
 - **CODEOWNERS:** if `.github/CODEOWNERS` exists, GitHub auto-requests reviewers; don't manually re-request
 - **Diagram:** for non-trivial architectural changes, suggest `/bruhs:doodle pr` after the PR opens to attach a visualization comment
 - **Walkthrough:** for ≥ 10-file PRs or anything with significant moved code, suggest `/bruhs:walk --post` after the PR opens to drop a reviewer-friendly walkthrough comment
@@ -835,6 +837,64 @@ When the user asks for a clean commit history before pushing, group commits in *
 5. Tests
 
 If the current branch's commits don't follow this order, offer to reorganize via `git rebase -i`. Only do this when the user explicitly approves — see [Tree-Identity Guard](#tree-identity-guard).
+
+## Stacked PRs
+
+Stack when one change is too big to review in one pass but its parts depend on each other. Each PR targets the branch below it, so each diff shows only its own layer.
+
+### Slice by subject
+
+- One subject per PR, in dependency order: schema/storage first, then core logic, then wiring, then UI.
+- Schema or migration changes ship in their own PR ahead of the code that uses them.
+- A change to a shared file lands in the PR that owns that subject, not the PR that happened to need it.
+
+### Create
+
+```bash
+git switch -c feat/a-schema origin/main      # bottom of the stack
+# ...commit...
+git push -u origin feat/a-schema
+gh pr create --draft --base main --title "feat(store): add rewards table" --body-file <body>
+
+git switch -c feat/b-logic                   # branch from the layer below
+# ...commit...
+git push -u origin feat/b-logic
+gh pr create --draft --base feat/a-schema --title "feat(rewards): grant on purchase" --body-file <body>
+```
+
+Each PR body opens with the stack position and links: `Stack: 2/3 — after #101, before #103`.
+
+### Update a lower layer
+
+```bash
+git switch feat/c-ui                          # top of the stack
+git rebase --update-refs feat/a-schema        # moves every branch in between too (git ≥ 2.38)
+```
+
+Then **push only branches whose content moved**. A reviewer sees a moved SHA and can't tell a no-op rewrite from a real change, so every push resets their confidence in what they already read.
+
+```bash
+for b in feat/a-schema feat/b-logic feat/c-ui; do
+  git diff --quiet "origin/$b" "$b" && echo "skip $b (unchanged)" && continue
+  git push --force-with-lease origin "$b"
+done
+```
+
+If a reviewer is mid-review, batch the fixes, verify locally, tell them what's coming, and push once.
+
+### Merge bottom-up
+
+1. Merge the bottom PR. When its branch is deleted, GitHub retargets the next PR to `main`.
+2. Before touching the next branch, confirm its parent is merged: `gh pr view <n> --json state,baseRefName`. Pushing to a merged PR's deleted branch silently recreates it as an orphan.
+3. After a **squash** merge, the child still carries the parent's original commits. Drop them:
+   ```bash
+   git fetch origin
+   git rebase --onto origin/main <old-parent-tip> feat/b-logic
+   gh pr edit <n> --base main        # if GitHub didn't retarget
+   ```
+   `<old-parent-tip>` is the last commit of the parent branch before the merge (`git rev-parse feat/a-schema` before you delete it locally).
+4. Run the [Tree-Identity Guard](#tree-identity-guard) on the child's own diff (`git diff origin/main...HEAD`) before pushing.
+5. Repeat for each layer; `/bruhs:dip` once the top merges.
 
 ## Tree-Identity Guard
 

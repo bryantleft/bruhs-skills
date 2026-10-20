@@ -268,6 +268,8 @@ Every agent-written commit (including land/peep/doodle fixups) carries `Assisted
 
 Branch: `<type>/<ticket-id>-<short-description>`
 
+Stacked PRs → `commands/yeet.md` → *Stacked PRs*.
+
 ### Comments
 - ✅ WHY (business logic, workarounds, non-obvious decisions)
 - ❌ WHAT (code already says what it does)

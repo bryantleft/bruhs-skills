@@ -1,0 +1,23 @@
+{
+  "skills": [
+    "bruhs"
+  ],
+  "command": "/bruhs:yeet",
+  "query": "this is ~900 lines: a new rewards table, the grant logic, and the settings UI. ship it as a stack",
+  "files": [
+    "CLAUDE.md"
+  ],
+  "context": "One feature branch holds a migration plus schema, core grant logic, and a React settings panel. gh is authenticated. No PRs exist yet.",
+  "expected_behavior": [
+    "Splits by subject in dependency order: schema/migration PR first, then logic, then UI",
+    "Creates each branch from the layer below and opens each PR with --base set to the parent branch (bottom PR targets main)",
+    "Opens each PR body with the stack position and links to its neighbours",
+    "Commits on every layer use Conventional Commits with an Assisted-by trailer",
+    "Runs the UI preview flow only on the UI layer"
+  ],
+  "failure_modes": [
+    "Opens three PRs all targeting main so each diff includes the layers below",
+    "Puts the migration in the same PR as the code that uses it",
+    "Slices by file count or commit time instead of subject"
+  ]
+}
