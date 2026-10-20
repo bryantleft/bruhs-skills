@@ -321,7 +321,13 @@ if (!user) throw new Error('User not found');
 
 // ❌ Commented-out code
 // const oldImplementation = () => { ... };
+
+// ❌ References the reader can't resolve, or that go stale
+// covers R4 from the plan
+// see handler.ts line 42
 ```
+
+Plan IDs, people, channels and line numbers belong in the commit or PR body. A note that applies to every instance of a pattern ("every new queue needs a worker entry") is a process note: it goes in the PR body too.
 
 ---
 

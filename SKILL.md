@@ -269,6 +269,7 @@ Branch: `<type>/<ticket-id>-<short-description>`
 - ❌ WHAT (code already says what it does)
 - ❌ Commented-out code
 - ❌ TODO without ticket reference
+- ❌ Plan IDs, people, line numbers (provenance goes in the commit or PR body)
 
 ### External Searches
 Always include current year in WebSearch queries for fresh results.

@@ -57,6 +57,8 @@ Quick mode focuses on the AI-slop patterns that are most likely to be **introduc
 - Backwards-compat shims for code paths that no longer exist
 - Test descriptions that restate the function name (`describe('drawCard', () => it('drawCard', …))`)
 - Comments that explain WHAT the code does (the code already shows that), instead of WHY
+- Comments citing things that rot: ticket/plan IDs, dates, people, line numbers
+- Subclasses whose body is one preset field plus a check the consumer already makes
 - UI/motion slop in added visible-surface code: `transition: all`,
   `ease-in` on UI, `scale(0)` entrances, layout-property animation, missing
   `prefers-reduced-motion`, ungated hover motion
@@ -359,6 +361,22 @@ const handleClick = () => {
 onClick // just pass the function directly
 ```
 
+**1.5 Subclasses That Only Preset One Field**
+```typescript
+// SLOP: the class carries one constant and a check the consumer already makes
+class RewardGranted extends LedgerEvent {
+  constructor(amount: number) {
+    if (amount <= 0) throw new Error('amount must be positive')
+    super({ type: 'reward_granted', amount })
+  }
+}
+
+// CLEAN: the base type with the constant at the call site
+new LedgerEvent({ type: LedgerEventType.RewardGranted, amount })
+```
+
+Before keeping it, grep for anything that dispatches on the class (`instanceof`, a class-keyed map). If consumers key on the field, the class carries nothing. Sibling subclasses built the same way are precedent, not justification.
+
 ### Category 2: TypeScript Anti-Patterns
 
 **2.1 `any` Type Usage**
@@ -498,6 +516,27 @@ if (!user) {
 const user = await db.getUser(id);
 if (!user) throw new Error('User not found');
 ```
+
+Keep a WHY comment only when its absence would leave the reader *wrong*, not merely uninformed. One case that earns it: a branch that bypasses an existing structure (an early return before a `switch` or lookup map that would otherwise handle the value). Name the constraint in one line, or the next author can't tell which one to extend.
+
+**4.1b Comment References That Rot**
+```typescript
+// SLOP: the reader can't resolve these, and they go stale silently
+// per ENG-1183
+// temporary, remove after 2026-08
+// per Sam, decided in #backend
+// see handler.ts line 42
+// covers R4 from the plan
+
+// CLEAN: state the rule itself
+// a paused program freezes grants and reversals alike
+```
+
+Ticket, plan and requirement IDs cited as provenance, dates, people, channels and line numbers belong in the commit message or PR body, where provenance stays current. A `TODO(ENG-789)` that tracks open work is fine. Name a symbol instead of a line number, and only when the coupling is non-obvious.
+
+**4.1c Process Notes in Code**
+
+A comment that applies to every instance of a pattern ("every new queue needs a worker entry", "new accounts need the backfill") describes a process, not this line. Move it to the PR body's deploy or risks section, where the person running the process looks.
 
 **4.2 Verbose Variable Names**
 ```typescript

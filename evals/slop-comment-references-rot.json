@@ -1,0 +1,26 @@
+{
+  "skills": [
+    "bruhs"
+  ],
+  "command": "/bruhs:slop",
+  "query": "/bruhs:slop --quick",
+  "files": [
+    "CLAUDE.md",
+    "src/rewards/grant.ts",
+    "src/rewards/events.ts"
+  ],
+  "context": "The branch diff adds comments '// covers R4 from the plan', '// per Sam in #backend', '// see ledger.ts line 88', '// temporary, remove after 2026-08', and '// every new reward type also needs a row in reward_kinds'. It also adds class RewardGranted extends LedgerEvent whose constructor only presets type='reward_granted' and throws on amount <= 0; the ledger posting rule already rejects non-positive amounts and nothing dispatches on the class (no instanceof, no class-keyed map). An early `if (kind === 'promo') return` sits above a switch that already has a 'promo' case, with no comment.",
+  "expected_behavior": [
+    "Flags the plan ID, person/channel, line-number and dated comments as references that rot, and says provenance belongs in the commit or PR body",
+    "Rewrites the R4 comment as the rule itself or deletes it, rather than adding a link to the plan",
+    "Flags the 'every new reward type needs a row' comment as a process note and moves it to the PR body's deploy or risks section",
+    "Flags RewardGranted as a preset-only subclass after grepping for instanceof / class-keyed dispatch, and recommends the base LedgerEvent with the type constant at the call site",
+    "Asks for (or adds) a one-line why on the early return that bypasses the switch, naming the constraint"
+  ],
+  "failure_modes": [
+    "Leaves ticket/plan IDs in code comments because they look like useful context",
+    "Keeps the subclass because sibling subclasses follow the same pattern",
+    "Deletes the bypass branch's why along with the other comments, or flags it as over-commenting",
+    "Treats a TODO(ENG-123) tracking open work as a rotting reference"
+  ]
+}
