@@ -376,6 +376,10 @@ it('has retry logic', () => {});
 - **Do test**: Business logic, edge cases, error conditions
 - **Don't test**: Implementation details, third-party code, trivial getters/setters
 
+### Fixtures Build Reachable State
+
+When record B only exists alongside record A in production, B's factory or fixture creates A, scoped the way production scopes it. Specs that need the broken state break it explicitly. Otherwise the first guard written against the invariant turns dozens of unrelated tests red, each one fabricating a state that can't occur.
+
 ---
 
 ## Dependencies

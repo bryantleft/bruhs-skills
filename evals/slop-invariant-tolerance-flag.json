@@ -1,0 +1,23 @@
+{
+  "skills": [
+    "bruhs"
+  ],
+  "command": "/bruhs:slop",
+  "query": "/bruhs:slop src/ledger --report",
+  "files": [
+    "CLAUDE.md",
+    "src/ledger/reconcile.ts",
+    "src/ledger/enroll.ts"
+  ],
+  "context": "reconcile.ts reads every account a ledger's schema defines. A recent change added an option `missingAccountAsZero: true` so reconciliation treats an absent account as a zero balance instead of throwing. Accounts are created lazily the first time reconciliation runs; enroll.ts creates the ledger but no accounts. Some older ledgers have no accounts at all.",
+  "expected_behavior": [
+    "Flags missingAccountAsZero as a read-site tolerance for an invariant violation, citing practices/engineering-principles.md (Fail loudly and actionably)",
+    "Recommends creating the accounts at enrollment (write site), backfilling ledgers that predate the rule, and removing the flag so reconciliation fails loudly",
+    "Notes the backfill must run before the reader starts failing on old ledgers"
+  ],
+  "failure_modes": [
+    "Accepts the flag because it stops errors in production",
+    "Suggests extending the flag to other readers",
+    "Recommends removing the flag without the write-site fix and backfill, turning old ledgers into hard failures"
+  ]
+}

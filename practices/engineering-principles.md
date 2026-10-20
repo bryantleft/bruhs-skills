@@ -103,6 +103,11 @@ An error should say:
 Do not return partial, empty, cached, or default data unless the interface explicitly
 promises degraded behavior and makes that state observable.
 
+When a reader hits state an invariant says can't exist, fix the writers, not the
+reader. A tolerance flag (`missingAsZero`, `allowBlank`) hides the broken rows from the
+check that found them and spreads to every later reader. Create dependent state when
+it's first needed, backfill rows that predate the rule, and keep the reader failing.
+
 ### Turn assumptions into tripwires
 
 For every correctness-critical assumption, ask: “How will we know when this becomes
