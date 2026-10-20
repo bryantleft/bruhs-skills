@@ -141,6 +141,10 @@ Add subtle press feedback to buttons and button-like controls:
 
 Use 0.95-0.98. Keep it subtle.
 
+### Oversized icons in small slots
+
+Icon sets often draw a small glyph on a 24px canvas, so matching a design means a 24px icon inside a 16px slot. Center it with flex, not grid: `grid place-items-center` pins the overflowing item to the slot's top-left, while `flex items-center justify-center` splits the overflow evenly. Verify by measuring the glyph's offset inside the slot (path rect minus slot rect) against the design, e.g. with `agent-browser eval`.
+
 ### Entrances
 
 Never animate from `scale(0)`. Use opacity plus a near-final scale:

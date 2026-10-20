@@ -33,6 +33,21 @@ Capture against a **running dev server** (start it if needed; remember whether y
 // Tools are prefixed mcp__chrome-devtools__* (navigate, set viewport, screenshot).
 ```
 
+**Scripted measurement + recording — [agent-browser](https://github.com/vercel-labs/agent-browser)** (`npm i -g agent-browser && agent-browser install`). It drives its own Chrome, so it doesn't touch the user's browser, and one pass can interact, measure and record. Use it when a parity claim needs a number ("the icon sits 4px off") or when chrome-devtools isn't connected:
+
+```bash
+agent-browser set viewport 1280 800 2                                  # 2 = retina
+agent-browser record start /tmp/bruhs-ui-preview/video/demo.mp4 http://127.0.0.1:<port>/<route> --cursor
+agent-browser wait --text "<visible text>"
+agent-browser snapshot                                                 # get @eN refs
+agent-browser click @e2
+agent-browser eval "JSON.stringify(document.querySelector('<sel>').getBoundingClientRect())"
+agent-browser screenshot /tmp/bruhs-ui-preview/desktop-after.png
+agent-browser record stop                                              # needs ffmpeg (agent-browser doctor)
+```
+
+It starts from a fresh profile, so log in as part of the flow for authenticated pages.
+
 **Fallback — the project's Playwright** (do not add it as a dep just for this; use what's in `package.json`). This both screenshots and records the interaction as video in one session:
 
 ```javascript
