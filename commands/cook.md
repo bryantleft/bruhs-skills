@@ -325,6 +325,9 @@ Planning...
 - [ ] Errors say what failed, why, which assumption or limit was involved, and how to fix it
 - [ ] Mutation, caching, retries, fallbacks, I/O, and lifecycle ownership are visible
 - [ ] The design deletes or centralizes complexity instead of moving it behind a new abstraction
+- [ ] Non-goals are listed when the feature has decided exclusions (distinct from deferrals, which name when they come back)
+- [ ] If it launches behind a flag, the flag-off story is stated: what happens to in-flight state when the flag is turned off *after* launch
+- [ ] If it exposes data or actions to a new audience, the authz model and tenant scoping of submitted ids are stated
 
 When multiple meaningful approaches remain, use `AskUserQuestion` for selection:
 

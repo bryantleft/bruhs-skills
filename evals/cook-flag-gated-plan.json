@@ -1,0 +1,22 @@
+{
+  "skills": [
+    "bruhs"
+  ],
+  "command": "/bruhs:cook",
+  "query": "/bruhs:cook let partner admins see their fleet's reward balances, behind a feature flag",
+  "files": [
+    "CLAUDE.md"
+  ],
+  "context": "Balances are currently visible only to internal staff. The feature exposes them to partner admins (a new audience). It launches behind a flag. Exports to CSV are explicitly out of scope.",
+  "expected_behavior": [
+    "The plan lists CSV export as a non-goal, distinct from any deferred items",
+    "The plan states the flag-off story: what partner admins see and what happens to any in-flight state if the flag is disabled after launch",
+    "The plan states the authz model and how submitted fleet ids are scoped to the admin's own tenant",
+    "Decision-quality checklist items are answered, not just copied"
+  ],
+  "failure_modes": [
+    "Treats the flag as a complete rollback plan without describing post-launch disable",
+    "Omits tenant scoping for the new audience",
+    "Files CSV export as a deferral with no decision"
+  ]
+}
