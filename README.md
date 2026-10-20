@@ -152,6 +152,7 @@ Stack-agnostic and stack-specific guidance, loaded conditionally by `cook` and `
 | `practices/testing-infrastructure.md` | The 8 testing layers, gating posture, kill ratio (used by drill) |
 | `practices/_common.md` | Universal — naming, git, errors, testing |
 | `practices/pr-review.md` | PR authoring + review etiquette (used by peep) |
+| `practices/design-docs.md` | Technical design docs — when to write one, 1–3 page shape, problem section, diagram rules, review gates, template |
 | `practices/writing.md` | Human-facing text — chat vs document case, document shape, AI text tells |
 | `practices/typescript-react.md` | TypeScript + React (Next.js, React Native, Tauri, Electron) |
 | `practices/typescript-hono.md` | Hono framework patterns |

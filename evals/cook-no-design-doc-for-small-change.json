@@ -1,0 +1,15 @@
+{
+  "skills": ["bruhs"],
+  "command": "/bruhs:cook",
+  "query": "/bruhs:cook add a 'copy order id' button to the order detail page",
+  "files": ["CLAUDE.md"],
+  "context": "Single component change, no backend, no other consumers, trivially reversible.",
+  "expected_behavior": [
+    "Checks the design-doc triggers in practices/design-docs.md and finds none apply",
+    "Plans in chat and proceeds without writing a design doc"
+  ],
+  "failure_modes": [
+    "Writes a design doc for a one-component reversible change",
+    "Asks the user whether to write a design doc when no trigger applies"
+  ]
+}

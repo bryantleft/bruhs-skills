@@ -276,6 +276,8 @@ Use the Task tool with `subagent_type: "feature-dev:code-explorer"` to:
 
 ### Step 3: Plan
 
+**Design doc first when the work warrants it.** If two or more of the triggers in `practices/design-docs.md` → *When to write one* apply (unclear design, multi-PR, other teams depend on it, hard-to-reverse choice, security/money/data at stake), write the doc per that file before building. Save it where the project keeps design docs (`docs/design/`, `docs/rfcs/`, an existing ADR folder); if there's none, ask. The approaches below become its Design and Alternatives sections. Run the cold-read gate, then get the user's approval on the doc before Step 4. Otherwise, plan in chat as below.
+
 Design genuinely distinct approaches based on exploration. Present alternatives when
 there is a real trade-off; if one design follows directly from the constraints, present
 it and explain why extra options would be theater.
