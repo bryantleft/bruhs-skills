@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
@@ -71,3 +71,7 @@ class RunResult:
     final_message: str
     diff_path: Path
     transcript_path: Path
+    # R9: absolute paths outside the run's sandbox (real home, source repos) seen in output
+    contaminated: bool = False
+    contamination: list[str] = field(default_factory=list)
+    workspace: Path | None = None  # agent's checkout, kept in the work root for graders
