@@ -19,6 +19,7 @@ from bruhsbench.homes import (
     parse_codex_prompt_skills,
     parse_grok_inspect,
     probe_isolation,
+    sanitized_path,
     synced_extensions,
 )
 
@@ -141,6 +142,23 @@ def test_build_home_bruhs_installs_bruhs_and_expect(cli, tmp_path, bruhs_src, re
     # the benchmark itself (reference solutions, plan) must never ride along with the skill
     assert not (bruhs_dir / "bench").exists()
     assert not (bruhs_dir / "docs").exists()
+
+
+def test_sanitized_path_drops_bench_venv_and_repo(tmp_path):
+    venv = tmp_path / "venv"
+    repo = tmp_path / "repo"
+    path = ":".join([str(venv / "bin"), "/usr/bin", str(repo / "bench/.venv/bin"),
+                     str(tmp_path / "repo-other/bin"), "", "/bin"])
+    assert sanitized_path(path, exclude=[repo, venv]) == ":".join(
+        ["/usr/bin", str(tmp_path / "repo-other/bin"), "/bin"])
+
+
+def test_build_home_path_excludes_virtualenv(tmp_path, bruhs_src, real_home, monkeypatch):
+    venv = tmp_path / "venv"
+    monkeypatch.setenv("VIRTUAL_ENV", str(venv))
+    monkeypatch.setenv("PATH", f"{venv / 'bin'}:{REPO_ROOT / 'bench/.venv/bin'}:/usr/bin:/bin")
+    env, _ = _build("claude", "bare", tmp_path, bruhs_src, real_home)
+    assert env["PATH"] == "/usr/bin:/bin"
 
 
 @pytest.mark.parametrize("cli", CLIS)

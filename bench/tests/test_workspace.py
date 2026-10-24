@@ -89,6 +89,16 @@ def test_insert_creates_blocks(tmp_path):
     assert (repo / "AGENTS.md").exists()
 
 
+def test_insert_with_no_detected_stack_writes_state_only(tmp_path):
+    root = tmp_path / "plain"
+    root.mkdir()
+    (root / "notes.txt").write_text("no manifest here\n")
+    insert_bruhs_blocks(root)
+    text = (root / "CLAUDE.md").read_text()
+    assert "bruhs:state:begin" in text
+    assert "bruhs:rules:begin" not in text
+
+
 def test_bare_and_bruhs_differ_only_in_blocks(tmp_path):
     repo, base = make_repo(tmp_path)
     task = make_task(tmp_path, repo, base)
@@ -158,6 +168,14 @@ def test_setup_failure_raises(tmp_path):
 def test_setup_failure_excludes_task(tmp_path):
     repo, base = make_repo(tmp_path)
     bad = make_task(tmp_path, repo, base, setup="exit 1\n")
+    assert check_task_setup(bad, tmp_path / "scratch") is False
+
+
+def test_setup_failing_only_in_bruhs_arm_excludes_task(tmp_path):
+    repo, base = make_repo(tmp_path)
+    # setup runs after the bruhs blocks are inserted, so it can tell the arms apart
+    bad = make_task(tmp_path, repo, base, setup="! grep -q bruhs:state CLAUDE.md\n")
+    prepare_workspace(bad, "bare", tmp_path / "ws")  # bare arm alone is fine
     assert check_task_setup(bad, tmp_path / "scratch") is False
 
 

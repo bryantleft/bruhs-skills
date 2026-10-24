@@ -22,10 +22,8 @@ CODEX = ModelSpec("codex", "gpt-6.1-sol", "high")
 def make_task(root: Path, task_id: str, setup: str | None = None):
     d = root / "tasks" / task_id
     (d / "fixture").mkdir(parents=True)
+    # no manifest: the bruhs arm also covers the empty-stack path (state block only)
     (d / "fixture" / "app.txt").write_text("hello\n")
-    # a detectable stack: the bruhs arm's rules block is empty otherwise
-    (d / "fixture" / "package.json").write_text(
-        '{"name":"x","dependencies":{"next":"15.0.0","react":"19.0.0"}}\n')
     (d / "task.toml").write_text(f'id = "{task_id}"\ncategory = "feature"\n')
     (d / "prompt.md").write_text("change app.txt\n")
     if setup is not None:
@@ -45,12 +43,14 @@ def override(script: Path):
     return lambda spec, argv: ["bash", str(script)]
 
 
-CLAUDE_OK = (FIXTURES / "claude.json").read_text().strip()
-CLAUDE_AUTH = (FIXTURES / "claude_auth_error.json").read_text().strip()
+CLAUDE_OK = (FIXTURES / "claude.jsonl").read_text().strip()
+CLAUDE_TOOL = (FIXTURES / "claude_tool.jsonl").read_text().strip()
+CLAUDE_AUTH = (FIXTURES / "claude_auth_error.jsonl").read_text().strip()
 
 EDIT_AND_REPLY = f"""
 echo changed > app.txt
 echo new > new.txt
+printf '\\x00\\x01\\x02' > blob.bin
 cat <<'EOF'
 {CLAUDE_OK}
 EOF
@@ -90,16 +90,17 @@ def test_run_one_writes_artifacts(tmp_path, bruhs_src):
     d = out / spec.run_id
     assert res.status == "ok"
     assert res.final_message == "ok"
-    assert res.turns == 1 and res.cost_usd == pytest.approx(0.0476062)
-    assert res.input_tokens == 2 + 5662 + 11111 and res.output_tokens == 4
-    assert res.transcript_path == d / "transcript.json"
-    assert json.loads(res.transcript_path.read_text())["result"] == "ok"
+    assert res.turns == 1 and res.cost_usd == pytest.approx(0.0468622)
+    assert res.input_tokens == 2 + 5569 + 11111 and res.output_tokens == 4
+    assert res.transcript_path == d / "transcript.jsonl"
+    assert res.transcript_path.read_text().strip() == CLAUDE_OK
     assert (d / "final.txt").read_text() == "ok"
     assert (d / "stderr.txt").exists()
 
     diff = res.diff_path.read_text()
     assert res.diff_path == d / "diff.patch"
     assert "+changed" in diff and "-hello" in diff and "new.txt" in diff
+    assert "GIT binary patch" in diff  # --binary: binary changes can be re-applied
 
     # workspace stays in the work root (outside the results dir), path recorded
     assert res.workspace is not None and res.workspace.is_dir()
@@ -110,7 +111,8 @@ def test_run_one_writes_artifacts(tmp_path, bruhs_src):
     saved = json.loads((d / "result.json").read_text())
     assert saved["status"] == "ok" and saved["run_id"] == spec.run_id
     assert saved["workspace"] == str(res.workspace)
-    assert saved["contaminated"] is False and saved["contamination"] == []
+    # the transcript has no tool events, so nothing could be checked
+    assert saved["contaminated"] is None and saved["contamination"] == []
     assert runner.load_result(d / "result.json") == res
 
 
@@ -219,6 +221,51 @@ def test_run_one_marks_contaminated(tmp_path, bruhs_src):
     assert str(leak) in res.contamination
 
 
+def reply_with(transcript: str) -> str:
+    return f"cat <<'EOF'\n{transcript}\nEOF\n"
+
+
+def test_stream_json_tool_call_reading_real_claude_dir_flagged(tmp_path, bruhs_src):
+    task = make_task(tmp_path, "t1")
+    leak = Path.home() / ".claude" / "settings.json"
+    transcript = CLAUDE_TOOL.replace("cat hello.txt", f"cat {leak}")
+    assert str(leak) in transcript
+    res = run_one(RunSpec(task, CLAUDE, "bare", 1), tmp_path / "out", bruhs_src=bruhs_src,
+                  command_override=override(fake_agent(tmp_path, reply_with(transcript))))
+    assert res.contaminated is True
+    assert res.contamination == [str(leak)]
+
+
+def test_clean_tool_transcript_not_contaminated(tmp_path, bruhs_src):
+    task = make_task(tmp_path, "t1")
+    res = run_one(RunSpec(task, CLAUDE, "bare", 1), tmp_path / "out", bruhs_src=bruhs_src,
+                  command_override=override(fake_agent(tmp_path, reply_with(CLAUDE_TOOL))))
+    assert res.contaminated is False and res.contamination == []
+
+
+def test_session_log_in_run_home_scanned(tmp_path, bruhs_src):
+    task = make_task(tmp_path, "t1")
+    leak = Path.home() / ".agents" / "skills" / "x" / "SKILL.md"
+    line = json.dumps({"type": "assistant", "message": {"content": [
+        {"type": "tool_use", "name": "Read", "input": {"file_path": str(leak)}}]}})
+    body = (f'mkdir -p "$HOME/.claude/projects/p"\n'
+            f"cat > \"$HOME/.claude/projects/p/s.jsonl\" <<'EOF'\n{line}\nEOF\n"
+            + reply_with(CLAUDE_OK))
+    res = run_one(RunSpec(task, CLAUDE, "bare", 1), tmp_path / "out", bruhs_src=bruhs_src,
+                  command_override=override(fake_agent(tmp_path, body)))
+    assert res.contaminated is True and res.contamination == [str(leak)]
+
+
+def test_clean_session_log_counts_as_tool_level(tmp_path, bruhs_src):
+    task = make_task(tmp_path, "t1")
+    line = '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash"}]}}'
+    body = (f'mkdir -p "$HOME/.claude/projects/p"\n'
+            f"echo '{line}' > \"$HOME/.claude/projects/p/s.jsonl\"\n" + reply_with(CLAUDE_OK))
+    res = run_one(RunSpec(task, CLAUDE, "bare", 1), tmp_path / "out", bruhs_src=bruhs_src,
+                  command_override=override(fake_agent(tmp_path, body)))
+    assert res.contaminated is False
+
+
 # --------------------------------------------------------------------------- matrix
 
 
@@ -245,6 +292,18 @@ def test_matrix_interleaves_arms():
     assert "bare" in firsts and "bruhs" in firsts
     nested = [(t, m, r) for t in tasks for m in (CLAUDE, CODEX) for r in (1, 2, 3)]
     assert [(o.task, o.model, o.repeat) for o in order[::2]] != nested
+
+
+def gone(pid: int, wait_s: float = 5) -> bool:
+    for _ in range(int(wait_s * 10)):
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        except PermissionError:  # zombie not yet reaped
+            pass
+        time.sleep(0.1)
+    return False
 
 
 def test_resume_skips_completed(tmp_path):
@@ -274,6 +333,19 @@ def test_resume_skips_completed(tmp_path):
     assert len(meta["starts"]) == 2
 
 
+def test_resume_refuses_changed_matrix(tmp_path):
+    t1, t2 = make_task(tmp_path, "t1"), make_task(tmp_path, "t2")
+    out = tmp_path / "out"
+    ov = override(fake_agent(tmp_path, EDIT_AND_REPLY))
+    run_matrix([t1], [CLAUDE], ["bare"], 1, out, command_override=ov)
+    for kwargs, field in (({"repeats": 2}, "repeats"), ({"models": [CODEX]}, "models"),
+                          ({"tasks": [t1, t2]}, "tasks")):
+        args = {"tasks": [t1], "models": [CLAUDE], "repeats": 1, **kwargs}
+        with pytest.raises(ValueError, match=field):
+            run_matrix(args["tasks"], args["models"], ["bare"], args["repeats"], out,
+                       command_override=ov)
+
+
 def test_auth_failure_aborts_matrix(tmp_path):
     task = make_task(tmp_path, "t1")
     counter = tmp_path / "count"
@@ -282,6 +354,57 @@ def test_auth_failure_aborts_matrix(tmp_path):
         run_matrix([task], [CLAUDE], ["bare", "bruhs"], 3, tmp_path / "out", parallel=1,
                    command_override=override(fake_agent(tmp_path, body)))
     assert runs_started(counter) == 1
+
+
+def test_harness_exception_recorded_and_matrix_continues(tmp_path, monkeypatch):
+    good, bad = make_task(tmp_path, "good"), make_task(tmp_path, "bad")
+    real_prepare = runner.prepare_workspace
+
+    def flaky_prepare(task, arm, dest, scripts_dir=None):
+        if task.id == "bad" and arm == "bruhs":
+            raise RuntimeError("git exploded")
+        return real_prepare(task, arm, dest, scripts_dir)
+
+    monkeypatch.setattr(runner, "prepare_workspace", flaky_prepare)
+    out = tmp_path / "out"
+    results = {r.run_id: r for r in run_matrix(
+        [good, bad], [CLAUDE], ["bare", "bruhs"], 1, out, parallel=1,
+        command_override=override(fake_agent(tmp_path, EDIT_AND_REPLY)))}
+    assert len(results) == 4
+    assert results["bad__claude__bruhs__r1"].status == "error"
+    saved = json.loads((out / "bad__claude__bruhs__r1" / "result.json").read_text())
+    assert saved["status"] == "error" and "RuntimeError: git exploded" in saved["error"]
+    assert all(r.status == "ok" for k, r in results.items() if k != "bad__claude__bruhs__r1")
+
+
+def test_interrupt_kills_live_runs_and_stops_queue(tmp_path, monkeypatch):
+    task = make_task(tmp_path, "t1")
+    counter = tmp_path / "count"
+    pidfile = tmp_path / "agent.pid"
+    childfile = tmp_path / "child.pid"
+    body = count_body(counter, f"sleep 60 &\necho $! > {childfile}\necho $$ > {pidfile}\nwait\n")
+
+    def interrupted_as_completed(futures):
+        for _ in range(200):  # Ctrl-C arrives while the first agent is live
+            if pidfile.exists() and pidfile.read_text().strip():
+                raise KeyboardInterrupt
+            time.sleep(0.05)
+        raise AssertionError("agent never started")
+        yield
+
+    monkeypatch.setattr(runner, "as_completed", interrupted_as_completed)
+    out = tmp_path / "out"
+    start = time.monotonic()
+    with pytest.raises(KeyboardInterrupt):
+        run_matrix([task], [CLAUDE], ["bare", "bruhs"], 3, out, parallel=1,
+                   command_override=override(fake_agent(tmp_path, body)))
+    assert time.monotonic() - start < 30
+    # the agent and its child (same process group) are gone
+    for pid in (int(pidfile.read_text()), int(childfile.read_text())):
+        assert gone(pid), pid
+    time.sleep(1)  # give a (wrongly) surviving worker time to start the next run
+    assert runs_started(counter) == 1
+    assert not list(out.glob("*/result.json"))  # the killed run is redone on resume
 
 
 def test_setup_failed_task_excluded_both_arms(tmp_path):

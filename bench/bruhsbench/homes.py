@@ -69,6 +69,7 @@ from pathlib import Path
 
 from .types import MODELS, Arm, Cli
 
+BRUHS_REPO = Path(__file__).resolve().parents[2]
 DEFAULT_ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 CLAUDE_AUTH_VARS = ("CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY")
 PASSTHROUGH_VARS = ("PATH", "LANG", "TERM", "USER", "LOGNAME", "TMPDIR")
@@ -165,6 +166,16 @@ def _is_within(path: Path, root: Path) -> bool:
     return path.resolve().is_relative_to(root.resolve())
 
 
+def sanitized_path(path: str, *, exclude: list[Path] | None = None) -> str:
+    """``PATH`` without entries inside the bruhs-skills repo or ``$VIRTUAL_ENV``, so an
+    agent's ``python``/``pytest`` never resolve to the benchmark's own venv."""
+    roots = exclude if exclude is not None else [BRUHS_REPO] + (
+        [Path(os.environ["VIRTUAL_ENV"])] if os.environ.get("VIRTUAL_ENV") else [])
+    keep = [p for p in path.split(os.pathsep)
+            if p and not any(_is_within(Path(p), r) for r in roots)]
+    return os.pathsep.join(keep)
+
+
 def _copy_bruhs(bruhs_src: Path, dest: Path) -> None:
     def ignore(dirpath: str, names: list[str]) -> list[str]:
         return [n for n in names if n in BRUHS_EXCLUDE] if Path(dirpath) == bruhs_src else []
@@ -221,6 +232,8 @@ def build_home(
     expect_src = real / ".agents" / "skills" / "expect"
 
     env = {k: os.environ[k] for k in PASSTHROUGH_VARS if os.environ.get(k)}
+    if "PATH" in env:
+        env["PATH"] = sanitized_path(env["PATH"])
     env["HOME"] = str(home)
     env["XDG_CONFIG_HOME"] = str(home / ".config")
 

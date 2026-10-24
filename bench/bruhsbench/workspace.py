@@ -64,8 +64,11 @@ def insert_bruhs_blocks(root: Path, scripts_dir: Path | None = None) -> None:
     state = json.dumps({"stack": detected, "tooling": {"mcps": [], "skills": []}})
     rules = _run_script(scripts, "derive_stack_rules.py", [], state)
     _run_script(scripts, "sync_bruhs_block.py", ["--kind", "state", "--root", str(root)], state)
-    _run_script(scripts, "sync_bruhs_block.py", ["--kind", "rules", "--root", str(root)],
-                rules if rules.strip() else "\n")
+    # No detected stack -> no rules: bruhs itself writes no rules block then
+    # (sync_bruhs_block.py rejects empty input), so neither do we.
+    if rules.strip():
+        _run_script(scripts, "sync_bruhs_block.py", ["--kind", "rules", "--root", str(root)],
+                    rules)
 
 
 def _checkout(task: Task, dest: Path) -> None:
@@ -138,12 +141,16 @@ def prepare_workspace(
 
 
 def check_task_setup(task: Task, scratch: Path, scripts_dir: Path | None = None) -> bool:
-    """Run setup once in a scratch workspace; False means exclude the task from both arms."""
-    dest = Path(scratch) / f"setup-check-{task.id}"
-    if dest.exists():
-        shutil.rmtree(dest)
-    try:
-        prepare_workspace(task, "bare", dest, scripts_dir)
-    except SetupFailed:
-        return False
+    """Prepare both arms once in scratch; False (setup failed in either arm) means
+    exclude the task from both arms."""
+    for arm in ("bare", "bruhs"):
+        dest = Path(scratch) / f"setup-check-{task.id}-{arm}"
+        if dest.exists():
+            shutil.rmtree(dest)
+        try:
+            prepare_workspace(task, arm, dest, scripts_dir)
+        except SetupFailed:
+            return False
+        finally:
+            shutil.rmtree(dest, ignore_errors=True)
     return True

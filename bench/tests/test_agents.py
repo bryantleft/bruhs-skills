@@ -9,6 +9,7 @@ from bruhsbench.agents import (
     full_prompt,
     is_auth_failure,
     parse_output,
+    tool_event_count,
 )
 from bruhsbench.homes import claude_args
 from bruhsbench.types import MODELS
@@ -71,9 +72,11 @@ def test_claude_command():
     argv = cmd("claude", "bruhs")
     assert argv[:3] == ["claude", "-p", full_prompt("do the thing")]
     for pair in (["--model", "claude-opus-5-5"], ["--effort", "high"],
-                 ["--output-format", "json"], ["--disallowed-tools", "WebSearch,WebFetch"]):
+                 ["--output-format", "stream-json"],
+                 ["--disallowed-tools", "WebSearch,WebFetch"]):
         _remove_once(argv, pair)
     assert "--dangerously-skip-permissions" in argv
+    assert "--verbose" in argv  # stream-json requires it with -p
     _remove_once(argv, claude_args("bruhs", HOME))
 
 
@@ -93,7 +96,7 @@ def test_grok_command():
     argv = cmd("grok", "bare")
     assert argv[:3] == ["grok", "-p", full_prompt("do the thing")]
     for pair in (["-m", "grok-4.7"], ["--reasoning-effort", "high"],
-                 ["--output-format", "json"], ["--cwd", str(WORK)]):
+                 ["--output-format", "streaming-json"], ["--cwd", str(WORK)]):
         _remove_once(argv, pair)
     assert "--always-approve" in argv
     assert "--disable-web-search" in argv
@@ -103,10 +106,22 @@ def test_grok_command():
 
 
 def test_parse_output_claude():
-    run = parse_output("claude", fixture("claude.json"))
+    run = parse_output("claude", fixture("claude.jsonl"))
     assert run == ParsedRun(final_message="ok", turns=1,
-                            input_tokens=2 + 5662 + 11111, output_tokens=4,
-                            cost_usd=pytest.approx(0.0476062))
+                            input_tokens=2 + 5569 + 11111, output_tokens=4,
+                            cost_usd=pytest.approx(0.0468622))
+
+
+def test_parse_output_claude_with_tool_call():
+    run = parse_output("claude", fixture("claude_tool.jsonl"))
+    assert run == ParsedRun(final_message="ok", turns=2,
+                            input_tokens=4 + 5618 + 27727, output_tokens=86,
+                            cost_usd=pytest.approx(0.0522254))
+
+
+def test_parse_output_claude_killed_before_result():
+    lines = [l for l in fixture("claude_tool.jsonl").splitlines() if '"type":"result"' not in l]
+    assert parse_output("claude", "\n".join(lines)) == ParsedRun("ok", None, None, None, None)
 
 
 def test_parse_output_codex():
@@ -131,9 +146,35 @@ def test_parse_output_codex_sums_turns_and_takes_last_message():
 
 
 def test_parse_output_grok():
-    run = parse_output("grok", fixture("grok.json"))
-    assert run == ParsedRun(final_message="ok", turns=1, input_tokens=4087 + 9600 + 0,
-                            output_tokens=31, cost_usd=pytest.approx(0.01316))
+    run = parse_output("grok", fixture("grok.jsonl"))
+    assert run == ParsedRun(final_message="ok", turns=1, input_tokens=4141 + 9600 + 0,
+                            output_tokens=36, cost_usd=pytest.approx(0.013298))
+
+
+def test_parse_output_grok_with_tool_call():
+    run = parse_output("grok", fixture("grok_tool.jsonl"))
+    assert run == ParsedRun(final_message="ok", turns=2, input_tokens=15015 + 17024,
+                            output_tokens=65, cost_usd=pytest.approx(0.038932))
+
+
+def test_parse_output_grok_final_is_text_after_last_tool():
+    stdout = "\n".join([
+        '{"type":"text","data":"Let me look. "}',
+        '{"type":"tool_call","toolName":"read_file"}',
+        '{"type":"text","data":"All "}',
+        '{"type":"text","data":"done."}',
+    ])
+    assert parse_output("grok", stdout) == ParsedRun("All done.", None, None, None, None)
+
+
+def test_tool_event_count():
+    assert tool_event_count("claude", fixture("claude_tool.jsonl")) == 2  # use + result
+    assert tool_event_count("claude", fixture("claude.jsonl")) == 0
+    assert tool_event_count("grok", fixture("grok_tool.jsonl")) > 0
+    assert tool_event_count("grok", fixture("grok.jsonl")) == 0
+    assert tool_event_count("codex", fixture("codex.jsonl")) == 0
+    assert tool_event_count("codex", '{"type":"item.completed","item":'
+                                     '{"type":"command_execution","command":"ls"}}') == 1
 
 
 @pytest.mark.parametrize("cli", ["claude", "codex", "grok"])
@@ -146,11 +187,11 @@ def test_parse_output_garbage_is_empty(cli):
 
 
 def test_is_auth_failure_claude():
-    assert is_auth_failure("claude", fixture("claude_auth_error.json"), "", 1)
-    assert not is_auth_failure("claude", fixture("claude.json"), "", 0)
+    assert is_auth_failure("claude", fixture("claude_auth_error.jsonl"), "", 1)
+    assert not is_auth_failure("claude", fixture("claude.jsonl"), "", 0)
     # an agent that merely talks about logins is not an auth failure
     assert not is_auth_failure(
-        "claude", fixture("claude.json").replace('"result":"ok"',
+        "claude", fixture("claude.jsonl").replace('"result":"ok"',
                                                   '"result":"Not logged in page fixed"'), "", 0)
 
 
@@ -165,8 +206,8 @@ def test_is_auth_failure_codex():
 
 
 def test_is_auth_failure_grok():
-    assert is_auth_failure("grok", fixture("grok_auth_error.json"),
+    assert is_auth_failure("grok", fixture("grok_auth_error.jsonl"),
                            fixture("grok_auth_error.stderr"), 1)
     assert is_auth_failure("grok", "", fixture("grok_auth_error.stderr"), 1)
-    assert not is_auth_failure("grok", fixture("grok.json"), "", 0)
+    assert not is_auth_failure("grok", fixture("grok.jsonl"), "", 0)
     assert not is_auth_failure("grok", '{"type":"error","message":"rate limited"}', "", 1)

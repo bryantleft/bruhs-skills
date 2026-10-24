@@ -72,6 +72,8 @@ class RunResult:
     diff_path: Path
     transcript_path: Path
     # R9: absolute paths outside the run's sandbox (real home, source repos) seen in output
-    contaminated: bool = False
+    # None: the scanned output had no tool-level events, so nothing could be checked
+    contaminated: bool | None = False
     contamination: list[str] = field(default_factory=list)
     workspace: Path | None = None  # agent's checkout, kept in the work root for graders
+    error: str | None = None  # traceback when the harness itself failed during the run

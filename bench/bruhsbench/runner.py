@@ -4,13 +4,22 @@ Layout (Ruling R10). Everything an agent touches lives in a *work root* outside 
 user's home (``$BRUHSBENCH_WORK`` or ``/private/tmp/bruhsbench``, plus a per-results
 id): the pinned bruhs export at ``<work>/_bruhs/<commit>/`` and, per run,
 ``<work>/<run_id>/{home,workspace,stdout,stderr,final.txt}``. The results dir
-``<out_root>/<run_id>/`` only receives copies: ``result.json``, ``transcript.json[l]``
-(raw CLI stdout), ``stderr.txt``, ``diff.patch``, ``final.txt``. ``result.json`` records
+``<out_root>/<run_id>/`` only receives copies: ``result.json``, ``transcript.jsonl``
+(raw CLI stdout, streaming JSON for all three CLIs), ``stderr.txt``, ``diff.patch``, ``final.txt``. ``result.json`` records
 the workspace's absolute path for the graders and is written last (atomically), so a
 run dir without it is partial and is redone on resume.
 
 ``out_root/matrix.json`` pins the bruhs commit, CLI versions, models, repeats and seed;
 ``out_root/excluded.json`` lists tasks whose setup failed (excluded from both arms).
+
+Contamination (R9/R14): after each run the transcript, stderr and the CLI's own
+session logs inside the run's home are scanned for absolute paths under the real home
+or the source repos. ``contaminated`` is None when none of that material shows any
+tool-level event (nothing to check), else True/False.
+
+A failing run never takes the matrix down: harness exceptions are recorded as
+``status="error"`` with the traceback. Only an auth failure (:class:`AuthAbort`) or an
+interrupt (Ctrl-C) stops it; both kill every live agent process group first.
 """
 
 from __future__ import annotations
@@ -26,6 +35,7 @@ import signal
 import subprocess
 import threading
 import time
+import traceback
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import nullcontext
@@ -33,7 +43,7 @@ from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from pathlib import Path, PurePath
 
-from .agents import build_command, is_auth_failure, parse_output
+from .agents import build_command, is_auth_failure, parse_output, tool_event_count
 from .homes import build_home, export_bruhs
 from .types import Arm, Cli, ModelSpec, RunResult, RunSpec, Task
 from .workspace import BASE_TAG, GIT, SetupFailed, check_task_setup, prepare_workspace
@@ -47,7 +57,11 @@ DEFAULT_PARALLEL = 6
 CLAUDE_MAX_PARALLEL = 3  # R11: parallel claude runs share one keychain login
 DEFAULT_SEED = 0
 KILL_GRACE_S = 10
-TRANSCRIPT_EXT: dict[str, str] = {"claude": "json", "codex": "jsonl", "grok": "json"}
+# CLI session logs inside the run's home (scanned for contamination)
+SESSION_LOG_DIRS = (".claude/projects", ".codex/sessions", ".grok/sessions")
+_SESSION_TOOL_RE = re.compile(
+    r'"type"\s*:\s*"(?:tool_use|tool_result|tool_call|tool_call_update|function_call|'
+    r'function_call_output|custom_tool_call|local_shell_call|command_execution)"')
 
 # (spec, argv the real CLI would get) -> argv to run instead; tests install a fake agent
 CommandOverride = Callable[[RunSpec, list[str]], list[str]]
@@ -55,6 +69,37 @@ CommandOverride = Callable[[RunSpec, list[str]], list[str]]
 
 class AuthAbort(Exception):
     """A CLI reported it isn't authenticated; the matrix stops instead of scoring zeros."""
+
+
+class RunInterrupted(Exception):
+    """The matrix was stopped while this run was live; nothing is recorded for it."""
+
+
+class RunControl:
+    """Live agent process groups of a matrix, so an interrupt can kill all of them."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._pgids: set[int] = set()
+        self.stopped = threading.Event()
+
+    def spawn(self, run_id: str, start: Callable[[], subprocess.Popen]) -> subprocess.Popen:
+        with self._lock:
+            if self.stopped.is_set():
+                raise RunInterrupted(run_id)
+            proc = start()
+            self._pgids.add(proc.pid)  # start_new_session: pgid == pid
+            return proc
+
+    def release(self, proc: subprocess.Popen) -> None:
+        with self._lock:
+            self._pgids.discard(proc.pid)
+
+    def kill_all(self) -> None:
+        with self._lock:
+            self.stopped.set()
+            for pgid in self._pgids:
+                _kill_group(pgid, signal.SIGKILL)
 
 
 # --------------------------------------------------------------------------- paths
@@ -132,16 +177,28 @@ def scan_contamination(text: str, *, forbidden: Sequence[Path],
     return sorted(found)
 
 
-def _contamination(spec: RunSpec, texts: Sequence[str], work_root: Path,
-                   env: dict[str, str]) -> list[str]:
-    home = Path.home()
-    forbidden = [home, BRUHS_REPO] + ([spec.task.repo] if spec.task.repo else [])
+def session_logs(home: Path) -> list[Path]:
+    """The CLI's own JSONL session logs written inside the run's home."""
+    return sorted(p for rel in SESSION_LOG_DIRS if (home / rel).is_dir()
+                  for p in (home / rel).rglob("*.jsonl"))
+
+
+def _contamination(spec: RunSpec, stdout: str, stderr: str, home: Path, work_root: Path,
+                   env: dict[str, str]) -> tuple[bool | None, list[str]]:
+    real_home = Path.home()
+    forbidden = [real_home, BRUHS_REPO] + ([spec.task.repo] if spec.task.repo else [])
     # Running a toolchain binary from a PATH dir under ~ (e.g. ~/.bun/bin/bun) is not
     # reading the user's config; everything else under ~ is.
     path_dirs = [Path(p) for p in env.get("PATH", "").split(os.pathsep)
-                 if p and Path(p) != home and Path(p).is_absolute()]
-    allowed = [work_root, *path_dirs]
-    return scan_contamination("\n".join(texts), forbidden=forbidden, allowed=allowed)
+                 if p and Path(p) != real_home and Path(p).is_absolute()]
+    logs = [p.read_text(errors="replace") for p in session_logs(home)]
+    found = scan_contamination("\n".join([stdout, stderr, *logs]), forbidden=forbidden,
+                               allowed=[work_root, *path_dirs])
+    if found:
+        return True, found
+    tool_level = (tool_event_count(spec.model.cli, stdout) > 0
+                  or any(_SESSION_TOOL_RE.search(t) for t in logs))
+    return (False if tool_level else None), []
 
 
 # --------------------------------------------------------------------------- result.json
@@ -174,12 +231,13 @@ def _kill_group(pgid: int, sig: int) -> None:
         pass
 
 
-def _execute(argv: list[str], cwd: Path, env: dict[str, str], stdout: Path, stderr: Path,
-             timeout_s: float) -> tuple[int, bool]:
+def _execute(run_id: str, argv: list[str], cwd: Path, env: dict[str, str], stdout: Path,
+             stderr: Path, timeout_s: float, control: RunControl) -> tuple[int, bool]:
     """Run ``argv`` in its own process group; returns (exit code, timed out)."""
     with open(stdout, "wb") as out, open(stderr, "wb") as err:
-        proc = subprocess.Popen(argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
-                                stdout=out, stderr=err, start_new_session=True)
+        proc = control.spawn(run_id, lambda: subprocess.Popen(
+            argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=out, stderr=err,
+            start_new_session=True))
         timed_out = False
         try:
             proc.wait(timeout=timeout_s)
@@ -194,13 +252,16 @@ def _execute(argv: list[str], cwd: Path, env: dict[str, str], stdout: Path, stde
         finally:
             # whatever the agent left running (dev servers, watchers) goes too
             _kill_group(proc.pid, signal.SIGKILL)
+            control.release(proc)
+    if control.stopped.is_set():
+        raise RunInterrupted(run_id)
     return proc.returncode, timed_out
 
 
 def _write_diff(workspace: Path, dest: Path) -> bool:
     try:
         subprocess.run([*GIT, "add", "-A"], cwd=workspace, check=True, capture_output=True)
-        diff = subprocess.run([*GIT, "diff", "--cached", BASE_TAG], cwd=workspace,
+        diff = subprocess.run([*GIT, "diff", "--cached", "--binary", BASE_TAG], cwd=workspace,
                               check=True, capture_output=True).stdout
     except (subprocess.CalledProcessError, OSError) as exc:
         log.warning("diff failed in %s: %s", workspace, exc)
@@ -219,11 +280,14 @@ def run_one(
     work_root: Path | None = None,
     command_override: CommandOverride | None = None,
     claude_slots: threading.Semaphore | None = None,
+    control: RunControl | None = None,
 ) -> RunResult:
     """Run ``spec`` from scratch and write its artifacts to ``out_root/<run_id>/``.
 
-    Raises :class:`AuthAbort` (and writes no result.json) if the CLI isn't logged in.
+    Raises :class:`AuthAbort` (and writes no result.json) if the CLI isn't logged in,
+    and :class:`RunInterrupted` if ``control`` was stopped while the run was live.
     """
+    control = control or RunControl()
     out_root = Path(out_root)
     work_root = _check_outside_home(work_root) if work_root else default_work_root(out_root)
     if bruhs_src is None:
@@ -236,7 +300,7 @@ def run_one(
             shutil.rmtree(d)
         d.mkdir(parents=True)
     workspace = run_dir / "workspace"
-    transcript = out_dir / f"transcript.{TRANSCRIPT_EXT[cli]}"
+    transcript = out_dir / "transcript.jsonl"
     diff_path = out_dir / "diff.patch"
     base = RunResult(spec.run_id, "ok", 0.0, None, None, None, None, "", diff_path,
                      transcript, workspace=workspace)
@@ -259,8 +323,8 @@ def run_one(
 
     with claude_slots if (cli == "claude" and claude_slots is not None) else nullcontext():
         start = time.monotonic()
-        code, timed_out = _execute(argv, workspace, env, run_dir / "stdout",
-                                   run_dir / "stderr", timeout_s)
+        code, timed_out = _execute(spec.run_id, argv, workspace, env, run_dir / "stdout",
+                                   run_dir / "stderr", timeout_s, control)
         wall_s = time.monotonic() - start
 
     shutil.copyfile(run_dir / "stdout", transcript)
@@ -280,12 +344,13 @@ def run_one(
     (out_dir / "final.txt").write_text(final)
 
     status = "timeout" if timed_out else ("ok" if code == 0 and diff_ok else "error")
-    contamination = _contamination(spec, [stdout, stderr], work_root, env)
+    contaminated, contamination = _contamination(spec, stdout, stderr, Path(env["HOME"]),
+                                                 work_root, env)
     result = replace(
         base, status=status, wall_s=round(wall_s, 3), turns=parsed.turns,
         input_tokens=parsed.input_tokens, output_tokens=parsed.output_tokens,
         cost_usd=parsed.cost_usd, final_message=final,
-        contaminated=bool(contamination), contamination=contamination,
+        contaminated=contaminated, contamination=contamination,
     )
     _write_result(out_dir, result)
     return result
@@ -328,18 +393,21 @@ def _record_matrix(out_root: Path, commit: str, tasks: Sequence[Task],
     path = out_root / "matrix.json"
     versions = {cli: cli_version(cli) for cli in dict.fromkeys(m.cli for m in models)}
     start = {"at": _now(), "cli_versions": versions}
+    pinned = {"bruhs_commit": commit, "seed": seed, "repeats": repeats,
+              "models": [asdict(m) for m in models], "tasks": sorted(t.id for t in tasks)}
     if path.exists():
         meta = json.loads(path.read_text())
-        if (meta["bruhs_commit"], meta["seed"]) != (commit, seed):
-            raise ValueError(f"{path} was started with bruhs {meta['bruhs_commit']} seed "
-                             f"{meta['seed']}; refusing to resume with {commit} seed {seed}")
+        changed = [k for k, v in pinned.items()
+                   if (sorted(meta.get(k, [])) if k == "tasks" else meta.get(k)) != v]
+        if changed:
+            detail = "; ".join(f"{k}: matrix.json has {meta.get(k)!r}, now {pinned[k]!r}"
+                               for k in changed)
+            raise ValueError(f"refusing to resume {out_root}: the matrix changed ({detail}). "
+                             "Use a new results dir for a different matrix.")
         meta["starts"].append(start)
     else:
-        meta = {
-            "bruhs_commit": commit, "seed": seed, "repeats": repeats, "arms": list(arms),
-            "models": [asdict(m) for m in models], "tasks": [t.id for t in tasks],
-            "timeout_s": timeout_s, "cli_versions": versions, "starts": [start],
-        }
+        meta = {**pinned, "arms": list(arms), "timeout_s": timeout_s,
+                "cli_versions": versions, "starts": [start]}
     path.write_text(json.dumps(meta, indent=2) + "\n")
 
 
@@ -375,8 +443,10 @@ def run_matrix(
 ) -> list[RunResult]:
     """Run every (task, model, arm, repeat), skipping runs that already have result.json.
 
-    Returns results in matrix order. On an auth failure no further runs start and
-    :class:`AuthAbort` is raised once in-flight runs finish.
+    Returns results in matrix order. A harness exception inside a run is recorded as
+    ``status="error"`` and the matrix goes on. On an auth failure or an interrupt, queued
+    runs are cancelled, every live agent process group is killed (those runs write no
+    result.json and are redone on resume), and the exception is re-raised.
     """
     out_root = Path(out_root)
     out_root.mkdir(parents=True, exist_ok=True)
@@ -397,32 +467,51 @@ def run_matrix(
             todo.append(spec)
     log.info("%d runs: %d done, %d to run", len(specs), len(results), len(todo))
 
-    stop = threading.Event()
     claude_slots = threading.BoundedSemaphore(claude_parallel)
+    control = RunControl()
 
     def work(spec: RunSpec) -> RunResult | None:
-        if stop.is_set():
+        if control.stopped.is_set():
             return None
         try:
             return run_one(spec, out_root, timeout_s=timeout_s, bruhs_src=bruhs_src,
                            work_root=work_root, command_override=command_override,
-                           claude_slots=claude_slots)
-        except BaseException:
-            stop.set()  # before this worker can pick up the next run
+                           claude_slots=claude_slots, control=control)
+        except RunInterrupted:
+            return None
+        except AuthAbort:
+            control.stopped.set()  # before this worker can pick up the next run
             raise
+        except Exception:
+            log.exception("%s: harness error, recorded as status=error", spec.run_id)
+            return _record_error(spec, out_root, work_root, traceback.format_exc())
 
-    first_error: BaseException | None = None
-    with ThreadPoolExecutor(max_workers=max(1, parallel)) as pool:
+    pool = ThreadPoolExecutor(max_workers=max(1, parallel))
+    try:
         futures = [pool.submit(work, spec) for spec in todo]
         for fut in as_completed(futures):
-            try:
-                res = fut.result()
-            except BaseException as exc:  # noqa: BLE001 -- re-raised below
-                first_error = first_error or exc
-                continue
+            res = fut.result()
             if res is not None:
                 results[res.run_id] = res
                 log.info("%s: %s (%.0fs)", res.run_id, res.status, res.wall_s)
-    if first_error is not None:
-        raise first_error
+    except BaseException:  # AuthAbort, KeyboardInterrupt, ...
+        control.kill_all()
+        pool.shutdown(wait=False, cancel_futures=True)
+        raise
+    pool.shutdown(wait=True)
     return [results[s.run_id] for s in specs]
+
+
+def _record_error(spec: RunSpec, out_root: Path, work_root: Path, tb: str) -> RunResult:
+    out_dir = out_root / spec.run_id
+    out_dir.mkdir(parents=True, exist_ok=True)
+    paths = {name: out_dir / name for name in ("diff.patch", "transcript.jsonl", "final.txt")}
+    for p in paths.values():
+        if not p.exists():
+            p.write_text("")
+    workspace = work_root / spec.run_id / "workspace"
+    result = RunResult(spec.run_id, "error", 0.0, None, None, None, None, "",
+                       paths["diff.patch"], paths["transcript.jsonl"], contaminated=None,
+                       workspace=workspace if workspace.is_dir() else None, error=tb)
+    _write_result(out_dir, result)
+    return result
