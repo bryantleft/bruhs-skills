@@ -7,12 +7,19 @@ agent's environment is rebuilt from scratch (``PATH``, ``LANG``, ``TERM``,
 is brought in. Mechanisms, verified live with ``pytest -m live tests/test_homes.py``:
 
 claude
-    Auth: ``CLAUDE_CODE_OAUTH_TOKEN`` / ``ANTHROPIC_API_KEY`` from the process
-    env or ``bench/.env`` if set. Otherwise (fallback, verified to work) the
-    macOS login keychain: with ``HOME`` overridden Claude Code reports "Not
-    logged in" because the keychain is resolved via ``$HOME/Library/Keychains``,
-    so ``<home>/Library/Keychains`` is symlinked to the real one. Nothing else
-    from the real home is linked; the keychain itself is never read by us.
+    Auth, in order of precedence:
+    1. ``CLAUDE_CODE_OAUTH_TOKEN`` or ``ANTHROPIC_API_KEY`` from the process env
+       or ``bench/.env`` (gitignored). If one is set it is passed to claude and
+       no keychain link is made.
+    2. Default when no token is set: the user's macOS login keychain. With
+       ``HOME`` overridden Claude Code reports "Not logged in", because it finds
+       the keychain via ``$HOME/Library/Keychains``; so
+       ``<home>/Library/Keychains`` is symlinked to the real one. Nothing else
+       from the real home is linked, and we never read the keychain ourselves.
+       Caveat: every run then shares the one keychain login, and when claude
+       refreshes the OAuth token it writes the new one back to the real
+       keychain. Parallel runs can race on that refresh; if auth failures show
+       up, put a ``claude setup-token`` token in ``bench/.env``.
     Skills/MCP: bruhs arm = ``--plugin-dir <home>/plugins/bruhs`` + expect in
     ``<home>/.claude/skills/expect`` + ``--mcp-config <home>/mcp.json
     --strict-mcp-config`` (chrome-devtools). Bare arm = the same flags with an
@@ -34,8 +41,12 @@ grok
     ``<home>/.grok/skills/`` and chrome-devtools via ``grok mcp add`` run under
     the isolated env.
 
-The bruhs install is a copy of ``bruhs_src`` without ``bench/`` and ``docs/``
-(the benchmark's own reference solutions and plan must never reach an agent).
+bruhs must reach an agent without ``bench/`` and ``docs/`` (the benchmark's own
+reference solutions and plan). The runner exports it with :func:`export_bruhs`
+(a filtered ``git archive`` of the pinned commit); :func:`build_home` refuses an
+unfiltered ``bruhs_src`` inside ``run_dir`` and copies only the filtered tree.
+``run_dir`` must be outside the user's home: the CLIs walk ancestor directories
+for config, so :func:`build_home` raises ``ValueError`` for a run_dir under ``~``.
 
 The probe takes what the CLI reports deterministically (claude's stream-json
 init event, ``codex debug prompt-input`` + ``codex mcp list``, ``grok inspect``)
@@ -62,6 +73,7 @@ DEFAULT_ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 CLAUDE_AUTH_VARS = ("CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY")
 PASSTHROUGH_VARS = ("PATH", "LANG", "TERM", "USER", "LOGNAME", "TMPDIR")
 BRUHS_EXCLUDE = ("bench", "docs", ".git", ".superpowers")
+EXPORT_EXCLUDE = ("bench", "docs")
 # Account-synced claude.ai skills/plugins download asynchronously into a fresh home, so
 # they appear in some runs and not others; turn the sync off in both arms.
 CLAUDE_SETTINGS = {"syncClaudeAiSkills": False, "syncClaudeAiPlugins": False}
@@ -138,6 +150,21 @@ def _claude_auth(env_file: Path) -> dict[str, str]:
     return found
 
 
+def export_bruhs(repo: Path, commit: str, dest: Path) -> Path:
+    """Write ``commit`` of the bruhs repo to ``dest`` without bench/ and docs/."""
+    dest.mkdir(parents=True, exist_ok=False)
+    excludes = [f":(exclude){d}" for d in EXPORT_EXCLUDE]
+    archive = subprocess.run(["git", "archive", commit, "--", ".", *excludes], cwd=repo,
+                             check=True, capture_output=True).stdout
+    subprocess.run(["tar", "-x", "-C", str(dest)], input=archive, check=True,
+                   capture_output=True)
+    return dest
+
+
+def _is_within(path: Path, root: Path) -> bool:
+    return path.resolve().is_relative_to(root.resolve())
+
+
 def _copy_bruhs(bruhs_src: Path, dest: Path) -> None:
     def ignore(dirpath: str, names: list[str]) -> list[str]:
         return [n for n in names if n in BRUHS_EXCLUDE] if Path(dirpath) == bruhs_src else []
@@ -180,6 +207,13 @@ def build_home(
     env_file: Path = DEFAULT_ENV_FILE,
 ) -> dict[str, str]:
     """Create ``run_dir/home`` for one run and return the full env for the CLI."""
+    if _is_within(run_dir, Path.home()):
+        raise ValueError(f"run_dir {run_dir} is inside the user's home; the CLIs would "
+                         "discover ~/ config from its ancestors")
+    if _is_within(bruhs_src, run_dir) and (
+            bad := [d for d in EXPORT_EXCLUDE if (bruhs_src / d).exists()]):
+        raise ValueError(f"bruhs_src {bruhs_src} is inside run_dir but still has {bad}; "
+                         "export it with export_bruhs()")
     real = real_home or Path.home()
     home = run_dir / "home"
     home.mkdir(parents=True, exist_ok=False)
@@ -361,12 +395,14 @@ def probe_isolation(cli: Cli, arm: Arm, env: dict[str, str]) -> ProbeResult:
             _run(["codex", "debug", "prompt-input", "probe"], env, work))
         mcps = normalize_names(
             s["name"] for s in json.loads(_run(["codex", "mcp", "list", "--json"], env, work)))
+        if not last.is_file():
+            raise LeakError(f"probe: codex exited 0 but wrote no last message to {last}")
         result = ProbeResult(skills, mcps, skills) | _model_listing(last.read_text())
 
     elif cli == "grok":
         out = _run(["grok", "-p", PROBE_PROMPT, "-m", model, "--effort", PROBE_EFFORT,
-                    "--output-format", "json", "--json-schema", schema, "--cwd", str(work),
-                    "--always-approve"], env, work)
+                    "--output-format", "json", "--json-schema", schema, "--cwd", str(work)],
+                   env, work)
         seen = parse_grok_inspect(_run(["grok", "inspect", "--json"], env, work))
         result = seen | _model_listing(out)
     else:
@@ -396,10 +432,52 @@ def _skill_tokens(name: str) -> set[str]:
     return set(re.split(r"[:/]", name))
 
 
-def assert_isolated(result: ProbeResult, arm: Arm) -> None:
-    """Raise LeakError unless ``result`` is exactly what ``arm`` should see."""
+REAL_SKILL_ROOTS = (".claude/skills", ".agents/skills", ".codex/skills", ".grok/skills")
+REAL_PLUGINS_FILE = ".claude/plugins/installed_plugins.json"
+
+
+def real_extension_names(real_home: Path | None = None) -> tuple[set[str], set[str]]:
+    """(skill dir names, installed claude plugin names) in the user's real home."""
+    home = real_home or Path.home()
+    skills: set[str] = set()
+    for rel in REAL_SKILL_ROOTS:
+        root = home / rel
+        if root.is_dir():
+            skills |= {d.name.lower() for d in root.iterdir()
+                       if d.is_dir() and not d.name.startswith(".")}
+    plugins: set[str] = set()
+    plugins_file = home / REAL_PLUGINS_FILE
+    if plugins_file.is_file():
+        installed = json.loads(plugins_file.read_text()).get("plugins", {})
+        plugins = {key.split("@", 1)[0].lower() for key in installed}
+    return skills, plugins
+
+
+def _real_leaks(result: ProbeResult, arm: Arm, real_home: Path | None) -> set[str]:
+    """Probe skills that are the user's own skills or plugins (by name).
+
+    A user skill shows up under its own name; a user plugin's skills show up as
+    ``<plugin>:<skill>``, so plugins are matched on the namespace only (plugin
+    ``code-review`` must not flag claude's built-in ``code-review`` skill).
+    """
+    skills, plugins = real_extension_names(real_home)
+    if arm == "bruhs":
+        skills -= BRUHS_REQUIRED_SKILLS
+        plugins -= BRUHS_REQUIRED_SKILLS
+    return {s for s in result.skills
+            if s in skills or (":" in s and s.split(":", 1)[0] in plugins)}
+
+
+def assert_isolated(result: ProbeResult, arm: Arm, *, real_home: Path | None = None) -> None:
+    """Raise LeakError unless ``result`` is exactly what ``arm`` should see.
+
+    ``real_home`` (default ``~``) is where the user's own skills/plugins live; any
+    of them in the result is a leak, except bruhs/expect in the bruhs arm.
+    """
     tokens = set().union(*(_skill_tokens(s) for s in result.skills)) if result.skills else set()
     problems = []
+    if real := _real_leaks(result, arm, real_home):
+        problems.append(f"user's own skills/plugins {sorted(real)}")
     if arm == "bare":
         if leaked := tokens & BARE_FORBIDDEN_SKILLS:
             problems.append(f"forbidden skills {sorted(leaked)}")

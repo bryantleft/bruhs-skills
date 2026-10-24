@@ -12,6 +12,7 @@ from bruhsbench.homes import (
     assert_arms_match,
     assert_isolated,
     build_home,
+    export_bruhs,
     claude_args,
     normalize_names,
     parse_claude_stream,
@@ -50,7 +51,8 @@ def real_home(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def bruhs_src(tmp_path: Path) -> Path:
-    src = tmp_path / "run" / "bruhs"
+    """An unfiltered bruhs tree OUTSIDE run_dir (build_home must filter its copy)."""
+    src = tmp_path / "src" / "bruhs"
     (src / ".claude-plugin").mkdir(parents=True)
     (src / ".claude-plugin" / "plugin.json").write_text('{"name": "bruhs"}')
     (src / "SKILL.md").write_text("---\nname: bruhs\n---\nbruhs\n")
@@ -228,7 +230,7 @@ def test_claude_auth_falls_back_to_keychain_link(tmp_path, bruhs_src, real_home,
 
 def test_probe_detects_leaked_skill():
     with pytest.raises(LeakError):
-        assert_isolated(ProbeResult({"superpowers"}, set()), "bare")
+        assert_isolated(ProbeResult({"superpowers"}, set()), "bare", real_home=Path("/nonexistent"))
 
 
 @pytest.mark.parametrize("result,arm", [
@@ -243,9 +245,9 @@ def test_probe_detects_leaked_skill():
     (ProbeResult({"bruhs", "expect", "impeccable"}, {"chrome-devtools"}), "bruhs"),
     (ProbeResult({"bruhs", "expect"}, {"chrome-devtools", "linear"}), "bruhs"),
 ])
-def test_assert_isolated_rejects(result, arm):
+def test_assert_isolated_rejects(result, arm, tmp_path):
     with pytest.raises(LeakError):
-        assert_isolated(result, arm)
+        assert_isolated(result, arm, real_home=tmp_path)
 
 
 @pytest.mark.parametrize("result,arm", [
@@ -253,8 +255,76 @@ def test_assert_isolated_rejects(result, arm):
     (ProbeResult({"skill-creator", "imagegen", "code-review"}, set()), "bare"),
     (ProbeResult({"bruhs:bruhs", "bruhs:cook", "expect", "pdf"}, {"chrome-devtools"}), "bruhs"),
 ])
-def test_assert_isolated_accepts(result, arm):
-    assert_isolated(result, arm)
+def test_assert_isolated_accepts(result, arm, tmp_path):
+    assert_isolated(result, arm, real_home=tmp_path)
+
+
+def test_assert_isolated_flags_users_own_skills_and_plugins(real_home):
+    (real_home / ".claude" / "skills" / "polish").mkdir()
+    (real_home / ".codex" / "skills" / ".system" / "imagegen").mkdir(parents=True)
+    (real_home / ".claude" / "plugins").mkdir()
+    (real_home / ".claude" / "plugins" / "installed_plugins.json").write_text(json.dumps(
+        {"version": 2, "plugins": {"code-review@official": [], "bruhs@bruhs": [],
+                                   "feature-dev@official": []}}))
+    ok = {"simplify", "code-review", "imagegen"}  # CLI built-ins; plugin name != skill name
+    assert_isolated(ProbeResult(ok, set()), "bare", real_home=real_home)
+    for leaked in ("polish", "impeccable", "feature-dev:feature-dev", "code-review:code-review"):
+        with pytest.raises(LeakError, match="user's own"):
+            assert_isolated(ProbeResult(ok | {leaked}, set()), "bare", real_home=real_home)
+    # bruhs + expect are the bruhs arm's expected install, even though the user has them too
+    bruhs = ProbeResult(ok | {"bruhs:cook", "bruhs", "expect"}, {"chrome-devtools"})
+    assert_isolated(bruhs, "bruhs", real_home=real_home)
+    with pytest.raises(LeakError, match="user's own"):
+        assert_isolated(ProbeResult(bruhs.skills | {"polish"}, bruhs.mcps), "bruhs",
+                        real_home=real_home)
+
+
+def _git_repo_with_bench(root: Path) -> Path:
+    repo = root / "bruhs-repo"
+    for rel in ("SKILL.md", "commands/cook.md", "bench/tests/reference/answer.py",
+                "docs/plan.md", "practices/docs-note.md"):
+        (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+        (repo / rel).write_text(rel)
+    git = ["git", "-c", "user.name=t", "-c", "user.email=t@localhost", "-c",
+           "commit.gpgsign=false"]
+    subprocess.run([*git, "init", "-q"], cwd=repo, check=True)
+    subprocess.run([*git, "add", "-A"], cwd=repo, check=True)
+    subprocess.run([*git, "commit", "-qm", "x"], cwd=repo, check=True)
+    return repo
+
+
+def test_export_bruhs_drops_bench_and_docs(tmp_path, real_home):
+    repo = _git_repo_with_bench(tmp_path)
+    run_dir = tmp_path / "run"
+    src = export_bruhs(repo, "HEAD", run_dir / "bruhs")
+    assert src == run_dir / "bruhs"
+    assert (src / "SKILL.md").is_file() and (src / "practices" / "docs-note.md").is_file()
+    assert not (src / "bench").exists() and not (src / "docs").exists()
+    for cli in ("claude", "codex"):
+        sub = run_dir / cli
+        sub.mkdir()
+        build_home(cli, "bruhs", sub, src, real_home=real_home, env_file=tmp_path / "none")
+    leaked = [p for p in run_dir.rglob("*") if p.name in ("bench", "docs") or "answer.py" in p.name]
+    assert leaked == []
+
+
+def test_build_home_refuses_unfiltered_bruhs_inside_run_dir(tmp_path, real_home):
+    run_dir = tmp_path / "run"
+    raw = run_dir / "bruhs"
+    (raw / "bench").mkdir(parents=True)
+    (raw / "SKILL.md").write_text("x")
+    with pytest.raises(ValueError, match="export_bruhs"):
+        build_home("codex", "bruhs", run_dir, raw, real_home=real_home)
+    assert not (run_dir / "home").exists()
+
+
+def test_build_home_refuses_run_dir_inside_user_home(tmp_path, bruhs_src, real_home,
+                                                     monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path / "userhome"))  # never touch the real ~
+    run_dir = tmp_path / "userhome" / "runs" / "r1"
+    with pytest.raises(ValueError, match="inside the user's home"):
+        build_home("codex", "bare", run_dir, bruhs_src, real_home=real_home)
+    assert not run_dir.exists()
 
 
 def test_normalize_names_strips_tool_prefixes():
@@ -305,11 +375,7 @@ _LIVE: dict[tuple[str, str], ProbeResult] = {}
 def _live_probe(cli, arm, tmp_path_factory) -> ProbeResult:
     if (cli, arm) not in _LIVE:
         run_dir = tmp_path_factory.mktemp(f"{cli}-{arm}")
-        bruhs_src = run_dir / "bruhs"
-        bruhs_src.mkdir()
-        archive = subprocess.run(["git", "archive", "HEAD"], cwd=REPO_ROOT, check=True,
-                                 capture_output=True).stdout
-        subprocess.run(["tar", "-x", "-C", str(bruhs_src)], input=archive, check=True)
+        bruhs_src = export_bruhs(REPO_ROOT, "HEAD", run_dir / "bruhs")
         env = build_home(cli, arm, run_dir, bruhs_src)
         _LIVE[(cli, arm)] = r = probe_isolation(cli, arm, env)
         print(f"\nPROBE {cli}/{arm}: skills={sorted(r.skills)} mcps={sorted(r.mcps)} "
@@ -329,3 +395,12 @@ def test_live_isolation(cli, arm, tmp_path_factory):
 def test_live_arms_differ_only_by_bruhs(cli, tmp_path_factory):
     assert_arms_match(_live_probe(cli, "bare", tmp_path_factory),
                       _live_probe(cli, "bruhs", tmp_path_factory))
+
+
+def test_codex_probe_missing_last_message_is_a_probe_error(tmp_path, monkeypatch):
+    import bruhsbench.homes as homes
+    monkeypatch.setattr(homes, "_run", lambda cmd, env, cwd: "[]")
+    home = tmp_path / "run" / "home"
+    home.mkdir(parents=True)
+    with pytest.raises(LeakError, match="no last message"):
+        probe_isolation("codex", "bare", {"HOME": str(home)})
