@@ -1,6 +1,7 @@
 import json
 from concurrent.futures import ThreadPoolExecutor
 import socket
+import os
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -14,6 +15,8 @@ HTML = """<!doctype html><title>t</title>
 <style>body{background:#fff;color:#000}
 @media (prefers-color-scheme: dark){body{background:#000;color:#fff}}</style>
 <h1>Hello</h1>"""
+# the dev server runs sandboxed, where this venv (in the user's home) is unreadable
+PYTHON = os.path.realpath(sys._base_executable)
 
 
 def free_port() -> int:
@@ -33,7 +36,7 @@ def make_task(tmp_path: Path, **kw) -> Task:
     d.mkdir(exist_ok=True)
     port = free_port()
     base = Task(id="t", category="ui", dir=d, repo=None, base=None, prompt="p", setup=None,
-                allowed_paths=(), pages=("/", "/grade"), dev_cmd=f"{sys.executable} -m http.server {{port}}",
+                allowed_paths=(), pages=("/", "/grade"), dev_cmd=f"{PYTHON} -m http.server {{port}}",
                 dev_port=port, checks={}, hidden_tests=None, known_issues=None,
                 checklist=None, heldout=False)
     return replace(base, **kw)
@@ -105,7 +108,7 @@ def test_one_failing_page_does_not_abort_the_rest(tmp_path, site, monkeypatch):
         "            time.sleep(30)\n"
         "        super().do_GET()\n"
         "http.server.ThreadingHTTPServer(('127.0.0.1', int(sys.argv[1])), H).serve_forever()\n")
-    task = replace(task, dev_cmd=f"{sys.executable} serve.py {{port}}")
+    task = replace(task, dev_cmd=f"{PYTHON} serve.py {{port}}")
     run_dir = tmp_path / "results" / "run"
 
     files = cap.capture(task, site, run_dir / "screens", run_dir=run_dir)
@@ -151,7 +154,7 @@ def test_dev_server_env_is_scrubbed(tmp_path, site, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sekrit")
     envfile = tmp_path / "env.txt"
     task = make_task(tmp_path, pages=("/",), dev_cmd=(
-        f"env > {envfile}; {sys.executable} -m http.server {{port}}"))
+        f"env > {envfile}; {PYTHON} -m http.server {{port}}"))
     assert cap.capture(task, site, tmp_path / "s")
     env = dict(l.split("=", 1) for l in envfile.read_text().splitlines() if "=" in l)
     assert "ANTHROPIC_API_KEY" not in env and "sekrit" not in envfile.read_text()

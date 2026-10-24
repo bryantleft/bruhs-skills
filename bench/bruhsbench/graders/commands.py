@@ -21,7 +21,9 @@ only the base run names tests and the agent's run fails, every base-passing test
 
 If bench-base can't be restored (no .git / no tag) ``regressions`` is None and ``error``
 says why; the other checks still run. Checks get the harness environment minus
-credentials and agent-CLI configuration (:func:`check_env`).
+credentials and agent-CLI configuration, with ``HOME`` in the scratch dir
+(:func:`sandboxed_env`), and run under the OS sandbox (``sandbox.wrap``): agent-written
+code can't read or write the real home and writes only inside the scratch dir.
 """
 
 from __future__ import annotations
@@ -37,6 +39,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..sandbox import wrap
 from ..types import Task
 from ..workspace import BASE_TAG, GIT
 from . import not_applicable, run_meta, workspace_of, write_grade
@@ -188,6 +191,26 @@ def check_env() -> dict[str, str]:
     return {k: v for k, v in os.environ.items() if not _SECRET_ENV_RE.search(k.upper())}
 
 
+# Toolchain locations that stay at their real (sandbox read-only) place when HOME moves
+_TOOL_HOMES = {"CARGO_HOME": ".cargo", "RUSTUP_HOME": ".rustup",
+               "PLAYWRIGHT_BROWSERS_PATH": "Library/Caches/ms-playwright"}
+
+
+def sandboxed_env(scratch: Path) -> dict[str, str]:
+    """:func:`check_env` with ``HOME`` at ``scratch/home`` for agent-written code run
+    under the sandbox: the real home is unreadable and unwritable there, so caches
+    (npm, uv, ...) go to the scratch home; cargo/rustup/playwright keep their real
+    toolchains (read-only)."""
+    env = check_env()
+    home = Path(scratch) / "home"
+    home.mkdir(parents=True, exist_ok=True)
+    for var, rel in _TOOL_HOMES.items():
+        if var not in env and (Path.home() / rel).exists():
+            env[var] = str(Path.home() / rel)
+    env["HOME"] = str(home)
+    return env
+
+
 def clone_tree(src: Path, dest: Path) -> None:
     """Copy-on-write clone where the filesystem allows it, else a plain copy."""
     try:
@@ -203,8 +226,10 @@ def clone_tree(src: Path, dest: Path) -> None:
 def run_check(name: str, cmd: str, cwd: Path, scratch: Path, log_dir: Path) -> CheckResult:
     report = scratch / f"{name}-{cwd.name}.report"
     report.unlink(missing_ok=True)
-    env = {**check_env(), REPORT_ENV: str(report)}
-    proc = subprocess.Popen(["bash", "-c", cmd], cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+    env = {**sandboxed_env(scratch), REPORT_ENV: str(report)}
+    # R19: agent-written code; may write only in the scratch dir and its copy
+    argv = wrap(["bash", "-c", cmd], writable=[scratch, cwd])
+    proc = subprocess.Popen(argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             start_new_session=True)
     timed_out = False

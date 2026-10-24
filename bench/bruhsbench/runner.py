@@ -45,6 +45,7 @@ from pathlib import Path, PurePath
 
 from .agents import build_command, is_auth_failure, parse_output, tool_event_count
 from .homes import build_home, export_bruhs
+from .sandbox import wrap
 from .types import Arm, Cli, ModelSpec, RunResult, RunSpec, Task
 from .workspace import BASE_TAG, GIT, SetupFailed, check_task_setup, prepare_workspace
 
@@ -320,6 +321,7 @@ def run_one(
                          Path(env["HOME"]), run_dir)
     if command_override is not None:
         argv = command_override(spec, argv)
+    argv = wrap(argv, writable=[run_dir])  # R19: no access to the real home
 
     with claude_slots if (cli == "claude" and claude_slots is not None) else nullcontext():
         start = time.monotonic()

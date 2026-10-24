@@ -3,9 +3,14 @@ laid out like runner.run_one's (result.json, diff.patch, final.txt, transcript.j
 
 from __future__ import annotations
 
+import atexit
+import importlib.util
 import json
+import os
+import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import replace
 from pathlib import Path
 
@@ -14,7 +19,28 @@ import pytest
 from bruhsbench.types import Task
 from bruhsbench.workspace import BASE_TAG, GIT
 
-PYTEST = f"{sys.executable} -m pytest -q -p no:cacheprovider"
+
+def _sandbox_readable_pytest() -> str:
+    """A pytest command the sandboxed checks can run: this venv lives in the user's
+    home (unreadable in the sandbox), so pytest and its deps are copied to a temp dir
+    and run with the venv's base interpreter."""
+    lib = Path(tempfile.mkdtemp(prefix="bruhsbench-pytest-"))
+    atexit.register(shutil.rmtree, lib, ignore_errors=True)
+    for mod in ("pytest", "_pytest", "pluggy", "iniconfig", "packaging", "py", "pygments"):
+        spec = importlib.util.find_spec(mod)
+        if spec is None or spec.origin is None:
+            continue
+        origin = Path(spec.origin)
+        if origin.name == "__init__.py":
+            shutil.copytree(origin.parent, lib / mod,
+                            ignore=shutil.ignore_patterns("__pycache__"))
+        else:
+            shutil.copy2(origin, lib / origin.name)
+    python = os.path.realpath(sys._base_executable)
+    return f"PYTHONPATH={lib} {python} -m pytest -q -p no:cacheprovider"
+
+
+PYTEST = _sandbox_readable_pytest()
 
 
 def git(cwd: Path, *args: str) -> str:

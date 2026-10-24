@@ -67,6 +67,7 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .sandbox import wrap
 from .types import MODELS, Arm, Cli
 
 BRUHS_REPO = Path(__file__).resolve().parents[2]
@@ -80,7 +81,10 @@ EXPORT_EXCLUDE = ("bench", "docs")
 CLAUDE_SETTINGS = {"syncClaudeAiSkills": False, "syncClaudeAiPlugins": False}
 
 CHROME_DEVTOOLS_CMD = "npx"
-CHROME_DEVTOOLS_ARGS = ("-y", "chrome-devtools-mcp@latest", "--headless", "--isolated")
+# --no-sandbox: Chrome can't install its own seatbelt sandbox inside ours (sandbox.py),
+# so with it Chrome's helpers crash; the agent's sandbox still confines the browser.
+CHROME_DEVTOOLS_ARGS = ("-y", "chrome-devtools-mcp@latest", "--headless", "--isolated",
+                        "--chrome-arg=--no-sandbox")
 MCP_STARTUP_TIMEOUT_S = 120
 CODEX_FEATURES = "[features]\napps = false\nplugins = false\nremote_plugin = false\n"
 
@@ -375,8 +379,9 @@ def parse_grok_inspect(stdout: str) -> ProbeResult:
 
 
 def _run(cmd: list[str], env: dict[str, str], cwd: Path) -> str:
-    proc = subprocess.run(cmd, env=env, cwd=cwd, capture_output=True, text=True,
-                          timeout=PROBE_TIMEOUT_S)
+    # R19: sandboxed like a real run; writes only under the probe's run dir
+    proc = subprocess.run(wrap(cmd, writable=[Path(env["HOME"]).parent]), env=env, cwd=cwd,
+                          capture_output=True, text=True, timeout=PROBE_TIMEOUT_S)
     if proc.returncode != 0:
         raise LeakError(f"probe command failed ({proc.returncode}): {cmd[:3]}\n"
                         f"{proc.stdout[-2000:]}\n{proc.stderr[-2000:]}")

@@ -138,7 +138,8 @@ def test_build_home_bruhs_installs_bruhs_and_expect(cli, tmp_path, bruhs_src, re
     assert set(servers) == {"chrome-devtools"}
     cd = servers["chrome-devtools"]
     assert cd["command"] == "npx"
-    assert cd["args"] == ["-y", "chrome-devtools-mcp@latest", "--headless", "--isolated"]
+    assert cd["args"] == ["-y", "chrome-devtools-mcp@latest", "--headless", "--isolated",
+                          "--chrome-arg=--no-sandbox"]
     # the benchmark itself (reference solutions, plan) must never ride along with the skill
     assert not (bruhs_dir / "bench").exists()
     assert not (bruhs_dir / "docs").exists()

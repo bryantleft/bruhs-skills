@@ -4,7 +4,8 @@
 of the agent's workspace, so build output never alters the workspace, waits for HTTP 200,
 and screenshots every page at {desktop 1440x900, mobile 390x844} x {light, dark} as
 ``<page-slug>__<viewport>__<scheme>.png`` in ``out`` (``<run_dir>/screens``). The dev
-server runs in its own process group with a scrubbed env and the whole group is killed
+server runs in its own process group with a scrubbed env, under the OS sandbox
+(``sandbox.wrap``, writes only in its scratch dir), and the whole group is killed
 afterwards. Failures never raise: the outcome lands in ``<run_dir>/grades/capture.json``.
 
 ``capture_before`` captures the task's base state once into ``<results_root>/_before/<id>``.
@@ -26,7 +27,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from .graders.commands import check_env, clone_tree
+from .graders.commands import clone_tree, sandboxed_env
+from .sandbox import wrap
 from .types import Task
 from .workspace import prepare_workspace
 
@@ -130,10 +132,12 @@ def _capture(task: Task, workspace: Path, out: Path, ready_timeout: float
         clone_tree(Path(workspace), copy)
         log = scratch / "dev.log"
         with log.open("wb") as logf:
+            # R19: agent-written code; sandboxed, writes only in the scratch dir
+            argv = wrap(["bash", "-c", task.dev_cmd.replace("{port}", str(port))],
+                        writable=[scratch])
             proc = subprocess.Popen(
-                ["bash", "-c", task.dev_cmd.replace("{port}", str(port))], cwd=copy,
-                env=check_env(), stdin=subprocess.DEVNULL, stdout=logf,
-                stderr=subprocess.STDOUT, start_new_session=True)
+                argv, cwd=copy, env=sandboxed_env(scratch), stdin=subprocess.DEVNULL,
+                stdout=logf, stderr=subprocess.STDOUT, start_new_session=True)
             base_url = f"http://127.0.0.1:{port}"
             if _wait_ready(base_url + (task.pages[0] if task.pages else "/"), proc,
                            ready_timeout):

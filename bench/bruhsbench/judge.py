@@ -57,6 +57,7 @@ from pathlib import Path
 
 from .graders.scope import parse_diff
 from .homes import BRUHS_REPO, build_home, claude_args
+from .sandbox import wrap
 from .types import MODELS, Cli, ModelSpec, Task
 
 JUDGE_TIMEOUT_S = 20 * 60
@@ -255,6 +256,8 @@ def _work_base() -> Path:
 
 def _invoke(cmd: list[str], env: dict[str, str], cwd: Path, timeout: int,
             stdin: str | None = None) -> tuple[int, str, str]:
+    # R19: sandboxed; the judge may write only in its own root (home, cwd, scratch)
+    cmd = wrap(cmd, writable=[Path(cwd).parent])
     try:
         proc = subprocess.run(cmd, env=env, cwd=cwd, input=stdin,
                               stdin=None if stdin is not None else subprocess.DEVNULL,
