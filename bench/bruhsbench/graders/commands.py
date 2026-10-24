@@ -1,0 +1,273 @@
+"""Run the task's checks against the agent's final state (Ruling R16).
+
+Everything runs in disposable copies of the workspace (APFS clone via ``cp -cR``, else
+``copytree``) next to it, never in the agent's workspace:
+
+* agent copy: every check except ``hidden`` (build, typecheck, lint, test, ...) -> bool by
+  exit code; then the task's ``hidden/`` contents are copied in at the same relative
+  paths and ``checks["hidden"]`` (falling back to ``checks["test"]``) runs -> pass/total.
+* base copy (reset to ``bench-base``): ``checks["test"]`` again; a test passing at base
+  and not passing after is a regression.
+
+Per-test results come from a report file or stdout. Each command gets
+``$BRUHSBENCH_REPORT`` (a path in a scratch dir) to point its reporter at, e.g.
+``pytest --junitxml=$BRUHSBENCH_REPORT`` or
+``vitest run --reporter=json --outputFile=$BRUHSBENCH_REPORT``. Recognised: jest/vitest
+JSON (file or stdout), JUnit XML (file), cargo test lines (stdout), and a pytest summary
+line (counts only). With nothing parseable the exit code decides: 1/1 or 0/1, and a
+regression is reported under the check's name when base passed and after failed.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import shutil
+import signal
+import subprocess
+import tempfile
+import xml.etree.ElementTree as ET
+from dataclasses import dataclass
+from pathlib import Path
+
+from ..types import Task
+from ..workspace import BASE_TAG, GIT
+from . import not_applicable, run_meta, workspace_of, write_grade
+
+CHECK_TIMEOUT_S = 15 * 60
+REPORT_ENV = "BRUHSBENCH_REPORT"
+LOG_TAIL = 4000
+
+
+@dataclass(frozen=True)
+class SuiteResult:
+    passed: int
+    total: int
+    tests: dict[str, bool] | None  # per-test outcome, when the output names tests
+
+
+@dataclass(frozen=True)
+class CheckResult:
+    ok: bool
+    timed_out: bool
+    tests: SuiteResult | None
+
+
+# --------------------------------------------------------------------------- parsing
+
+
+def _from_tests(tests: dict[str, bool]) -> SuiteResult:
+    return SuiteResult(sum(tests.values()), len(tests), tests)
+
+
+def _parse_jest(data: object) -> SuiteResult | None:
+    if not isinstance(data, dict) or not isinstance(data.get("testResults"), list):
+        return None
+    tests: dict[str, bool] = {}
+    for suite in data["testResults"]:
+        if not isinstance(suite, dict):
+            continue
+        name = suite.get("name") or suite.get("testFilePath") or ""
+        for a in suite.get("assertionResults") or []:
+            status = a.get("status")
+            if status not in ("passed", "failed"):
+                continue  # pending / skipped / todo
+            title = a.get("fullName") or " ".join([*a.get("ancestorTitles", []), a.get("title", "")])
+            tests[f"{name}::{title}"] = status == "passed"
+    return _from_tests(tests)
+
+
+def _parse_junit(text: str) -> SuiteResult | None:
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError:
+        return None
+    if root.tag not in ("testsuites", "testsuite"):
+        return None
+    tests: dict[str, bool] = {}
+    for case in root.iter("testcase"):
+        if case.find("skipped") is not None:
+            continue
+        cls = case.get("classname") or case.get("file") or ""
+        name = f"{cls}::{case.get('name', '')}" if cls else case.get("name", "")
+        tests[name] = case.find("failure") is None and case.find("error") is None
+    return _from_tests(tests)
+
+
+def _json_in(text: str) -> object | None:
+    text = text.strip()
+    candidates = [text] + [line for line in text.splitlines() if line.startswith("{")]
+    for c in candidates:
+        try:
+            return json.loads(c)
+        except ValueError:
+            continue
+    start = text.find("{")
+    if start > 0:
+        try:
+            return json.loads(text[start:])
+        except ValueError:
+            pass
+    return None
+
+
+_CARGO_TEST_RE = re.compile(r"^test (\S+) \.\.\. (ok|FAILED)\s*$", re.MULTILINE)
+_CARGO_SUMMARY_RE = re.compile(r"^test result: \w+\. (\d+) passed; (\d+) failed", re.MULTILINE)
+_PYTEST_SUMMARY_RE = re.compile(
+    r"^(?:=+ )?(.*\d+ (?:passed|failed|errors?).*) in [\d.]+s", re.MULTILINE)
+
+
+def _parse_cargo(out: str) -> SuiteResult | None:
+    tests = {m[1]: m[2] == "ok" for m in _CARGO_TEST_RE.finditer(out)}
+    if tests:
+        return _from_tests(tests)
+    sums = _CARGO_SUMMARY_RE.findall(out)
+    if sums:
+        passed = sum(int(p) for p, _ in sums)
+        return SuiteResult(passed, passed + sum(int(f) for _, f in sums), None)
+    return None
+
+
+def _parse_pytest_summary(out: str) -> SuiteResult | None:
+    m = _PYTEST_SUMMARY_RE.findall(out)
+    if not m:
+        return None
+    counts = dict((k.rstrip("s"), int(n)) for n, k in re.findall(r"(\d+) (\w+)", m[-1]))
+    passed = counts.get("passed", 0)
+    return SuiteResult(passed, passed + counts.get("failed", 0) + counts.get("error", 0), None)
+
+
+def parse_test_output(report: Path, stdout: str) -> SuiteResult | None:
+    """Per-test results from the reporter file, else from stdout; None if unrecognised."""
+    if report.is_file():
+        text = report.read_text(errors="replace")
+        parsed = _parse_junit(text) if text.lstrip().startswith("<") else _parse_jest(_json_in(text))
+        if parsed is not None:
+            return parsed
+    return _parse_jest(_json_in(stdout)) or _parse_cargo(stdout) or _parse_pytest_summary(stdout)
+
+
+# --------------------------------------------------------------------------- running
+
+
+def clone_tree(src: Path, dest: Path) -> None:
+    """Copy-on-write clone where the filesystem allows it, else a plain copy."""
+    try:
+        proc = subprocess.run(["cp", "-cR", str(src), str(dest)], capture_output=True)
+        if proc.returncode == 0:
+            return
+    except OSError:
+        pass
+    shutil.rmtree(dest, ignore_errors=True)
+    shutil.copytree(src, dest, symlinks=True)
+
+
+def run_check(name: str, cmd: str, cwd: Path, scratch: Path, log_dir: Path) -> CheckResult:
+    report = scratch / f"{name}-{cwd.name}.report"
+    report.unlink(missing_ok=True)
+    env = {**os.environ, REPORT_ENV: str(report)}
+    proc = subprocess.Popen(["bash", "-c", cmd], cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            start_new_session=True)
+    timed_out = False
+    try:
+        out, _ = proc.communicate(timeout=CHECK_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        os.killpg(proc.pid, signal.SIGKILL)
+        out, _ = proc.communicate()
+    finally:
+        try:  # anything the check left running (watchers, servers)
+            os.killpg(proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+    text = out.decode(errors="replace")
+    log_dir.mkdir(parents=True, exist_ok=True)
+    (log_dir / f"{name}-{cwd.name}.log").write_text(
+        f"$ {cmd}\n# exit {proc.returncode}{' (timed out)' if timed_out else ''}\n"
+        f"{text[-LOG_TAIL:]}")
+    ok = proc.returncode == 0 and not timed_out
+    return CheckResult(ok, timed_out, None if timed_out else parse_test_output(report, text))
+
+
+def _git(cwd: Path, *args: str) -> None:
+    subprocess.run([*GIT, *args], cwd=cwd, check=True, capture_output=True)
+
+
+def _to_base(copy: Path) -> None:
+    """Reset a copy to bench-base; ignored files (deps installed by setup) stay."""
+    _git(copy, "reset", "--quiet", "--hard", BASE_TAG)
+    _git(copy, "clean", "--quiet", "-fd")
+
+
+def _overlay(src: Path, dest: Path) -> None:
+    shutil.copytree(src, dest, dirs_exist_ok=True,
+                    ignore=shutil.ignore_patterns("__pycache__", ".DS_Store"))
+
+
+def _counts(res: CheckResult) -> tuple[int, int]:
+    if res.tests is not None and res.tests.total > 0:
+        return res.tests.passed, res.tests.total
+    return int(res.ok), 1
+
+
+def _regressions(name: str, base: CheckResult, after: CheckResult) -> list[str]:
+    if base.tests and base.tests.tests is not None and after.tests and after.tests.tests is not None:
+        return sorted(t for t, ok in base.tests.tests.items() if ok and not after.tests.tests.get(t))
+    return [name] if base.ok and not after.ok else []
+
+
+def grade(task: Task, run_dir: Path) -> dict:
+    workspace = workspace_of(run_dir)
+    if workspace is None:
+        return not_applicable(run_dir, "commands",
+                              f"no workspace (status {run_meta(run_dir).get('status')})")
+    log_dir = Path(run_dir) / "grades" / "logs"
+    hidden_cmd = task.checks.get("hidden") or task.checks.get("test")
+    has_hidden = task.hidden_tests is not None and task.hidden_tests.is_dir()
+    if has_hidden and not hidden_cmd:
+        raise ValueError(f"task {task.id}: hidden tests but no checks.hidden or checks.test")
+
+    checks: dict[str, bool] = {}
+    timed_out: list[str] = []
+    result: dict = {"applicable": True}
+    scratch = Path(tempfile.mkdtemp(prefix="grade-", dir=workspace.parent))
+    try:
+        agent = scratch / "after"
+        clone_tree(workspace, agent)
+        after_results: dict[str, CheckResult] = {}
+        for name, cmd in task.checks.items():
+            if name == "hidden":
+                continue
+            res = after_results[name] = run_check(name, cmd, agent, scratch, log_dir)
+            checks[name] = res.ok
+            if res.timed_out:
+                timed_out.append(name)
+
+        regressions: list[str] = []
+        if "test" in task.checks:
+            base = scratch / "base"
+            clone_tree(workspace, base)
+            _to_base(base)
+            base_res = run_check("test", task.checks["test"], base, scratch, log_dir)
+            regressions = _regressions("test", base_res, after_results["test"])
+
+        hidden_pass = hidden_total = 0
+        if has_hidden:
+            _overlay(task.hidden_tests, agent)
+            res = run_check("hidden", hidden_cmd, agent, scratch, log_dir)
+            if res.timed_out:
+                timed_out.append("hidden")
+            hidden_pass, hidden_total = _counts(res)
+            result["hidden"] = {"applicable": True, "parsed": res.tests is not None,
+                                "failed": sorted(t for t, ok in (res.tests.tests or {}).items()
+                                                 if not ok) if res.tests else []}
+        else:
+            result["hidden"] = {"applicable": False}
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+    result.update(checks=checks, hidden_pass=hidden_pass, hidden_total=hidden_total,
+                  regressions=regressions, timed_out=timed_out)
+    return write_grade(run_dir, "commands", result)
