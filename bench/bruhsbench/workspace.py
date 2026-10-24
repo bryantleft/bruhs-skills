@@ -79,6 +79,11 @@ def _checkout(task: Task, dest: Path) -> None:
         _git(dest, "checkout", "--detach", "--quiet", task.base)
         for remote in _git(dest, "remote").split():
             _git(dest, "remote", "remove", remote)
+        # Make the future solution unreachable: drop every ref, reflogs, and prune objects.
+        for ref in _git(dest, "for-each-ref", "--format=%(refname)").split():
+            _git(dest, "update-ref", "-d", ref)
+        _git(dest, "reflog", "expire", "--expire=now", "--all")
+        _git(dest, "gc", "--prune=now", "--quiet")
     else:
         fixture = task.dir / "fixture"
         if not fixture.is_dir():
@@ -107,7 +112,7 @@ def _run_setup(task: Task, dest: Path) -> None:
 def prepare_workspace(
     task: Task, arm: Arm, dest: Path, scripts_dir: Path | None = None
 ) -> Path:
-    """Create a fresh checkout at `dest` for `arm`, commit it as `bench: base`, run setup."""
+    """Create a fresh checkout at `dest` for `arm`, run setup, commit it as `bench: base`."""
     dest = Path(dest)
     if dest.exists() and any(dest.iterdir()):
         raise FileExistsError(f"workspace destination not empty: {dest}")
@@ -123,11 +128,12 @@ def prepare_workspace(
     if arm == "bruhs":
         insert_bruhs_blocks(dest, scripts_dir)
 
+    # Setup runs before the base commit so its output is part of base, not the agent diff.
+    _run_setup(task, dest)
+
     _git(dest, "add", "-A")
     _git(dest, "commit", "--quiet", "--allow-empty", "-m", "bench: base")
     _git(dest, "tag", "-f", BASE_TAG)
-
-    _run_setup(task, dest)
     return dest
 
 

@@ -13,7 +13,8 @@ from bruhsbench.workspace import (
     strip_bruhs_blocks,
 )
 
-GIT = ["git", "-c", "user.name=t", "-c", "user.email=t@localhost", "-c", "commit.gpgsign=false"]
+GIT = ["git", "-c", "user.name=t", "-c", "user.email=t@localhost", "-c", "commit.gpgsign=false",
+       "-c", "tag.gpgsign=false"]
 
 
 def git(cwd: Path, *args: str) -> str:
@@ -164,3 +165,24 @@ def test_check_task_setup_true(tmp_path):
     repo, base = make_repo(tmp_path)
     good = make_task(tmp_path, repo, base, setup="true\n")
     assert check_task_setup(good, tmp_path / "scratch") is True
+
+
+def test_setup_output_is_part_of_base(tmp_path):
+    repo, base = make_repo(tmp_path)
+    task = make_task(tmp_path, repo, base, setup="echo x > generated.txt\n")
+    ws = prepare_workspace(task, "bare", tmp_path / "ws")
+    assert (ws / "generated.txt").exists()
+    git(ws, "add", "-A")
+    assert git(ws, "diff", "--cached", "bench-base") == ""
+
+
+def test_future_commits_unreachable(tmp_path):
+    repo, base = make_repo(tmp_path)
+    later = git(repo, "rev-parse", "HEAD").strip()
+    git(repo, "tag", "v-later")
+    assert later != base
+    ws = prepare_workspace(make_task(tmp_path, repo, base), "bare", tmp_path / "ws")
+    revs = git(ws, "rev-list", "--all").split()
+    assert later not in revs and base in revs and len(revs) == 2
+    assert git(ws, "for-each-ref", "--format=%(refname)").split() == ["refs/tags/bench-base"]
+    assert subprocess.run(["git", "cat-file", "-e", later], cwd=ws).returncode != 0
