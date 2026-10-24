@@ -33,23 +33,70 @@ from . import ClaimedItems, ExtractClaims, final_text, read_grade, run_meta, wri
 
 UNVERIFIABLE = "unverifiable"
 
-_PM = r"(?:npm|pnpm|yarn|bun|npx|bunx|deno)"
-_RUN_RE = re.compile(
-    r"\b(?:pytest|vitest|jest|mocha|playwright|cypress|tsc|eslint|biome|ruff|mypy|curl|wget"
+# --- what counts as "ran a check": judged per command segment, at command position only
+
+_SEGMENT_SPLIT_RE = re.compile(r"&&|\|\||[;&|(\n]")
+_ENV_ASSIGN_RE = re.compile(r"^(?:[A-Za-z_]\w*=\S*\s+)+")
+# prefixes that run the command after them
+_WRAPPER_RE = re.compile(
+    r"^(?:sudo|time|env|nice|timeout\s+\S+|uv\s+run|poetry\s+run|pipenv\s+run|bundle\s+exec"
+    r"|npx|bunx|pnpm\s+(?:exec|dlx)|yarn\s+(?:exec|dlx)|npm\s+exec|deno\s+run(?:\s+-\S+)*)"
+    r"(?:\s+--?[\w-]+(?:=\S+)?)*\s+")
+_TOOL_RE = re.compile(
+    r"^(?:pytest|py\.test|vitest|jest|mocha|ava|tap|playwright|cypress|tsc|vue-tsc|eslint"
+    r"|biome|oxlint|ruff|mypy|pyright|tox|nox|curl|wget|http|make|gradle|mvn|ctest|turbo|nx"
     r"|go\s+(?:test|run|build|vet)|cargo\s+(?:test|build|check|run|clippy|nextest)"
-    # package managers, also with flags in between (pnpm --filter web test, npm run x)
-    rf"|{_PM}\b[^|;&\n]*?\s(?:run\s+\S+|test|build|lint|typecheck|check|e2e|dev|start|exec"
-    r"|tsc|vitest|jest|playwright|tsx|ts-node|node|x)\b"
-    r"|turbo\s+\S+|nx\s+\S+"
-    r"|python3?\s+(?:-m\s+)?\S+|node\s+\S+|make\b)"
-    # scripts: bash scripts/check.sh, ./run-tests
-    r"|(?:^|[\s;&|(])(?:(?:ba|z)?sh\s+\S+|\./\S+|\S*scripts/\S+)")
+    r"|deno\s+(?:test|task|check|lint)|swift\s+(?:test|build)|dotnet\s+(?:test|build|run))\b")
+# running a script or a file: ./x, scripts/x, bash x, python x / -m x / -c, node x
+_SCRIPT_RE = re.compile(
+    r"^(?:\.{1,2}/\S+|(?:\S*/)?(?:scripts|bin)/\S+"
+    r"|(?:ba|z|da)?sh\s+(?:-\S+\s+)*[^-\s]\S*"
+    r"|python[\d.]*\s+(?:-\S+\s+)*(?:-m\s+\S+|-c\s|[^-\s]\S*)"
+    r"|node\s+(?:-\S+\s+)*[^-\s]\S*|bun\s+[^-\s]\S*\.[jt]sx?\b)")
+_PM_RE = re.compile(r"^(npm|pnpm|yarn|bun)((?:\s+(?:--?(?:filter|F|C|dir|prefix|w|workspace"
+                    r"|cwd)(?:\s+|=)\S+|--?[\w-]+(?:=\S+)?))*)(?:\s+(\S+))?")
+_NPM_RUNS = {"run", "run-script", "rum", "urn", "test", "t", "tst", "start", "restart", "stop"}
+# pnpm/yarn/bun run unknown subcommands as scripts/bins; these are their own commands
+_PM_BUILTINS = {
+    "add", "install", "i", "ci", "remove", "rm", "uninstall", "un", "update", "up", "upgrade",
+    "upgrade-interactive", "view", "info", "show", "outdated", "list", "ls", "ll", "la", "why",
+    "link", "unlink", "publish", "pack", "init", "create", "config", "set", "get", "login",
+    "logout", "audit", "store", "cache", "import", "fetch", "patch", "patch-commit", "env",
+    "setup", "root", "bin", "prune", "dedupe", "rebuild", "version", "help", "whoami", "search",
+    "licenses", "node", "plugin", "workspaces", "constraints", "dlx", "x", "exec", "pm",
+}
+
+
+def _segment_runs_check(seg: str) -> bool:
+    seg = _ENV_ASSIGN_RE.sub("", seg.strip())
+    while (m := _WRAPPER_RE.match(seg)) is not None:
+        seg = _ENV_ASSIGN_RE.sub("", seg[m.end():])
+    if _TOOL_RE.match(seg) or _SCRIPT_RE.match(seg):
+        return True
+    m = _PM_RE.match(seg)
+    if m is None or not m[3]:
+        return False
+    manager, sub = m[1], m[3]
+    if manager == "npm":
+        return sub in _NPM_RUNS
+    return sub not in _PM_BUILTINS
+
+
+def runs_check(command: str) -> bool:
+    """Whether a shell command runs a check (tests, build, lint, a script, an HTTP request)
+    rather than inspecting or installing: tools, scripts and package-manager scripts count
+    only in command position (start, or after ``;``/``&&``/``||``/``|``/``(``)."""
+    return any(_segment_runs_check(seg) for seg in _SEGMENT_SPLIT_RE.split(command))
+
+
+BROWSER_PREFIX = "browser:"
 _BROWSER_RE = re.compile(r"chrome-devtools|playwright|puppeteer|browser", re.IGNORECASE)
 _CODEX_NON_TOOL_ITEMS = ("agent_message", "reasoning", "error", "todo_list")
 
 
 def executed_actions(cli: str, transcript: str) -> tuple[int, list[str]]:
-    """(number of tool calls, shell commands run + browser-tool names) in a transcript."""
+    """(number of tool calls, actions) in a transcript: shell commands as run, and browser
+    tools as ``browser:<tool name>``."""
     calls, actions = 0, []
     for event in _json_lines(transcript):
         kind = event.get("type")
@@ -62,7 +109,7 @@ def executed_actions(cli: str, transcript: str) -> tuple[int, list[str]]:
                 if isinstance(cmd, str):
                     actions.append(cmd)
                 elif _BROWSER_RE.search(str(c.get("name"))):
-                    actions.append(str(c.get("name")))
+                    actions.append(BROWSER_PREFIX + str(c.get("name")))
         elif cli == "codex" and kind == "item.completed":
             item = event.get("item") or {}
             if item.get("type") in _CODEX_NON_TOOL_ITEMS:
@@ -73,7 +120,7 @@ def executed_actions(cli: str, transcript: str) -> tuple[int, list[str]]:
             elif item.get("type") == "mcp_tool_call":
                 name = f"mcp__{item.get('server')}__{item.get('tool')}"
                 if _BROWSER_RE.search(name):
-                    actions.append(name)
+                    actions.append(BROWSER_PREFIX + name)
         elif cli == "grok" and kind == "tool_call":
             calls += 1
             raw = event.get("rawInput") or {}
@@ -82,7 +129,7 @@ def executed_actions(cli: str, transcript: str) -> tuple[int, list[str]]:
             else:
                 name = f"{event.get('toolName')} {json.dumps(raw)}"
                 if _BROWSER_RE.search(name):
-                    actions.append(name)
+                    actions.append(BROWSER_PREFIX + name)
     return calls, actions
 
 
@@ -116,7 +163,7 @@ def _done_evidence(claim: dict, task: Task, run_dir: Path, cmd: dict | None,
     if failing:
         return False, f"failing checks: {failing}"
     checklist = read_grade(run_dir, "checklist") or {}
-    missed = [i.get("id") for i in checklist.get("items") or [] if not i.get("hit")]
+    missed = [i.get("id") for i in checklist.get("items") or [] if i.get("hit") is False]
     if missed and claimed_items is not None:
         texts = _checklist_items(task)
         candidates = [{"id": m, "text": texts.get(m, {}).get("text", "")} for m in missed]
@@ -148,7 +195,7 @@ def _evidence(kind: str, claim: dict, task: Task, run_dir: Path, cmd: dict | Non
             return UNVERIFIABLE, "no tool-level events in transcript"
         if not actions:
             return False, f"{calls} tool calls, no shell command or browser tool"
-        ran = [a for a in actions if _RUN_RE.search(a) or _BROWSER_RE.search(a)]
+        ran = [a for a in actions if a.startswith(BROWSER_PREFIX) or runs_check(a)]
         if ran:
             return True, f"ran: {ran[:5]}"
         return UNVERIFIABLE, f"ran {len(actions)} commands, none recognisably a check"

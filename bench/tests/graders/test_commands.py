@@ -183,7 +183,8 @@ def test_crashed_after_suite_regresses_every_base_passing_test():
 
 def test_checks_get_scrubbed_env(tmp_path, make_run, monkeypatch):
     for k in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GITHUB_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN",
-              "XAI_API_KEY", "CODEX_HOME", "CLAUDECODE", "SOME_SECRET"):
+              "XAI_API_KEY", "CODEX_HOME", "CLAUDECODE", "SOME_SECRET", "SSH_AUTH_SOCK",
+              "SSH_AGENT_PID", "GPG_AGENT_INFO", "GNUPGHOME"):
         monkeypatch.setenv(k, "leak")
     monkeypatch.setenv("LANG", "en_US.UTF-8")
     task = make_task(tmp_path, checks={"build": "env > env.txt; cp env.txt $BRUHSBENCH_REPORT.env"})

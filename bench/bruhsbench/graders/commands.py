@@ -178,7 +178,9 @@ def parse_test_output(report: Path, stdout: str, root: Path | None = None) -> Su
 _SECRET_ENV_RE = re.compile(
     r"(?:_API_KEY|_KEY|_TOKEN|_SECRET|_PASSWORD|_CREDENTIALS?|_AUTH)$"
     r"|^(?:CLAUDE|ANTHROPIC|OPENAI|XAI|GROK|CODEX|GEMINI|GOOGLE|AWS|AZURE|GH|GITHUB|LINEAR"
-    r"|HF|HUGGING_FACE|VERCEL|BRUHSBENCH)(?:_|$)|^CLAUDECODE$|_AUTH_TOKEN|_AUTHTOKEN")
+    r"|HF|HUGGING_FACE|VERCEL|BRUHSBENCH)(?:_|$)|^CLAUDECODE$|_AUTH_TOKEN|_AUTHTOKEN"
+    # agent sockets (ssh/gpg signing and auth)
+    r"|^SSH_AUTH_SOCK$|^SSH_AGENT_PID$|^GPG_AGENT_INFO$|^GNUPGHOME$|_AGENT_SOCK$")
 
 
 def check_env() -> dict[str, str]:
