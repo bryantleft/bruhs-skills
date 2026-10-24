@@ -1,0 +1,166 @@
+import subprocess
+from dataclasses import replace
+from pathlib import Path
+
+import pytest
+
+from bruhsbench.tasks import load_task
+from bruhsbench.workspace import (
+    SetupFailed,
+    check_task_setup,
+    insert_bruhs_blocks,
+    prepare_workspace,
+    strip_bruhs_blocks,
+)
+
+GIT = ["git", "-c", "user.name=t", "-c", "user.email=t@localhost", "-c", "commit.gpgsign=false"]
+
+
+def git(cwd: Path, *args: str) -> str:
+    return subprocess.run(
+        [*GIT, *args], cwd=cwd, check=True, capture_output=True, text=True
+    ).stdout
+
+
+def make_repo(root: Path) -> tuple[Path, str]:
+    repo = root / "src-repo"
+    repo.mkdir()
+    git(repo, "init", "-q", "-b", "main")
+    (repo / "package.json").write_text(
+        '{"name":"x","dependencies":{"next":"15.0.0","react":"19.0.0"}}\n'
+    )
+    (repo / "app.txt").write_text("hello\n")
+    (repo / "CLAUDE.md").write_text("# CLAUDE.md\n\nHand-written rule.\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "init")
+    base = git(repo, "rev-parse", "HEAD").strip()
+    # a later commit so checkout of base is observable
+    (repo / "app.txt").write_text("later\n")
+    git(repo, "commit", "-qam", "later")
+    return repo, base
+
+
+def make_task(root: Path, repo: Path | None, base: str | None, setup: str | None = None):
+    d = root / "task-x"
+    d.mkdir()
+    (d / "task.toml").write_text('id = "task-x"\ncategory = "feature"\n')
+    (d / "prompt.md").write_text("do it\n")
+    t = load_task(d)
+    if setup is not None:
+        (d / "setup.sh").write_text(setup)
+    return replace(t, repo=repo, base=base, setup=(d / "setup.sh") if setup is not None else None)
+
+
+BLOCKS = (
+    "<!-- bruhs:state:begin v1 -->\nstuff\n<!-- bruhs:state:end -->\n\n"
+    "<!-- bruhs:rules:begin v1 -->\nrules\n<!-- bruhs:rules:end -->\n"
+)
+
+
+def test_strip_removes_all_kinds_and_empty_heading():
+    text = "# CLAUDE.md\n\nHand-written rule.\n\n## bruhs-managed\n\n" + BLOCKS
+    assert strip_bruhs_blocks(text) == "# CLAUDE.md\n\nHand-written rule.\n"
+
+
+def test_strip_keeps_heading_with_other_content():
+    text = "## bruhs-managed\n\nmine\n\n" + BLOCKS
+    out = strip_bruhs_blocks(text)
+    assert "bruhs:" not in out
+    assert "## bruhs-managed" in out and "mine" in out
+
+
+def test_strip_noop_without_markers():
+    text = "# Title\n\n## bruhs-managed\n\nnot ours\n\n\n"
+    assert strip_bruhs_blocks(text) == text
+
+
+def test_strip_only_blocks_leaves_empty():
+    assert strip_bruhs_blocks("## bruhs-managed\n\n" + BLOCKS).strip() == ""
+
+
+def test_insert_creates_blocks(tmp_path):
+    repo, _ = make_repo(tmp_path)
+    insert_bruhs_blocks(repo)
+    text = (repo / "CLAUDE.md").read_text()
+    assert "bruhs:state:begin" in text and "bruhs:rules:begin" in text
+    assert "integrations" not in text
+    assert "Hand-written rule." in text
+    assert (repo / "AGENTS.md").exists()
+
+
+def test_bare_and_bruhs_differ_only_in_blocks(tmp_path):
+    repo, base = make_repo(tmp_path)
+    task = make_task(tmp_path, repo, base)
+    bare = prepare_workspace(task, "bare", tmp_path / "bare")
+    bruhs = prepare_workspace(task, "bruhs", tmp_path / "bruhs")
+    out = subprocess.run(
+        ["diff", "-rq", "--exclude=.git", str(bare), str(bruhs)],
+        capture_output=True, text=True,
+    ).stdout
+    changed = {Path(l.split()[1] if l.startswith("Files") else l.split()[-1]).name
+               for l in out.splitlines()}
+    assert changed <= {"CLAUDE.md", "AGENTS.md"} and changed
+    assert (bare / "app.txt").read_text() == "hello\n"  # base checked out
+    assert "bruhs:" not in (bare / "CLAUDE.md").read_text()
+    assert git(bare, "rev-parse", "bench-base").strip() == git(bare, "rev-parse", "HEAD").strip()
+    assert git(bare, "log", "-1", "--format=%s").strip() == "bench: base"
+    assert git(bruhs, "status", "--porcelain") == ""
+
+
+def test_bruhs_json_removed(tmp_path):
+    repo, base = make_repo(tmp_path)
+    (repo / ".claude").mkdir()
+    (repo / ".claude/bruhs.json").write_text("{}")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-qm", "cfg")
+    base = git(repo, "rev-parse", "HEAD").strip()
+    ws = prepare_workspace(make_task(tmp_path, repo, base), "bare", tmp_path / "ws")
+    assert not (ws / ".claude/bruhs.json").exists()
+
+
+def test_remotes_removed(tmp_path):
+    repo, base = make_repo(tmp_path)
+    ws = prepare_workspace(make_task(tmp_path, repo, base), "bare", tmp_path / "ws")
+    assert git(ws, "remote").strip() == ""
+
+
+def test_seeded_task_uses_fixture(tmp_path):
+    task = make_task(tmp_path, None, None)
+    (task.dir / "fixture").mkdir()
+    (task.dir / "fixture/a.txt").write_text("a\n")
+    ws = prepare_workspace(task, "bare", tmp_path / "ws")
+    assert (ws / "a.txt").read_text() == "a\n"
+    assert git(ws, "log", "-1", "--format=%s").strip() == "bench: base"
+    assert git(ws, "rev-parse", "bench-base").strip()
+
+
+def test_seeded_missing_fixture_errors(tmp_path):
+    task = make_task(tmp_path, None, None)
+    with pytest.raises(FileNotFoundError, match="fixture"):
+        prepare_workspace(task, "bare", tmp_path / "ws")
+
+
+def test_setup_runs_in_dest(tmp_path):
+    repo, base = make_repo(tmp_path)
+    task = make_task(tmp_path, repo, base, setup="touch ran.marker\n")
+    ws = prepare_workspace(task, "bare", tmp_path / "ws")
+    assert (ws / "ran.marker").exists()
+
+
+def test_setup_failure_raises(tmp_path):
+    repo, base = make_repo(tmp_path)
+    task = make_task(tmp_path, repo, base, setup="exit 1\n")
+    with pytest.raises(SetupFailed):
+        prepare_workspace(task, "bare", tmp_path / "ws")
+
+
+def test_setup_failure_excludes_task(tmp_path):
+    repo, base = make_repo(tmp_path)
+    bad = make_task(tmp_path, repo, base, setup="exit 1\n")
+    assert check_task_setup(bad, tmp_path / "scratch") is False
+
+
+def test_check_task_setup_true(tmp_path):
+    repo, base = make_repo(tmp_path)
+    good = make_task(tmp_path, repo, base, setup="true\n")
+    assert check_task_setup(good, tmp_path / "scratch") is True
