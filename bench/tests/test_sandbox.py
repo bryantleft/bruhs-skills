@@ -1,28 +1,29 @@
-"""The OS sandbox every untrusted process runs under (Ruling R19).
+"""The OS sandbox every untrusted process runs under (R19-R22).
 
 Sentinels are planted in the real home under a unique name and always removed."""
 
 import json
 import os
-import stat
 import subprocess
 import uuid
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from live_auth import need_claude_token
 
 from bruhsbench import judge as J
-from bruhsbench import runner, sandbox
+from bruhsbench import runner, sandbox, untrusted
 from bruhsbench.capture import capture
-from bruhsbench.graders import commands
+from bruhsbench.graders import checklist, commands
 from bruhsbench.homes import LeakError
 from bruhsbench.homes import _run as probe_run
 from bruhsbench.tasks import load_task
 from bruhsbench.types import MODELS, RunSpec, Task
+from bruhsbench.workspace import BASE_TAG, GIT
 
 SPEC = {m.cli: m for m in MODELS}
-HOME = Path.home().resolve()
+HOME = sandbox.real_home()
 
 
 @pytest.fixture
@@ -63,7 +64,7 @@ def test_profile_denies_home_and_allows_list(tmp_path):
     assert f'(subpath "/System/Volumes/Data{HOME}")' in text
     for rel in sandbox.READ_ALLOW:
         assert f'(subpath "{HOME / rel}")' in text
-    assert f'(subpath "{HOME / "Library/Keychains"}")' in text
+    assert "Keychains" not in text  # R20: no keychain access at all
     assert f'(literal "{HOME}")' in text  # metadata only: traversal, not listing
     assert '(subpath "/opt/extra")' in text and f'(subpath "{tmp_path.resolve()}")' in text
     # later rules win: the home deny must come before every re-allow
@@ -131,11 +132,6 @@ def test_allowlisted_tool_dirs_readable(tmp_path):
 # --------------------------------------------------------------------------- call sites
 
 
-def _cat_sentinel_script(root: Path, path: Path) -> Path:
-    script = root / "agent.sh"
-    script.write_text(f"#!/bin/bash\ncat {path}\necho '{{}}'\n")
-    script.chmod(script.stat().st_mode | stat.S_IEXEC)
-    return script
 
 
 def test_runner_agent_is_sandboxed(tmp_path, sentinel, monkeypatch):
@@ -151,10 +147,10 @@ def test_runner_agent_is_sandboxed(tmp_path, sentinel, monkeypatch):
         return {"PATH": os.environ["PATH"], "HOME": str(run_dir / "home")}
 
     monkeypatch.setattr(runner, "build_home", fake_home)
-    script = _cat_sentinel_script(tmp_path, path)
     res = runner.run_one(RunSpec(load_task(d), SPEC["claude"], "bare", 1), tmp_path / "out",
                          bruhs_src=tmp_path, work_root=tmp_path / "work",
-                         command_override=lambda spec, argv: ["bash", str(script)])
+                         command_override=lambda spec, argv: [
+                             "bash", "-c", f"cat {path}; echo '{{}}'"])
     out = tmp_path / "out" / res.run_id
     assert "Operation not permitted" in (out / "stderr.txt").read_text()
     assert token not in (out / "transcript.jsonl").read_text()
@@ -202,6 +198,248 @@ def test_dev_server_is_sandboxed(tmp_path, sentinel):
     assert "Operation not permitted" in rec and token not in rec
 
 
+# --------------------------------------------------------------------------- R20/R21: home, runs
+
+
+def test_real_home_comes_from_passwd_not_env(tmp_path, monkeypatch):
+    import pwd
+    monkeypatch.setenv("HOME", str(tmp_path))
+    expected = Path(pwd.getpwuid(os.getuid()).pw_dir).resolve()
+    assert sandbox.real_home() == expected != tmp_path
+    assert f'(deny file-read* file-write* (subpath "{expected}")' in sandbox.profile(
+        writable=[tmp_path / "w"])
+
+
+def test_roots_inside_real_home_refused(tmp_path):
+    with pytest.raises(ValueError):
+        sandbox.profile(writable=[HOME / "Documents"])
+    with pytest.raises(ValueError):
+        sandbox.wrap(["true"], writable=[tmp_path], extra_readable=[HOME / ".ssh"])
+
+
+@pytest.fixture
+def work_base(tmp_path, monkeypatch):
+    """A work base with two run roots and a judge root, each holding a file."""
+    base = tmp_path / "wb"
+    monkeypatch.setenv("BRUHSBENCH_WORK", str(base))
+    roots = {name: base / rel for name, rel in
+             (("a", "res/run-a"), ("b", "res/run-b"), ("judge", "_judge/j1"),
+              ("bruhs", "res/_bruhs/abc"))}
+    for name, root in roots.items():
+        root.mkdir(parents=True)
+        (root / "f.txt").write_text(f"{name}-secret\n")
+    return roots
+
+
+def test_cross_run_access_denied(work_base):
+    a = work_base["a"]
+    env = sandbox.private_tmp({"PATH": os.environ["PATH"]}, a)
+
+    def sh(script):
+        return subprocess.run(sandbox.wrap(["/bin/sh", "-c", script], writable=[a]), cwd=a,
+                              env=env, capture_output=True, text=True, timeout=60)
+
+    for other in ("b", "judge", "bruhs"):
+        f = work_base[other] / "f.txt"
+        proc = sh(f"cat {f}")
+        assert proc.returncode != 0 and "secret" not in proc.stdout, other
+        assert sh(f"echo x > {f}").returncode != 0 and f.read_text() == f"{other}-secret\n"
+        assert sh(f"ls {work_base[other]}").returncode != 0
+    assert sh(f"cat {a / 'f.txt'} && echo y > {a / 'g.txt'}").stdout == "a-secret\n"
+    # no shared temp dirs: /tmp and the Darwin temp dir are read-only, TMPDIR is private
+    assert sh(f"echo x > /private/tmp/bruhsbench-{uuid.uuid4().hex}").returncode != 0
+    assert sh(f'echo x > "{os.confstr(65537)}bruhsbench-{uuid.uuid4().hex}"').returncode != 0
+    # TMPDIR is private; macOS mktemp ignores it, so its own unguessable names in the
+    # (unlistable) Darwin temp dir work too
+    proc = sh('python3 -c "import tempfile; print(tempfile.mkstemp()[1])"')
+    assert proc.returncode == 0 and proc.stdout.startswith(str(a.resolve() / ".tmp"))
+    assert sh('f=$(mktemp) && echo hi > "$f" && cat "$f"').stdout == "hi\n"
+    assert sh(f"ls {os.confstr(65537)}").returncode != 0
+
+
+def test_runner_denies_its_whole_work_root(tmp_path, monkeypatch):
+    seen = {}
+    monkeypatch.setattr(runner, "wrap", lambda argv, **kw: seen.update(kw) or argv)
+    monkeypatch.setattr(runner, "build_home", lambda cli, arm, run_dir, src, **kw: (
+        (run_dir / "home").mkdir() or {"PATH": os.environ["PATH"], "HOME": str(run_dir / "home")}))
+    d = _task_dir(tmp_path)
+    res = runner.run_one(RunSpec(load_task(d), SPEC["codex"], "bare", 1), tmp_path / "out",
+                         bruhs_src=tmp_path, work_root=tmp_path / "work",
+                         command_override=lambda spec, argv: ["true"])
+    run_dir = tmp_path / "work" / res.run_id
+    assert seen == {"writable": [run_dir], "denied": [tmp_path / "work"]}
+
+
+def test_grading_scratch_outside_run_root(tmp_path):
+    ws = tmp_path / "work" / "t__claude__bare__r1" / "workspace"
+    ws.mkdir(parents=True)
+    root = commands.scratch_root(ws)
+    assert root == tmp_path / "work" / "_scratch" and root.is_dir()
+    assert not root.is_relative_to(ws.parent)
+    argv = commands.sandboxed_check("true", root / "grade-x")
+    assert f'(subpath "{(tmp_path / "work").resolve()}")' in argv[2].splitlines()[2]
+
+
+# --------------------------------------------------------------------------- R22: git
+
+
+def _task_dir(tmp_path: Path) -> Path:
+    d = tmp_path / "tasks" / "t"
+    (d / "fixture").mkdir(parents=True)
+    (d / "fixture" / "a.txt").write_text("a\n")
+    (d / "task.toml").write_text('id = "t"\ncategory = "feature"\n')
+    (d / "prompt.md").write_text("p\n")
+    return d
+
+
+def _git(cwd, *args):
+    return subprocess.run([*GIT, *args], cwd=cwd, check=True, capture_output=True, text=True)
+
+
+@pytest.fixture
+def hostile_repo(tmp_path):
+    """A committed+tagged repo whose config runs `touch <marker>` from fsmonitor, a clean/
+    smudge filter (one via an included config file), hooks, and an external diff."""
+    repo = tmp_path / "work" / "run" / "workspace"
+    repo.mkdir(parents=True)
+    (repo / "a.txt").write_text("a\n")
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "base")
+    _git(repo, "tag", BASE_TAG)
+    markers = [repo / ".git" / "pwned-inside", tmp_path / "pwned-outside"]
+    touch = "; ".join(f"touch {m}" for m in markers)
+    (repo / ".gitattributes").write_text("* filter=evil diff=evil\n*.txt filter=inc\n")
+    (repo / ".git" / "inc.cfg").write_text(f"[filter \"inc\"]\n\tclean = sh -c '{touch}; cat'\n")
+    for key, value in (("core.fsmonitor", f"sh -c '{touch}'"),
+                       ("filter.evil.clean", f"sh -c '{touch}; cat'"),
+                       ("filter.evil.smudge", f"sh -c '{touch}; cat'"),
+                       ("filter.evil.required", "true"),
+                       ("diff.evil.textconv", f"sh -c '{touch}; cat'"),
+                       ("diff.external", f"sh -c '{touch}'"),
+                       ("core.hooksPath", str(tmp_path / "hooks")),
+                       ("include.path", "inc.cfg")):
+        _git(repo, "config", key, value)
+    (tmp_path / "hooks").mkdir()
+    for hook in ("post-checkout", "pre-auto-gc", "post-index-change"):
+        (tmp_path / "hooks" / hook).write_text(f"#!/bin/sh\n{touch}\n")
+        (tmp_path / "hooks" / hook).chmod(0o755)
+    (repo / "a.txt").write_text("changed\n")
+    (repo / "b.txt").write_text("new\n")
+    return repo, markers
+
+
+def test_hostile_repo_fires_with_plain_git(hostile_repo):
+    """Control: the planted config really runs commands when git isn't hardened."""
+    repo, markers = hostile_repo
+    _git(repo, "add", "-A")
+    assert any(m.exists() for m in markers)
+
+
+def test_harness_git_paths_never_run_repo_config(hostile_repo, tmp_path):
+    repo, markers = hostile_repo
+    assert runner._write_diff(repo, tmp_path / "diff.patch")
+    diff = (tmp_path / "diff.patch").read_text()
+    assert "+changed" in diff and "+new" in diff
+    copy = tmp_path / "work" / "_scratch" / "copy"
+    copy.parent.mkdir(parents=True)
+    commands.clone_tree(repo, copy)
+    assert commands._base_problem(copy, repo) is None
+    commands._to_base(copy)
+    assert (copy / "a.txt").read_text() == "a\n" and not (copy / "b.txt").exists()
+    assert not [m for m in markers if m.exists()]
+    _git(repo, "commit", "-qm", "agent work", "--no-verify")  # the agent's own (plain) git
+    for m in markers:
+        m.unlink(missing_ok=True)
+    assert "agent work" in checklist._commits(repo)
+    assert untrusted.git(repo, "show", "HEAD", text=True).returncode == 0
+    assert not [m for m in markers if m.exists()]
+
+
+# --------------------------------------------------------------------------- R22: reads
+
+
+def test_read_file_refuses_anything_but_a_plain_file(tmp_path, sentinel):
+    path, token = sentinel
+    root = tmp_path / "root"
+    (root / "d").mkdir(parents=True)
+    (root / "d" / "ok.txt").write_text("fine")
+    assert untrusted.read_text(root, "d/ok.txt") == "fine"
+    (root / "link.txt").symlink_to(path)
+    (root / "dirlink").symlink_to(path.parent)
+    os.mkfifo(root / "fifo")
+    os.link(root / "d" / "ok.txt", root / "hard.txt")
+    for rel in ("link.txt", f"dirlink/{path.name}", "fifo", "hard.txt", "missing", "../x"):
+        with pytest.raises(untrusted.UnsafePath):
+            untrusted.read_file(root, rel)
+    rootlink = tmp_path / "rootlink"
+    rootlink.symlink_to(path.parent)
+    with pytest.raises(untrusted.UnsafePath):
+        untrusted.read_file(rootlink, path.name)
+
+
+def test_files_does_not_follow_symlinks(tmp_path):
+    root = tmp_path / "root"
+    (root / "logs" / "sub").mkdir(parents=True)
+    (root / "logs" / "sub" / "a.jsonl").write_text("{}")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "b.jsonl").write_text("{}")
+    (root / "logs" / "dirlink").symlink_to(outside)
+    (root / "logs" / "filelink.jsonl").symlink_to(outside / "b.jsonl")
+    assert untrusted.files(root, "logs", ".jsonl") == ["logs/sub/a.jsonl"]
+    (root / "linked").symlink_to(root / "logs")
+    assert untrusted.files(root, "linked", ".jsonl") == []
+
+
+def test_runner_skips_planted_symlinks(tmp_path, sentinel, monkeypatch):
+    path, token = sentinel
+
+    def fake_home(cli, arm, run_dir, bruhs_src, **kw):
+        (run_dir / "home").mkdir(parents=True)
+        return {"PATH": os.environ["PATH"], "HOME": str(run_dir / "home")}
+
+    monkeypatch.setattr(runner, "build_home", fake_home)
+    script = (f"""
+ln -s {path} ../final.txt
+mkdir -p "$HOME/.claude/projects"
+ln -s {path} "$HOME/.claude/projects/s.jsonl"
+ln -s {path.parent} "$HOME/.claude/projects/home"
+echo '{{}}'
+""")
+    res = runner.run_one(RunSpec(load_task(_task_dir(tmp_path)), SPEC["codex"], "bare", 1),
+                         tmp_path / "out", bruhs_src=tmp_path, work_root=tmp_path / "work",
+                         command_override=lambda spec, argv: ["bash", "-c", script])
+    assert any("final.txt" in u for u in res.unsafe_files)
+    out = tmp_path / "out" / res.run_id
+    assert not any(token in f.read_text(errors="replace") for f in out.rglob("*") if f.is_file())
+    assert token not in json.dumps(runner.session_logs(tmp_path / "work" / res.run_id))
+
+
+def test_overlay_never_writes_through_symlinks(tmp_path):
+    src = tmp_path / "hidden"
+    (src / "tests").mkdir(parents=True)
+    (src / "tests" / "test_hidden.py").write_text("hidden\n")
+    (src / "conftest.py").write_text("conf\n")
+    victim = tmp_path / "victim"
+    victim.mkdir()
+    (victim / "keep.txt").write_text("keep\n")
+    dest = tmp_path / "after"
+    dest.mkdir()
+    (dest / "tests").symlink_to(victim)
+    (dest / "conftest.py").symlink_to(victim / "keep.txt")
+    commands._overlay(src, dest)
+    assert sorted(p.name for p in victim.iterdir()) == ["keep.txt"]
+    assert (victim / "keep.txt").read_text() == "keep\n"
+    assert not (dest / "tests").is_symlink()
+    assert (dest / "tests" / "test_hidden.py").read_text() == "hidden\n"
+    assert not (dest / "conftest.py").is_symlink()
+    with pytest.raises(untrusted.UnsafePath):
+        linked = tmp_path / "linked"
+        linked.symlink_to(dest)
+        commands._overlay(src, linked)
+
+
 # --------------------------------------------------------------------------- live
 
 
@@ -220,6 +458,7 @@ def _leak_prompt(path: Path) -> str:
 @pytest.mark.parametrize("arm", ["bare", "bruhs"])
 @pytest.mark.parametrize("cli", ["claude", "codex", "grok"])
 def test_live_agent_cannot_read_real_home(cli, arm, tmp_path, sentinel):
+    need_claude_token(cli)
     path, token = sentinel
     d = tmp_path / "tasks" / "leak"
     (d / "fixture").mkdir(parents=True)
@@ -245,6 +484,7 @@ def test_live_agent_cannot_read_real_home(cli, arm, tmp_path, sentinel):
 @pytest.mark.live
 @pytest.mark.parametrize("cli", ["claude", "codex", "grok"])
 def test_live_judge_cannot_read_real_home(cli, tmp_path, sentinel, monkeypatch):
+    need_claude_token(cli)
     path, token = sentinel
     outputs = []
     real_invoke = J._invoke

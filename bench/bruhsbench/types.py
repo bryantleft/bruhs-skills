@@ -77,3 +77,5 @@ class RunResult:
     contamination: list[str] = field(default_factory=list)
     workspace: Path | None = None  # agent's checkout, kept in the work root for graders
     error: str | None = None  # traceback when the harness itself failed during the run
+    # R22: agent-writable files the harness refused to read (symlink, FIFO, hard link, ...)
+    unsafe_files: list[str] = field(default_factory=list)

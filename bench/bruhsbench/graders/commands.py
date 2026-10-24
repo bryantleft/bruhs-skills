@@ -1,7 +1,8 @@
 """Run the task's checks against the agent's final state (Ruling R16).
 
 Everything runs in disposable copies of the workspace (APFS clone via ``cp -cR``, else
-``copytree``) next to it, never in the agent's workspace:
+``copytree``) in a scratch dir under ``<work_root>/_scratch`` (outside every run root),
+never in the agent's workspace:
 
 * agent copy: every check except ``hidden`` (build, typecheck, lint, test, ...) -> bool by
   exit code; then the task's ``hidden/`` contents are copied in at the same relative
@@ -22,8 +23,10 @@ only the base run names tests and the agent's run fails, every base-passing test
 If bench-base can't be restored (no .git / no tag) ``regressions`` is None and ``error``
 says why; the other checks still run. Checks get the harness environment minus
 credentials and agent-CLI configuration, with ``HOME`` in the scratch dir
-(:func:`sandboxed_env`), and run under the OS sandbox (``sandbox.wrap``): agent-written
-code can't read or write the real home and writes only inside the scratch dir.
+(:func:`sandboxed_env`) and ``TMPDIR`` in it, under the OS sandbox (``sandbox.wrap``):
+agent-written code can't touch the real home or any run root and writes only inside the
+scratch dir. Git on the copies, the report file and the hidden-test overlay go through
+``untrusted`` (R22).
 """
 
 from __future__ import annotations
@@ -39,9 +42,10 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..sandbox import wrap
+from .. import untrusted
+from ..sandbox import private_tmp, real_home, wrap
 from ..types import Task
-from ..workspace import BASE_TAG, GIT
+from ..workspace import BASE_TAG
 from . import not_applicable, run_meta, workspace_of, write_grade
 
 CHECK_TIMEOUT_S = 15 * 60
@@ -165,8 +169,11 @@ def parse_test_output(report: Path, stdout: str, root: Path | None = None) -> Su
     Absolute test file paths under ``root`` (the directory the check ran in) are made
     relative to it, so the same test has the same name in the base and the agent copy.
     """
-    if report.is_file():
-        text = report.read_text(errors="replace")
+    try:  # written by the sandboxed check: read without following symlinks (R22)
+        text = untrusted.read_text(report.parent, report.name)
+    except untrusted.UnsafePath:
+        text = None
+    if text is not None:
         parsed = (_parse_junit(text, root) if text.lstrip().startswith("<")
                   else _parse_jest(_json_in(text), root))
         if parsed is not None:
@@ -205,14 +212,30 @@ def sandboxed_env(scratch: Path) -> dict[str, str]:
     home = Path(scratch) / "home"
     home.mkdir(parents=True, exist_ok=True)
     for var, rel in _TOOL_HOMES.items():
-        if var not in env and (Path.home() / rel).exists():
-            env[var] = str(Path.home() / rel)
+        if var not in env and (real_home() / rel).exists():
+            env[var] = str(real_home() / rel)
     env["HOME"] = str(home)
     return env
 
 
+def scratch_root(workspace: Path) -> Path:
+    """``<work_root>/_scratch``: grading copies live next to the run roots, never inside
+    one, so nothing the agent left running can reach them (R21)."""
+    root = Path(workspace).parent.parent / "_scratch"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def sandboxed_check(cmd: str, scratch: Path) -> list[str]:
+    """argv running ``bash -c cmd`` under the sandbox: writes only in ``scratch``, and no
+    reads of any run root next to it (R19/R21)."""
+    return wrap(["bash", "-c", cmd], writable=[scratch], denied=[Path(scratch).parent.parent])
+
+
 def clone_tree(src: Path, dest: Path) -> None:
-    """Copy-on-write clone where the filesystem allows it, else a plain copy."""
+    """Copy-on-write clone where the filesystem allows it, else a plain copy. Symlinks are
+    copied as links; a ``src`` that resolves into the real home is refused (R22)."""
+    untrusted.check_outside_home(src)
     try:
         proc = subprocess.run(["cp", "-cR", str(src), str(dest)], capture_output=True)
         if proc.returncode == 0:
@@ -221,14 +244,15 @@ def clone_tree(src: Path, dest: Path) -> None:
         pass
     shutil.rmtree(dest, ignore_errors=True)
     shutil.copytree(src, dest, symlinks=True)
+    if dest.is_symlink() or not dest.is_dir():
+        raise untrusted.UnsafePath(f"clone of {src} is not a real directory")
 
 
 def run_check(name: str, cmd: str, cwd: Path, scratch: Path, log_dir: Path) -> CheckResult:
     report = scratch / f"{name}-{cwd.name}.report"
     report.unlink(missing_ok=True)
-    env = {**sandboxed_env(scratch), REPORT_ENV: str(report)}
-    # R19: agent-written code; may write only in the scratch dir and its copy
-    argv = wrap(["bash", "-c", cmd], writable=[scratch, cwd])
+    env = {**private_tmp(sandboxed_env(scratch), scratch), REPORT_ENV: str(report)}
+    argv = sandboxed_check(cmd, scratch)  # agent-written code (R19)
     proc = subprocess.Popen(argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             start_new_session=True)
@@ -254,19 +278,14 @@ def run_check(name: str, cmd: str, cwd: Path, scratch: Path, log_dir: Path) -> C
                        None if timed_out else parse_test_output(report, text, cwd))
 
 
-def _git(cwd: Path, *args: str) -> None:
-    subprocess.run([*GIT, *args], cwd=cwd, check=True, capture_output=True)
-
-
 def _to_base(copy: Path) -> None:
     """Reset a copy to bench-base; ignored files (deps installed by setup) stay."""
-    _git(copy, "reset", "--quiet", "--hard", BASE_TAG)
-    _git(copy, "clean", "--quiet", "-fd")
+    untrusted.git(copy, "reset", "--quiet", "--hard", BASE_TAG)
+    untrusted.git(copy, "clean", "--quiet", "-fd")
 
 
 def _overlay(src: Path, dest: Path) -> None:
-    shutil.copytree(src, dest, dirs_exist_ok=True,
-                    ignore=shutil.ignore_patterns("__pycache__", ".DS_Store"))
+    untrusted.overlay(src, dest)  # never writes through a symlink the agent planted
 
 
 def _counts(res: CheckResult) -> tuple[int, int]:
@@ -287,12 +306,13 @@ def _regressions(name: str, base: CheckResult, after: CheckResult) -> list[str]:
     return [name] if base.ok and not after.ok else []
 
 
-def _base_problem(workspace: Path) -> str | None:
-    """Why the bench-base state can't be restored from ``workspace``, if it can't."""
-    if not (workspace / ".git").exists():
+def _base_problem(copy: Path, workspace: Path) -> str | None:
+    """Why the bench-base state can't be restored (checked in ``copy``, a clone of the
+    agent's ``workspace``), if it can't."""
+    if not os.path.lexists(copy / ".git"):
         return f"no .git in {workspace}"
-    proc = subprocess.run([*GIT, "rev-parse", "--verify", "--quiet", f"{BASE_TAG}^{{commit}}"],
-                          cwd=workspace, capture_output=True, text=True)
+    proc = untrusted.git(copy, "rev-parse", "--verify", "--quiet", f"{BASE_TAG}^{{commit}}",
+                         write=False, check=False)
     return None if proc.returncode == 0 else f"tag {BASE_TAG} missing in {workspace}"
 
 
@@ -311,7 +331,7 @@ def grade(task: Task, run_dir: Path) -> dict:
     checks: dict[str, bool] = {}
     timed_out: list[str] = []
     result: dict = {"applicable": True}
-    scratch = Path(tempfile.mkdtemp(prefix="grade-", dir=workspace.parent))
+    scratch = Path(tempfile.mkdtemp(prefix="grade-", dir=scratch_root(workspace)))
     try:
         agent = scratch / "after"
         clone_tree(workspace, agent)
@@ -325,13 +345,15 @@ def grade(task: Task, run_dir: Path) -> dict:
                 timed_out.append(name)
 
         regressions: list[str] | None = []
-        problem = _base_problem(workspace) if "test" in task.checks else None
+        problem = None
+        if "test" in task.checks:
+            base = scratch / "base"
+            clone_tree(workspace, base)
+            problem = _base_problem(base, workspace)
         if problem is not None:
             result["error"] = f"regressions not computed: {problem}"
             regressions = None
         elif "test" in task.checks:
-            base = scratch / "base"
-            clone_tree(workspace, base)
             _to_base(base)
             base_res = run_check("test", task.checks["test"], base, scratch, log_dir)
             regressions = _regressions("test", base_res, after_results["test"])

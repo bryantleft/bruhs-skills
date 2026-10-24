@@ -19,15 +19,15 @@ from __future__ import annotations
 
 import json
 import shutil
-import subprocess
 import tempfile
 from pathlib import Path
 
 from .. import judge as J
+from .. import untrusted
 from ..types import ModelSpec, Task
-from ..workspace import BASE_TAG, GIT
+from ..workspace import BASE_TAG
 from . import not_applicable, run_meta, workspace_of, write_grade
-from .commands import clone_tree, run_check
+from .commands import clone_tree, run_check, scratch_root
 
 MAX_COMMITS_CHARS = 10_000
 
@@ -44,7 +44,7 @@ def load_items(path: Path) -> list[dict]:
 
 
 def _run_script(item: dict, workspace: Path, run_dir: Path) -> bool:
-    scratch = Path(tempfile.mkdtemp(prefix="checklist-", dir=workspace.parent))
+    scratch = Path(tempfile.mkdtemp(prefix="checklist-", dir=scratch_root(workspace)))
     try:
         copy = scratch / "ws"
         clone_tree(workspace, copy)
@@ -58,8 +58,11 @@ def _run_script(item: dict, workspace: Path, run_dir: Path) -> bool:
 def _commits(workspace: Path | None) -> str:
     if workspace is None:
         return ""
-    proc = subprocess.run([*GIT, "log", "--format=commit%n%B", f"{BASE_TAG}..HEAD"],
-                          cwd=workspace, capture_output=True, text=True)
+    try:  # agent-controlled repo: hardened, sandboxed git (R22)
+        proc = untrusted.git(workspace, "log", "--format=commit%n%B", f"{BASE_TAG}..HEAD",
+                             write=False, check=False, text=True)
+    except untrusted.UnsafePath:
+        return ""
     return proc.stdout.strip() if proc.returncode == 0 else ""
 
 

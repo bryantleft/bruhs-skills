@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 from pathlib import Path, PurePosixPath
 
+from .. import untrusted
 from ..types import Task
 from . import ExtractFindings, MatchFinding, final_text, not_applicable, workspace_of, write_grade
 from .scope import parse_diff
@@ -74,9 +75,13 @@ def report_files(run_dir: Path, workspace: Path | None) -> dict[str, str]:
         if not change.paths:
             continue
         rel = change.paths[-1]
-        p = workspace / rel
-        if rel.lower().endswith(REPORT_SUFFIXES) and p.is_file():
-            files[rel] = p.read_text(errors="replace")[:MAX_FILE_CHARS]
+        if not rel.lower().endswith(REPORT_SUFFIXES):
+            continue
+        try:  # agent-controlled tree: no symlinks, regular files only (R22)
+            files[rel] = untrusted.read_text(untrusted.check_outside_home(workspace),
+                                             rel)[:MAX_FILE_CHARS]
+        except untrusted.UnsafePath:
+            continue
     return files
 
 

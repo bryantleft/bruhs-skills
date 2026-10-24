@@ -47,7 +47,6 @@ import fcntl
 import hashlib
 import json
 import mimetypes
-import os
 import random
 import re
 import shutil
@@ -57,14 +56,14 @@ from pathlib import Path
 
 from .graders.scope import parse_diff
 from .homes import BRUHS_REPO, build_home, claude_args
-from .sandbox import wrap
+from . import untrusted
+from .sandbox import private_tmp, work_base, wrap
 from .types import MODELS, Cli, ModelSpec, Task
 
 JUDGE_TIMEOUT_S = 20 * 60
 MAX_DIFF_CHARS = 60_000
 MAX_FINAL_CHARS = 20_000
 MAX_FILES_CHARS = 150_000
-DEFAULT_WORK_BASE = Path("/private/tmp/bruhsbench")
 # Anthropic's per-image limit once a request has more than 20 images; screenshots are
 # scaled/tiled to fit so every judge sees the same pixels
 MAX_IMAGE_PX = 2000
@@ -249,15 +248,17 @@ def _clip(text: str, limit: int) -> str:
 
 
 def _work_base() -> Path:
-    base = Path(os.environ.get("BRUHSBENCH_WORK") or DEFAULT_WORK_BASE) / "_judge"
+    base = work_base() / "_judge"
     base.mkdir(parents=True, exist_ok=True)
     return base
 
 
 def _invoke(cmd: list[str], env: dict[str, str], cwd: Path, timeout: int,
             stdin: str | None = None) -> tuple[int, str, str]:
-    # R19: sandboxed; the judge may write only in its own root (home, cwd, scratch)
-    cmd = wrap(cmd, writable=[Path(cwd).parent])
+    # R19/R21: sandboxed; the judge may touch only its own root (home, cwd, scratch),
+    # with a private TMPDIR there
+    root = Path(cwd).parent
+    cmd, env = wrap(cmd, writable=[root]), private_tmp(env, root)
     try:
         proc = subprocess.run(cmd, env=env, cwd=cwd, input=stdin,
                               stdin=None if stdin is not None else subprocess.DEVNULL,
@@ -398,8 +399,10 @@ def _json_objects(stdout: str) -> list[dict]:
 def parse_judge_output(cli: str, stdout: str, scratch: Path):
     """The structured answer a judge CLI returned (None if there is none)."""
     if cli == "codex":
-        last = scratch / "last.txt"
-        return _loads(last.read_text()) if last.is_file() else None
+        try:  # written by the sandboxed judge: no symlinks (R22)
+            return _loads(untrusted.read_text(scratch, "last.txt"))
+        except untrusted.UnsafePath:
+            return None
     objs = _json_objects(stdout)
     if cli == "claude":
         data = next((o for o in reversed(objs) if o.get("type") == "result"), None)

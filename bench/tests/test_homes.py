@@ -5,8 +5,11 @@ import tomllib
 from pathlib import Path
 
 import pytest
+from live_auth import need_claude_token
 
+import bruhsbench.homes as homes_mod
 from bruhsbench.homes import (
+    ClaudeAuthMissing,
     LeakError,
     ProbeResult,
     assert_arms_match,
@@ -46,7 +49,6 @@ def real_home(tmp_path: Path) -> Path:
     (expect / "SKILL.md").write_text("---\nname: expect\n---\nexpect skill\n")
     (h / ".agents" / "skills" / "superpowers").mkdir()
     (h / ".agents" / "skills" / "superpowers" / "SKILL.md").write_text(REAL_MARKER)
-    (h / "Library" / "Keychains").mkdir(parents=True)
     return h
 
 
@@ -66,11 +68,18 @@ def bruhs_src(tmp_path: Path) -> Path:
     return src
 
 
+def _token_env(tmp_path: Path) -> Path:
+    """A bench/.env stand-in holding a (fake) claude token (R20)."""
+    env_file = tmp_path / "token.env"
+    env_file.write_text("CLAUDE_CODE_OAUTH_TOKEN=test-token\n")
+    return env_file
+
+
 def _build(cli, arm, tmp_path, bruhs_src, real_home, env_file=None):
     run_dir = tmp_path / "run"
     run_dir.mkdir(exist_ok=True)
     env = build_home(cli, arm, run_dir, bruhs_src, real_home=real_home,
-                     env_file=env_file or tmp_path / "missing.env")
+                     env_file=env_file or _token_env(tmp_path))
     return env, Path(env["HOME"])
 
 
@@ -235,16 +244,26 @@ def test_claude_auth_from_env_file(tmp_path, bruhs_src, real_home, monkeypatch):
     env, home = _build("claude", "bare", tmp_path, bruhs_src, real_home, env_file)
     assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "tok-123"
     assert "OTHER" not in env
-    assert not (home / "Library" / "Keychains").exists()
+    assert not (home / "Library").exists()  # no keychain link (R20)
 
 
-def test_claude_auth_falls_back_to_keychain_link(tmp_path, bruhs_src, real_home, monkeypatch):
+def test_claude_without_token_raises_before_anything(tmp_path, bruhs_src, real_home,
+                                                     monkeypatch):
+    """R20: no keychain fallback; a clear error naming `claude setup-token`."""
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    env, home = _build("claude", "bare", tmp_path, bruhs_src, real_home)
-    link = home / "Library" / "Keychains"
-    assert link.is_symlink() and link.resolve() == (real_home / "Library" / "Keychains").resolve()
-    assert "CLAUDE_CODE_OAUTH_TOKEN" not in env and "ANTHROPIC_API_KEY" not in env
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    with pytest.raises(ClaudeAuthMissing, match="claude setup-token"):
+        build_home("claude", "bare", run_dir, bruhs_src, real_home=real_home,
+                   env_file=tmp_path / "missing.env")
+    assert not (run_dir / "home").exists()
+
+
+def test_bench_env_file_is_gitignored():
+    """bench/.env holds the real claude token; it must never be committable."""
+    proc = subprocess.run(["git", "check-ignore", "-q", "bench/.env"], cwd=REPO_ROOT)
+    assert proc.returncode == 0
 
 
 def test_probe_detects_leaked_skill():
@@ -322,7 +341,7 @@ def test_export_bruhs_drops_bench_and_docs(tmp_path, real_home):
     for cli in ("claude", "codex"):
         sub = run_dir / cli
         sub.mkdir()
-        build_home(cli, "bruhs", sub, src, real_home=real_home, env_file=tmp_path / "none")
+        build_home(cli, "bruhs", sub, src, real_home=real_home, env_file=_token_env(tmp_path))
     leaked = [p for p in run_dir.rglob("*") if p.name in ("bench", "docs") or "answer.py" in p.name]
     assert leaked == []
 
@@ -339,7 +358,7 @@ def test_build_home_refuses_unfiltered_bruhs_inside_run_dir(tmp_path, real_home)
 
 def test_build_home_refuses_run_dir_inside_user_home(tmp_path, bruhs_src, real_home,
                                                      monkeypatch):
-    monkeypatch.setenv("HOME", str(tmp_path / "userhome"))  # never touch the real ~
+    monkeypatch.setattr(homes_mod, "real_home_dir", lambda: tmp_path / "userhome")
     run_dir = tmp_path / "userhome" / "runs" / "r1"
     with pytest.raises(ValueError, match="inside the user's home"):
         build_home("codex", "bare", run_dir, bruhs_src, real_home=real_home)
@@ -392,6 +411,7 @@ _LIVE: dict[tuple[str, str], ProbeResult] = {}
 
 
 def _live_probe(cli, arm, tmp_path_factory) -> ProbeResult:
+    need_claude_token(cli)
     if (cli, arm) not in _LIVE:
         run_dir = tmp_path_factory.mktemp(f"{cli}-{arm}")
         bruhs_src = export_bruhs(REPO_ROOT, "HEAD", run_dir / "bruhs")

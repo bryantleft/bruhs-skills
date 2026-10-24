@@ -7,19 +7,11 @@ agent's environment is rebuilt from scratch (``PATH``, ``LANG``, ``TERM``,
 is brought in. Mechanisms, verified live with ``pytest -m live tests/test_homes.py``:
 
 claude
-    Auth, in order of precedence:
-    1. ``CLAUDE_CODE_OAUTH_TOKEN`` or ``ANTHROPIC_API_KEY`` from the process env
-       or ``bench/.env`` (gitignored). If one is set it is passed to claude and
-       no keychain link is made.
-    2. Default when no token is set: the user's macOS login keychain. With
-       ``HOME`` overridden Claude Code reports "Not logged in", because it finds
-       the keychain via ``$HOME/Library/Keychains``; so
-       ``<home>/Library/Keychains`` is symlinked to the real one. Nothing else
-       from the real home is linked, and we never read the keychain ourselves.
-       Caveat: every run then shares the one keychain login, and when claude
-       refreshes the OAuth token it writes the new one back to the real
-       keychain. Parallel runs can race on that refresh; if auth failures show
-       up, put a ``claude setup-token`` token in ``bench/.env``.
+    Auth (Ruling R20): only ``CLAUDE_CODE_OAUTH_TOKEN`` or ``ANTHROPIC_API_KEY``, from
+    the process env or ``bench/.env`` (gitignored); create the token with
+    ``claude setup-token``. Without one, :func:`build_home` raises
+    :class:`ClaudeAuthMissing` before any claude process starts. The macOS keychain is
+    never linked into the home and is unreachable from the sandbox.
     Skills/MCP: bruhs arm = ``--plugin-dir <home>/plugins/bruhs`` + expect in
     ``<home>/.claude/skills/expect`` + ``--mcp-config <home>/mcp.json
     --strict-mcp-config`` (chrome-devtools). Bare arm = the same flags with an
@@ -67,7 +59,8 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .sandbox import wrap
+from .sandbox import real_home as real_home_dir
+from .sandbox import private_tmp, wrap
 from .types import MODELS, Arm, Cli
 
 BRUHS_REPO = Path(__file__).resolve().parents[2]
@@ -116,6 +109,10 @@ class LeakError(AssertionError):
     pass
 
 
+class ClaudeAuthMissing(RuntimeError):
+    pass
+
+
 @dataclass(frozen=True)
 class ProbeResult:
     skills: set[str] = field(default_factory=set)
@@ -145,13 +142,19 @@ def _read_env_file(path: Path) -> dict[str, str]:
     return out
 
 
-def _claude_auth(env_file: Path) -> dict[str, str]:
+def claude_auth(env_file: Path = DEFAULT_ENV_FILE) -> dict[str, str]:
+    """The claude token vars to pass on; raises :class:`ClaudeAuthMissing` if none."""
     file_vars = _read_env_file(env_file)
     found = {}
     for var in CLAUDE_AUTH_VARS:
         value = os.environ.get(var) or file_vars.get(var)
         if value:
             found[var] = value
+    if not found:
+        raise ClaudeAuthMissing(
+            f"claude needs CLAUDE_CODE_OAUTH_TOKEN (or ANTHROPIC_API_KEY) in the environment "
+            f"or in {env_file}: run `claude setup-token` and put the token there. The "
+            "keychain login is not used (R20).")
     return found
 
 
@@ -222,14 +225,15 @@ def build_home(
     env_file: Path = DEFAULT_ENV_FILE,
 ) -> dict[str, str]:
     """Create ``run_dir/home`` for one run and return the full env for the CLI."""
-    if _is_within(run_dir, Path.home()):
+    if _is_within(run_dir, real_home_dir()):
         raise ValueError(f"run_dir {run_dir} is inside the user's home; the CLIs would "
                          "discover ~/ config from its ancestors")
     if _is_within(bruhs_src, run_dir) and (
             bad := [d for d in EXPORT_EXCLUDE if (bruhs_src / d).exists()]):
         raise ValueError(f"bruhs_src {bruhs_src} is inside run_dir but still has {bad}; "
                          "export it with export_bruhs()")
-    real = real_home or Path.home()
+    auth = claude_auth(env_file) if cli == "claude" else {}  # fail before creating anything
+    real = real_home or real_home_dir()
     home = run_dir / "home"
     home.mkdir(parents=True, exist_ok=False)
     (home / ".config").mkdir()
@@ -242,12 +246,7 @@ def build_home(
     env["XDG_CONFIG_HOME"] = str(home / ".config")
 
     if cli == "claude":
-        auth = _claude_auth(env_file)
-        if auth:
-            env.update(auth)
-        else:
-            (home / "Library").mkdir()
-            (home / "Library" / "Keychains").symlink_to(real / "Library" / "Keychains")
+        env.update(auth)
         (home / ".claude").mkdir()
         settings = json.dumps(CLAUDE_SETTINGS, indent=2) + "\n"
         (home / ".claude" / "settings.json").write_text(settings)
@@ -379,8 +378,9 @@ def parse_grok_inspect(stdout: str) -> ProbeResult:
 
 
 def _run(cmd: list[str], env: dict[str, str], cwd: Path) -> str:
-    # R19: sandboxed like a real run; writes only under the probe's run dir
-    proc = subprocess.run(wrap(cmd, writable=[Path(env["HOME"]).parent]), env=env, cwd=cwd,
+    # R19/R21: sandboxed like a real run; only the probe's run dir, private TMPDIR
+    root = Path(env["HOME"]).parent
+    proc = subprocess.run(wrap(cmd, writable=[root]), env=private_tmp(env, root), cwd=cwd,
                           capture_output=True, text=True, timeout=PROBE_TIMEOUT_S)
     if proc.returncode != 0:
         raise LeakError(f"probe command failed ({proc.returncode}): {cmd[:3]}\n"
@@ -456,7 +456,7 @@ REAL_PLUGINS_FILE = ".claude/plugins/installed_plugins.json"
 
 def real_extension_names(real_home: Path | None = None) -> tuple[set[str], set[str]]:
     """(skill dir names, installed claude plugin names) in the user's real home."""
-    home = real_home or Path.home()
+    home = real_home or real_home_dir()
     skills: set[str] = set()
     for rel in REAL_SKILL_ROOTS:
         root = home / rel

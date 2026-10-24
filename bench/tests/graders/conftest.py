@@ -22,9 +22,10 @@ from bruhsbench.workspace import BASE_TAG, GIT
 
 def _sandbox_readable_pytest() -> str:
     """A pytest command the sandboxed checks can run: this venv lives in the user's
-    home (unreadable in the sandbox), so pytest and its deps are copied to a temp dir
-    and run with the venv's base interpreter."""
-    lib = Path(tempfile.mkdtemp(prefix="bruhsbench-pytest-"))
+    home and the per-user temp dir is blocked too, so pytest and its deps are copied to
+    /private/var/tmp (readable, not writable, in the sandbox) and run with the venv's
+    base interpreter."""
+    lib = Path(tempfile.mkdtemp(prefix="bruhsbench-pytest-", dir="/private/var/tmp"))
     atexit.register(shutil.rmtree, lib, ignore_errors=True)
     for mod in ("pytest", "_pytest", "pluggy", "iniconfig", "packaging", "py", "pygments"):
         spec = importlib.util.find_spec(mod)

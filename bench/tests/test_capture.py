@@ -152,13 +152,23 @@ def test_not_applicable_without_dev_cmd(tmp_path, site):
 
 def test_dev_server_env_is_scrubbed(tmp_path, site, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sekrit")
-    envfile = tmp_path / "env.txt"
-    task = make_task(tmp_path, pages=("/",), dev_cmd=(
-        f"env > {envfile}; {PYTHON} -m http.server {{port}}"))
+    seen = {}
+    real_popen = cap.subprocess.Popen
+
+    def spy(argv, **kw):
+        if "bash" in argv:  # the dev server, not cp
+            seen.update(kw["env"])
+        return real_popen(argv, **kw)
+
+    monkeypatch.setattr(cap.subprocess, "Popen", spy)
+    task = make_task(tmp_path, pages=("/",))
     assert cap.capture(task, site, tmp_path / "s")
-    env = dict(l.split("=", 1) for l in envfile.read_text().splitlines() if "=" in l)
-    assert "ANTHROPIC_API_KEY" not in env and "sekrit" not in envfile.read_text()
-    assert env.get("PATH")
+    assert "ANTHROPIC_API_KEY" not in seen and "sekrit" not in seen.values()
+    assert seen.get("PATH")
+    # its own HOME and TMPDIR in the grading scratch dir, outside the run root (R21)
+    scratch = tmp_path / "work" / "_scratch"
+    assert Path(seen["HOME"]).parent.parent == scratch
+    assert Path(seen["TMPDIR"]).parent.parent == scratch
 
 
 def test_capture_before_once(tmp_path, monkeypatch):

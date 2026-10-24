@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from bruhsbench import runner
+from bruhsbench import runner, sandbox
 from bruhsbench.runner import AuthAbort, matrix_order, run_matrix, run_one, scan_contamination
 from bruhsbench.tasks import load_task
 from bruhsbench.types import ModelSpec, RunSpec
@@ -33,7 +33,8 @@ def make_task(root: Path, task_id: str, setup: str | None = None):
 
 def fake_agent(root: Path, body: str) -> Path:
     """A shell script standing in for the CLI. Runs with cwd = workspace."""
-    script = root / f"agent-{abs(hash(body))}.sh"
+    (root / "side").mkdir(exist_ok=True)  # sandbox-readable (see hermetic)
+    script = root / "side" / f"agent-{abs(hash(body))}.sh"
     script.write_text("#!/bin/bash\n" + body)
     script.chmod(script.stat().st_mode | stat.S_IEXEC)
     return script
@@ -67,6 +68,13 @@ def hermetic(tmp_path, monkeypatch):
         return {"PATH": os.environ["PATH"], "HOME": str(home)}
 
     monkeypatch.setattr(runner, "build_home", fake_build_home)
+    monkeypatch.setattr(runner, "claude_auth", lambda: {})
+    # fake agents still run under the real sandbox; they may also write tmp_path/side,
+    # where the tests keep pid files and counters
+    side = tmp_path / "side"
+    side.mkdir(exist_ok=True)
+    monkeypatch.setattr(runner, "wrap", lambda argv, *, writable, **kw: sandbox.wrap(
+        argv, writable=[*writable, side], **kw))
     monkeypatch.setattr(runner, "cli_version", lambda cli: f"{cli} 0.0-test")
     monkeypatch.setenv("BRUHSBENCH_WORK", str(tmp_path / "work"))
 
@@ -143,7 +151,7 @@ def test_nonzero_exit_is_error(tmp_path, bruhs_src):
 
 def test_timeout_recorded(tmp_path, bruhs_src):
     task = make_task(tmp_path, "t1")
-    pidfile = tmp_path / "child.pid"
+    pidfile = tmp_path / "side" / "child.pid"
     body = f"""
 echo partial > app.txt
 sleep 60 &
@@ -309,7 +317,7 @@ def gone(pid: int, wait_s: float = 5) -> bool:
 def test_resume_skips_completed(tmp_path):
     task = make_task(tmp_path, "t1")
     out = tmp_path / "out"
-    counter = tmp_path / "count"
+    counter = tmp_path / "side" / "count"
     ov = override(fake_agent(tmp_path, count_body(counter, EDIT_AND_REPLY)))
 
     first = run_matrix([task], [CLAUDE], ["bare", "bruhs"], 2, out, parallel=2,
@@ -348,7 +356,7 @@ def test_resume_refuses_changed_matrix(tmp_path):
 
 def test_auth_failure_aborts_matrix(tmp_path):
     task = make_task(tmp_path, "t1")
-    counter = tmp_path / "count"
+    counter = tmp_path / "side" / "count"
     body = count_body(counter, f"cat <<'EOF'\n{CLAUDE_AUTH}\nEOF\nexit 1\n")
     with pytest.raises(AuthAbort):
         run_matrix([task], [CLAUDE], ["bare", "bruhs"], 3, tmp_path / "out", parallel=1,
@@ -379,9 +387,9 @@ def test_harness_exception_recorded_and_matrix_continues(tmp_path, monkeypatch):
 
 def test_interrupt_kills_live_runs_and_stops_queue(tmp_path, monkeypatch):
     task = make_task(tmp_path, "t1")
-    counter = tmp_path / "count"
-    pidfile = tmp_path / "agent.pid"
-    childfile = tmp_path / "child.pid"
+    counter = tmp_path / "side" / "count"
+    pidfile = tmp_path / "side" / "agent.pid"
+    childfile = tmp_path / "side" / "child.pid"
     body = count_body(counter, f"sleep 60 &\necho $! > {childfile}\necho $$ > {pidfile}\nwait\n")
 
     def interrupted_as_completed(futures):
@@ -410,7 +418,7 @@ def test_interrupt_kills_live_runs_and_stops_queue(tmp_path, monkeypatch):
 def test_setup_failed_task_excluded_both_arms(tmp_path):
     good = make_task(tmp_path, "good")
     bad = make_task(tmp_path, "bad", setup="exit 1\n")
-    counter = tmp_path / "count"
+    counter = tmp_path / "side" / "count"
     out = tmp_path / "out"
     results = run_matrix([good, bad], [CLAUDE], ["bare", "bruhs"], 1, out, parallel=2,
                          command_override=override(fake_agent(
@@ -425,9 +433,9 @@ def test_setup_failed_task_excluded_both_arms(tmp_path):
 
 def test_claude_concurrency_capped(tmp_path):
     task = make_task(tmp_path, "t1")
-    live = tmp_path / "live"
+    live = tmp_path / "side" / "live"
     live.mkdir()
-    peak = tmp_path / "peak"
+    peak = tmp_path / "side" / "peak"
     body = f"""
 touch {live}/$$
 ls {live} | wc -l >> {peak}

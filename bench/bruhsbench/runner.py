@@ -3,9 +3,17 @@
 Layout (Ruling R10). Everything an agent touches lives in a *work root* outside the
 user's home (``$BRUHSBENCH_WORK`` or ``/private/tmp/bruhsbench``, plus a per-results
 id): the pinned bruhs export at ``<work>/_bruhs/<commit>/`` and, per run,
-``<work>/<run_id>/{home,workspace,stdout,stderr,final.txt}``. The results dir
-``<out_root>/<run_id>/`` only receives copies: ``result.json``, ``transcript.jsonl``
-(raw CLI stdout, streaming JSON for all three CLIs), ``stderr.txt``, ``diff.patch``, ``final.txt``. ``result.json`` records
+``<work>/<run_id>/{home,workspace,stdout,stderr,final.txt,.tmp}``; graders' scratch
+copies go to ``<work>/_scratch/``, outside every run root. The results dir
+``<out_root>/<run_id>/`` only receives copies: ``result.json``, ``transcript.jsonl`` (raw
+CLI stdout, streaming JSON for all three CLIs), ``stderr.txt``, ``diff.patch``,
+``final.txt``.
+
+Sandbox (R19-R22): the agent runs under ``sandbox.wrap`` with only its run dir
+writable (and readable) inside the work base, ``TMPDIR`` at ``<run_dir>/.tmp``. The
+harness reads files the agent could have written only through ``untrusted`` (no
+symlinks, regular files only; anything else lands in ``unsafe_files``) and runs git on
+the workspace hardened and sandboxed. ``result.json`` records
 the workspace's absolute path for the graders and is written last (atomically), so a
 run dir without it is partial and is redone on resume.
 
@@ -43,19 +51,19 @@ from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from pathlib import Path, PurePath
 
+from . import untrusted
 from .agents import build_command, is_auth_failure, parse_output, tool_event_count
-from .homes import build_home, export_bruhs
-from .sandbox import wrap
+from .homes import ClaudeAuthMissing, build_home, claude_auth, export_bruhs
+from .sandbox import private_tmp, real_home, work_base, wrap
 from .types import Arm, Cli, ModelSpec, RunResult, RunSpec, Task
-from .workspace import BASE_TAG, GIT, SetupFailed, check_task_setup, prepare_workspace
+from .workspace import BASE_TAG, SetupFailed, check_task_setup, prepare_workspace
 
 log = logging.getLogger(__name__)
 
 BRUHS_REPO = Path(__file__).resolve().parents[2]
-DEFAULT_WORK_BASE = Path("/private/tmp/bruhsbench")
 DEFAULT_TIMEOUT_S = 45 * 60
 DEFAULT_PARALLEL = 6
-CLAUDE_MAX_PARALLEL = 3  # R11: parallel claude runs share one keychain login
+CLAUDE_MAX_PARALLEL = 3  # parallel claude runs share one account token (rate limits)
 DEFAULT_SEED = 0
 KILL_GRACE_S = 10
 # CLI session logs inside the run's home (scanned for contamination)
@@ -112,14 +120,14 @@ def results_id(out_root: Path) -> str:
 
 
 def _check_outside_home(path: Path) -> Path:
-    if Path(path).resolve().is_relative_to(Path.home().resolve()):
+    if Path(path).resolve().is_relative_to(real_home()):
         raise ValueError(f"work root {path} is inside the user's home; the CLIs would "
                          "discover ~/ config from its ancestors (set BRUHSBENCH_WORK)")
     return Path(path)
 
 
 def default_work_root(out_root: Path) -> Path:
-    base = Path(os.environ.get("BRUHSBENCH_WORK") or DEFAULT_WORK_BASE)
+    base = work_base()
     return _check_outside_home(base / results_id(out_root))
 
 
@@ -178,21 +186,32 @@ def scan_contamination(text: str, *, forbidden: Sequence[Path],
     return sorted(found)
 
 
-def session_logs(home: Path) -> list[Path]:
-    """The CLI's own JSONL session logs written inside the run's home."""
-    return sorted(p for rel in SESSION_LOG_DIRS if (home / rel).is_dir()
-                  for p in (home / rel).rglob("*.jsonl"))
+def session_logs(run_dir: Path) -> list[str]:
+    """The CLI's own JSONL session logs in the run's home, relative to ``run_dir``
+    (found without following symlinks)."""
+    return [p for rel in SESSION_LOG_DIRS
+            for p in untrusted.files(run_dir, Path("home") / rel, ".jsonl")]
 
 
-def _contamination(spec: RunSpec, stdout: str, stderr: str, home: Path, work_root: Path,
-                   env: dict[str, str]) -> tuple[bool | None, list[str]]:
-    real_home = Path.home()
-    forbidden = [real_home, BRUHS_REPO] + ([spec.task.repo] if spec.task.repo else [])
+def _read_untrusted(run_dir: Path, rel: str | Path, skipped: list[str]) -> str:
+    """``run_dir/rel`` read safely (R22); "" and noted in ``skipped`` if it isn't a plain
+    file there (missing, symlink, FIFO, hard link, ...)."""
+    try:
+        return untrusted.read_text(run_dir, rel)
+    except untrusted.UnsafePath as exc:
+        skipped.append(str(exc))
+        return ""
+
+
+def _contamination(spec: RunSpec, stdout: str, stderr: str, run_dir: Path, work_root: Path,
+                   env: dict[str, str], skipped: list[str]) -> tuple[bool | None, list[str]]:
+    home_dir = real_home()
+    forbidden = [home_dir, BRUHS_REPO] + ([spec.task.repo] if spec.task.repo else [])
     # Running a toolchain binary from a PATH dir under ~ (e.g. ~/.bun/bin/bun) is not
     # reading the user's config; everything else under ~ is.
     path_dirs = [Path(p) for p in env.get("PATH", "").split(os.pathsep)
-                 if p and Path(p) != real_home and Path(p).is_absolute()]
-    logs = [p.read_text(errors="replace") for p in session_logs(home)]
+                 if p and Path(p) != home_dir and Path(p).is_absolute()]
+    logs = [_read_untrusted(run_dir, rel, skipped) for rel in session_logs(run_dir)]
     found = scan_contamination("\n".join([stdout, stderr, *logs]), forbidden=forbidden,
                                allowed=[work_root, *path_dirs])
     if found:
@@ -260,11 +279,10 @@ def _execute(run_id: str, argv: list[str], cwd: Path, env: dict[str, str], stdou
 
 
 def _write_diff(workspace: Path, dest: Path) -> bool:
-    try:
-        subprocess.run([*GIT, "add", "-A"], cwd=workspace, check=True, capture_output=True)
-        diff = subprocess.run([*GIT, "diff", "--cached", "--binary", BASE_TAG], cwd=workspace,
-                              check=True, capture_output=True).stdout
-    except (subprocess.CalledProcessError, OSError) as exc:
+    try:  # R22: agent-controlled repo config; hardened and sandboxed
+        untrusted.git(workspace, "add", "-A")
+        diff = untrusted.git(workspace, "diff", "--cached", "--binary", BASE_TAG).stdout
+    except (subprocess.CalledProcessError, OSError, untrusted.UnsafePath) as exc:
         log.warning("diff failed in %s: %s", workspace, exc)
         dest.write_bytes(b"")
         return False
@@ -321,7 +339,9 @@ def run_one(
                          Path(env["HOME"]), run_dir)
     if command_override is not None:
         argv = command_override(spec, argv)
-    argv = wrap(argv, writable=[run_dir])  # R19: no access to the real home
+    # R19/R21: no real home, no other run or root under the work base, private TMPDIR
+    argv = wrap(argv, writable=[run_dir], denied=[work_root])
+    env = private_tmp(env, run_dir)
 
     with claude_slots if (cli == "claude" and claude_slots is not None) else nullcontext():
         start = time.monotonic()
@@ -329,10 +349,12 @@ def run_one(
                                    run_dir / "stderr", timeout_s, control)
         wall_s = time.monotonic() - start
 
-    shutil.copyfile(run_dir / "stdout", transcript)
-    shutil.copyfile(run_dir / "stderr", out_dir / "stderr.txt")
-    stdout = transcript.read_text(errors="replace")
-    stderr = (out_dir / "stderr.txt").read_text(errors="replace")
+    # the agent could have swapped these for symlinks: read them safely (R22)
+    unsafe: list[str] = []
+    stdout = _read_untrusted(run_dir, "stdout", unsafe)
+    stderr = _read_untrusted(run_dir, "stderr", unsafe)
+    transcript.write_text(stdout)
+    (out_dir / "stderr.txt").write_text(stderr)
     if not timed_out and is_auth_failure(cli, stdout, stderr, code):
         raise AuthAbort(f"{spec.run_id}: {cli} is not authenticated (exit {code}); "
                         f"log in and rerun to resume. stderr: {stderr[-500:]}")
@@ -340,19 +362,18 @@ def run_one(
     diff_ok = _write_diff(workspace, diff_path)
     parsed = parse_output(cli, stdout)
     final = parsed.final_message
-    cli_final = run_dir / "final.txt"  # codex -o
-    if cli_final.is_file():
-        final = cli_final.read_text(errors="replace") or final
+    if os.path.lexists(run_dir / "final.txt"):  # codex -o; agent-writable, read safely
+        final = _read_untrusted(run_dir, "final.txt", unsafe) or final
     (out_dir / "final.txt").write_text(final)
 
     status = "timeout" if timed_out else ("ok" if code == 0 and diff_ok else "error")
-    contaminated, contamination = _contamination(spec, stdout, stderr, Path(env["HOME"]),
-                                                 work_root, env)
+    contaminated, contamination = _contamination(spec, stdout, stderr, run_dir, work_root,
+                                                 env, unsafe)
     result = replace(
         base, status=status, wall_s=round(wall_s, 3), turns=parsed.turns,
         input_tokens=parsed.input_tokens, output_tokens=parsed.output_tokens,
         cost_usd=parsed.cost_usd, final_message=final,
-        contaminated=contaminated, contamination=contamination,
+        contaminated=contaminated, contamination=contamination, unsafe_files=unsafe,
     )
     _write_result(out_dir, result)
     return result
@@ -448,8 +469,11 @@ def run_matrix(
     Returns results in matrix order. A harness exception inside a run is recorded as
     ``status="error"`` and the matrix goes on. On an auth failure or an interrupt, queued
     runs are cancelled, every live agent process group is killed (those runs write no
-    result.json and are redone on resume), and the exception is re-raised.
+    result.json and are redone on resume), and the exception is re-raised. With claude in
+    ``models`` and no claude token, :class:`ClaudeAuthMissing` is raised up front.
     """
+    if any(m.cli == "claude" for m in models):
+        claude_auth()  # R20: raises ClaudeAuthMissing before any process starts
     out_root = Path(out_root)
     out_root.mkdir(parents=True, exist_ok=True)
     work_root = _check_outside_home(work_root) if work_root else default_work_root(out_root)
@@ -481,7 +505,7 @@ def run_matrix(
                            claude_slots=claude_slots, control=control)
         except RunInterrupted:
             return None
-        except AuthAbort:
+        except (AuthAbort, ClaudeAuthMissing):
             control.stopped.set()  # before this worker can pick up the next run
             raise
         except Exception:

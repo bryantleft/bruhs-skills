@@ -7,6 +7,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from live_auth import need_claude_token
 
 from bruhsbench import judge as J
 from bruhsbench.types import MODELS, Task
@@ -419,6 +420,7 @@ def test_make_judge_extraction_functions(monkeypatch):
 @pytest.mark.live
 @pytest.mark.parametrize("cli", ["claude", "codex", "grok"])
 def test_live_judge_call(cli, tmp_path):
+    need_claude_token(cli)
     red = png(tmp_path / "img_1.png", (255, 0, 0), w=64, h=64)
     schema = {
         "type": "object",
