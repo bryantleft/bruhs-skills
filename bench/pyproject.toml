@@ -3,7 +3,9 @@ name = "bruhsbench"
 version = "0.1.0"
 description = "A/B benchmark harness for the bruhs skill across agent CLIs"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "playwright>=1.64.1",
+]
 
 [dependency-groups]
 dev = ["pytest>=8"]
