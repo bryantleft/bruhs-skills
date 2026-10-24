@@ -146,3 +146,111 @@ def test_parse_pytest_summary_counts_only(tmp_path):
 
 def test_parse_nothing(tmp_path):
     assert parse_test_output(tmp_path / "missing", "hello") is None
+
+
+# ---------------------------------------------------------------- fix round 1
+
+
+def jest_report(root, statuses):
+    return json.dumps({"testResults": [{"name": f"{root}/src/a.test.ts", "assertionResults": [
+        {"fullName": n, "status": st} for n, st in statuses.items()]}]})
+
+
+def test_jest_paths_relative_to_copy_root_give_no_false_regressions(tmp_path):
+    base_root, after_root = tmp_path / "grade-1" / "base", tmp_path / "grade-1" / "after"
+    report = tmp_path / "r.json"
+    report.write_text(jest_report(base_root, {"adds": "passed", "subs": "passed"}))
+    base = commands.CheckResult(True, False, parse_test_output(report, "", base_root))
+    report.write_text(jest_report(after_root, {"adds": "passed", "subs": "failed"}))
+    after = commands.CheckResult(False, False, parse_test_output(report, "", after_root))
+    assert list(base.tests.tests) == ["src/a.test.ts::adds", "src/a.test.ts::subs"]
+    assert commands._regressions("test", base, after) == ["src/a.test.ts::subs"]
+
+
+def test_junit_file_attribute_made_relative(tmp_path):
+    root = tmp_path / "copy"
+    report = tmp_path / "r.xml"
+    report.write_text(f'<testsuite><testcase file="{root}/t/x.test.js" name="ok"/></testsuite>')
+    assert parse_test_output(report, "", root).tests == {"t/x.test.js::ok": True}
+
+
+def test_crashed_after_suite_regresses_every_base_passing_test():
+    base = commands.CheckResult(False, False, SuiteResult(1, 2, {"a": True, "b": False}))
+    crashed = commands.CheckResult(False, False, None)
+    assert commands._regressions("test", base, crashed) == ["a"]
+    assert commands._regressions("test", base, commands.CheckResult(True, False, None)) == []
+
+
+def test_checks_get_scrubbed_env(tmp_path, make_run, monkeypatch):
+    for k in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GITHUB_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN",
+              "XAI_API_KEY", "CODEX_HOME", "CLAUDECODE", "SOME_SECRET"):
+        monkeypatch.setenv(k, "leak")
+    monkeypatch.setenv("LANG", "en_US.UTF-8")
+    task = make_task(tmp_path, checks={"build": "env > env.txt; cp env.txt $BRUHSBENCH_REPORT.env"})
+    run = make_run({"a": "a"})
+    run_dir = run.finish()
+    seen = {}
+    real = commands.run_check
+
+    def spy(name, cmd, cwd, scratch, log_dir):
+        res = real(name, cmd, cwd, scratch, log_dir)
+        seen["env"] = (cwd / "env.txt").read_text()
+        return res
+
+    monkeypatch.setattr(commands, "run_check", spy)
+    commands.grade(task, run_dir)
+    names = {line.split("=", 1)[0] for line in seen["env"].splitlines() if "=" in line}
+    assert "leak" not in seen["env"]
+    assert {"PATH", "HOME", "LANG", "BRUHSBENCH_REPORT"} <= names
+
+
+def test_missing_base_tag_records_error_and_keeps_checks(tmp_path, make_run):
+    from bruhsbench.workspace import BASE_TAG
+    from conftest import git
+    task = make_task(tmp_path, checks={"test": "true", "build": "true"})
+    run = make_run({"a": "a"})
+    run_dir = run.finish()
+    git(run.workspace, "tag", "-d", BASE_TAG)
+    g = commands.grade(task, run_dir)
+    assert g["applicable"] is True
+    assert g["checks"] == {"test": True, "build": True}
+    assert g["regressions"] is None
+    assert "bench-base" in g["error"]
+
+
+def test_hidden_dir_without_hidden_check_is_an_error(tmp_path, make_run):
+    import pytest
+    hidden = tmp_path / "task" / "hidden"
+    hidden.mkdir(parents=True)
+    (hidden / "test_h.py").write_text("def test_h(): pass\n")
+    task = make_task(tmp_path, checks={"test": "true"}, hidden_tests=hidden)
+    with pytest.raises(ValueError, match="checks.hidden"):
+        commands.grade(task, make_run({"a": "a"}).finish())
+
+
+def test_grade_all_records_grader_errors_and_runs_the_rest(tmp_path, make_run):
+    import shutil
+    from types import SimpleNamespace
+
+    from bruhsbench.graders import grade_all
+    task = make_task(tmp_path, checks={"test": "true"})
+    run = make_run({"a": "a"})
+    run_dir = run.finish()
+    shutil.rmtree(run.workspace / ".git")
+    hidden = tmp_path / "task" / "hidden"
+    hidden.mkdir()
+    task_bad = make_task(tmp_path, checks={"test": "true"}, hidden_tests=hidden)
+
+    judge = SimpleNamespace(extract_claims=lambda t: [{"claim": "done", "kind": "done"}],
+                            claimed_items=lambda *a: [], extract_findings=lambda *a: [],
+                            match_finding=lambda *a: None)
+    grades = grade_all(task, run_dir, judge)
+    assert "no .git" in grades["commands"]["error"]
+    assert grades["honesty"]["claims"] == 1
+
+    grades = grade_all(task_bad, run_dir, judge)
+    assert "ValueError" in grades["commands"]["error"]
+    assert grades["scope"]["applicable"] is True
+    assert grades["honesty"]["claims"] == 1
+    on_disk = json.loads((run_dir / "grades" / "commands.json").read_text())
+    assert "ValueError" in on_disk["error"]

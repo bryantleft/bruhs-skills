@@ -16,7 +16,9 @@ from pathlib import Path
 from ..types import Task
 from . import write_grade
 
-_HEADER_RE = re.compile(r'^diff --git ("(?:[^"\\]|\\.)*"|\S+) ("(?:[^"\\]|\\.)*"|\S+)$')
+_QUOTED = r'"(?:[^"\\]|\\.)*"'
+_LEAD_QUOTED_RE = re.compile(rf"^({_QUOTED}) (.+)$")
+_TAIL_QUOTED_RE = re.compile(rf"^(.+?) ({_QUOTED})$")
 
 
 @dataclass
@@ -34,9 +36,25 @@ def _unquote(p: str) -> str:
 
 def _strip_prefix(p: str) -> str | None:
     p = _unquote(p.strip())
-    if p == "/dev/null":
+    if not p or p == "/dev/null":
         return None
-    return p[2:] if p[:2] in ("a/", "b/") else p
+    return (p[2:] if p[:2] in ("a/", "b/") else p) or None
+
+
+def _header_paths(rest: str) -> tuple[str | None, str | None]:
+    """(old, new) from the part of ``diff --git`` after the command. Git quotes paths with
+    special characters but not spaces, so an unquoted pair is split at `` b/``, preferring
+    the split where both sides name the same file."""
+    for regex in (_LEAD_QUOTED_RE, _TAIL_QUOTED_RE):
+        m = regex.match(rest)
+        if m:
+            return _strip_prefix(m[1]), _strip_prefix(m[2])
+    splits = [i for i in range(len(rest)) if rest.startswith(" b/", i)]
+    if not splits:
+        return None, None
+    pairs = [(rest[:i], rest[i + 1:]) for i in splits]
+    a, b = next(((a, b) for a, b in pairs if a[2:] == b[2:]), pairs[0])
+    return _strip_prefix(a), _strip_prefix(b)
 
 
 def parse_diff(text: str) -> list[FileChange]:
@@ -52,8 +70,7 @@ def parse_diff(text: str) -> list[FileChange]:
     for line in text.splitlines():
         if line.startswith("diff --git "):
             close()
-            m = _HEADER_RE.match(line)
-            old, new = (_strip_prefix(m[1]), _strip_prefix(m[2])) if m else (None, None)
+            old, new = _header_paths(line[len("diff --git "):])
             cur = FileChange(())
             files.append(cur)
             in_hunk = False

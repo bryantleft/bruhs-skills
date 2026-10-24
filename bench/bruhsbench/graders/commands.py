@@ -5,7 +5,8 @@ Everything runs in disposable copies of the workspace (APFS clone via ``cp -cR``
 
 * agent copy: every check except ``hidden`` (build, typecheck, lint, test, ...) -> bool by
   exit code; then the task's ``hidden/`` contents are copied in at the same relative
-  paths and ``checks["hidden"]`` (falling back to ``checks["test"]``) runs -> pass/total.
+  paths and ``checks["hidden"]`` runs -> pass/total (hidden/ without checks.hidden is
+  a task error).
 * base copy (reset to ``bench-base``): ``checks["test"]`` again; a test passing at base
   and not passing after is a regression.
 
@@ -15,7 +16,12 @@ Per-test results come from a report file or stdout. Each command gets
 ``vitest run --reporter=json --outputFile=$BRUHSBENCH_REPORT``. Recognised: jest/vitest
 JSON (file or stdout), JUnit XML (file), cargo test lines (stdout), and a pytest summary
 line (counts only). With nothing parseable the exit code decides: 1/1 or 0/1, and a
-regression is reported under the check's name when base passed and after failed.
+regression is reported under the check's name when base passed and after failed; when
+only the base run names tests and the agent's run fails, every base-passing test counts.
+
+If bench-base can't be restored (no .git / no tag) ``regressions`` is None and ``error``
+says why; the other checks still run. Checks get the harness environment minus
+credentials and agent-CLI configuration (:func:`check_env`).
 """
 
 from __future__ import annotations
@@ -57,18 +63,30 @@ class CheckResult:
 # --------------------------------------------------------------------------- parsing
 
 
+def _rel(path: str, root: Path | None) -> str:
+    """A test file path relative to the copy it ran in, so copies at different roots agree."""
+    if root is None or not path.startswith("/"):
+        return path
+    for form in dict.fromkeys((str(root), str(root.resolve()))):
+        prefix = form.rstrip("/") + "/"
+        for candidate in dict.fromkeys((path, str(Path(path).resolve()))):
+            if candidate.startswith(prefix):
+                return candidate[len(prefix):]
+    return path
+
+
 def _from_tests(tests: dict[str, bool]) -> SuiteResult:
     return SuiteResult(sum(tests.values()), len(tests), tests)
 
 
-def _parse_jest(data: object) -> SuiteResult | None:
+def _parse_jest(data: object, root: Path | None = None) -> SuiteResult | None:
     if not isinstance(data, dict) or not isinstance(data.get("testResults"), list):
         return None
     tests: dict[str, bool] = {}
     for suite in data["testResults"]:
         if not isinstance(suite, dict):
             continue
-        name = suite.get("name") or suite.get("testFilePath") or ""
+        name = _rel(suite.get("name") or suite.get("testFilePath") or "", root)
         for a in suite.get("assertionResults") or []:
             status = a.get("status")
             if status not in ("passed", "failed"):
@@ -78,7 +96,7 @@ def _parse_jest(data: object) -> SuiteResult | None:
     return _from_tests(tests)
 
 
-def _parse_junit(text: str) -> SuiteResult | None:
+def _parse_junit(text: str, cwd: Path | None = None) -> SuiteResult | None:
     try:
         root = ET.fromstring(text)
     except ET.ParseError:
@@ -89,7 +107,7 @@ def _parse_junit(text: str) -> SuiteResult | None:
     for case in root.iter("testcase"):
         if case.find("skipped") is not None:
             continue
-        cls = case.get("classname") or case.get("file") or ""
+        cls = _rel(case.get("classname") or case.get("file") or "", cwd)
         name = f"{cls}::{case.get('name', '')}" if cls else case.get("name", "")
         tests[name] = case.find("failure") is None and case.find("error") is None
     return _from_tests(tests)
@@ -138,17 +156,34 @@ def _parse_pytest_summary(out: str) -> SuiteResult | None:
     return SuiteResult(passed, passed + counts.get("failed", 0) + counts.get("error", 0), None)
 
 
-def parse_test_output(report: Path, stdout: str) -> SuiteResult | None:
-    """Per-test results from the reporter file, else from stdout; None if unrecognised."""
+def parse_test_output(report: Path, stdout: str, root: Path | None = None) -> SuiteResult | None:
+    """Per-test results from the reporter file, else from stdout; None if unrecognised.
+
+    Absolute test file paths under ``root`` (the directory the check ran in) are made
+    relative to it, so the same test has the same name in the base and the agent copy.
+    """
     if report.is_file():
         text = report.read_text(errors="replace")
-        parsed = _parse_junit(text) if text.lstrip().startswith("<") else _parse_jest(_json_in(text))
+        parsed = (_parse_junit(text, root) if text.lstrip().startswith("<")
+                  else _parse_jest(_json_in(text), root))
         if parsed is not None:
             return parsed
-    return _parse_jest(_json_in(stdout)) or _parse_cargo(stdout) or _parse_pytest_summary(stdout)
+    return (_parse_jest(_json_in(stdout), root) or _parse_cargo(stdout)
+            or _parse_pytest_summary(stdout))
 
 
 # --------------------------------------------------------------------------- running
+
+
+_SECRET_ENV_RE = re.compile(
+    r"(?:_API_KEY|_KEY|_TOKEN|_SECRET|_PASSWORD|_CREDENTIALS?|_AUTH)$"
+    r"|^(?:CLAUDE|ANTHROPIC|OPENAI|XAI|GROK|CODEX|GEMINI|GOOGLE|AWS|AZURE|GH|GITHUB|LINEAR"
+    r"|HF|HUGGING_FACE|VERCEL|BRUHSBENCH)(?:_|$)|^CLAUDECODE$|_AUTH_TOKEN|_AUTHTOKEN")
+
+
+def check_env() -> dict[str, str]:
+    """The harness environment minus credentials and agent/CLI configuration."""
+    return {k: v for k, v in os.environ.items() if not _SECRET_ENV_RE.search(k.upper())}
 
 
 def clone_tree(src: Path, dest: Path) -> None:
@@ -166,7 +201,7 @@ def clone_tree(src: Path, dest: Path) -> None:
 def run_check(name: str, cmd: str, cwd: Path, scratch: Path, log_dir: Path) -> CheckResult:
     report = scratch / f"{name}-{cwd.name}.report"
     report.unlink(missing_ok=True)
-    env = {**os.environ, REPORT_ENV: str(report)}
+    env = {**check_env(), REPORT_ENV: str(report)}
     proc = subprocess.Popen(["bash", "-c", cmd], cwd=cwd, env=env, stdin=subprocess.DEVNULL,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             start_new_session=True)
@@ -188,7 +223,8 @@ def run_check(name: str, cmd: str, cwd: Path, scratch: Path, log_dir: Path) -> C
         f"$ {cmd}\n# exit {proc.returncode}{' (timed out)' if timed_out else ''}\n"
         f"{text[-LOG_TAIL:]}")
     ok = proc.returncode == 0 and not timed_out
-    return CheckResult(ok, timed_out, None if timed_out else parse_test_output(report, text))
+    return CheckResult(ok, timed_out,
+                       None if timed_out else parse_test_output(report, text, cwd))
 
 
 def _git(cwd: Path, *args: str) -> None:
@@ -213,9 +249,24 @@ def _counts(res: CheckResult) -> tuple[int, int]:
 
 
 def _regressions(name: str, base: CheckResult, after: CheckResult) -> list[str]:
-    if base.tests and base.tests.tests is not None and after.tests and after.tests.tests is not None:
-        return sorted(t for t, ok in base.tests.tests.items() if ok and not after.tests.tests.get(t))
+    base_tests = base.tests.tests if base.tests else None
+    after_tests = after.tests.tests if after.tests else None
+    if base_tests is not None:
+        if after_tests is not None:
+            return sorted(t for t, ok in base_tests.items() if ok and not after_tests.get(t))
+        if not after.ok:  # the suite crashed or timed out: nothing that passed is known to
+            return sorted(t for t, ok in base_tests.items() if ok)
+        return []
     return [name] if base.ok and not after.ok else []
+
+
+def _base_problem(workspace: Path) -> str | None:
+    """Why the bench-base state can't be restored from ``workspace``, if it can't."""
+    if not (workspace / ".git").exists():
+        return f"no .git in {workspace}"
+    proc = subprocess.run([*GIT, "rev-parse", "--verify", "--quiet", f"{BASE_TAG}^{{commit}}"],
+                          cwd=workspace, capture_output=True, text=True)
+    return None if proc.returncode == 0 else f"tag {BASE_TAG} missing in {workspace}"
 
 
 def grade(task: Task, run_dir: Path) -> dict:
@@ -224,10 +275,11 @@ def grade(task: Task, run_dir: Path) -> dict:
         return not_applicable(run_dir, "commands",
                               f"no workspace (status {run_meta(run_dir).get('status')})")
     log_dir = Path(run_dir) / "grades" / "logs"
-    hidden_cmd = task.checks.get("hidden") or task.checks.get("test")
+    hidden_cmd = task.checks.get("hidden")
     has_hidden = task.hidden_tests is not None and task.hidden_tests.is_dir()
     if has_hidden and not hidden_cmd:
-        raise ValueError(f"task {task.id}: hidden tests but no checks.hidden or checks.test")
+        raise ValueError(f"task {task.id}: has hidden tests ({task.hidden_tests}) but no "
+                         "checks.hidden in task.toml to run them")
 
     checks: dict[str, bool] = {}
     timed_out: list[str] = []
@@ -245,8 +297,12 @@ def grade(task: Task, run_dir: Path) -> dict:
             if res.timed_out:
                 timed_out.append(name)
 
-        regressions: list[str] = []
-        if "test" in task.checks:
+        regressions: list[str] | None = []
+        problem = _base_problem(workspace) if "test" in task.checks else None
+        if problem is not None:
+            result["error"] = f"regressions not computed: {problem}"
+            regressions = None
+        elif "test" in task.checks:
             base = scratch / "base"
             clone_tree(workspace, base)
             _to_base(base)

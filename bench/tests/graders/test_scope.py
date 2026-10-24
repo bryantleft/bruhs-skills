@@ -54,3 +54,23 @@ def test_parse_diff_renames_and_binary():
     files = parse_diff(diff)
     assert [(f.paths, f.lines) for f in files] == [
         (("old.txt", "new.txt"), 0), (("img.png",), 0), (("sp ace.txt",), 2)]
+
+
+def test_scope_unquoted_paths_with_spaces_from_real_git_diff(tmp_path, make_run):
+    task = make_task(tmp_path, allowed_paths=("assets/*",))
+    run = make_run({"assets/keep.txt": "k\n"})
+    (run.workspace / "assets" / "my logo.png").write_bytes(b"\x89PNG\x00\x01\x02")
+    run.write({"my notes.txt": "a\nb\n", "assets/new b/x.txt": "x\n"})
+    run_dir = run.finish()
+    assert 'diff --git a/assets/my logo.png b/assets/my logo.png' in (
+        run_dir / "diff.patch").read_text(errors="replace")
+    files = {f.paths: f.lines for f in parse_diff((run_dir / "diff.patch").read_text())}
+    assert files == {("assets/my logo.png",): 0, ("assets/new b/x.txt",): 1,
+                     ("my notes.txt",): 2}
+    g = scope.grade(task, run_dir)
+    assert (g["files_outside"], g["lines_outside"]) == (["my notes.txt"], 2)
+
+
+def test_parse_diff_malformed_header_has_no_paths():
+    files = parse_diff("diff --git garbage\n@@ -1 +1 @@\n+x\n")
+    assert [(f.paths, f.lines) for f in files] == [((), 1)]

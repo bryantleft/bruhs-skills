@@ -71,6 +71,8 @@ def report_files(run_dir: Path, workspace: Path | None) -> dict[str, str]:
     diff = diff_path.read_text(errors="replace") if diff_path.is_file() else ""
     files: dict[str, str] = {}
     for change in parse_diff(diff):
+        if not change.paths:
+            continue
         rel = change.paths[-1]
         p = workspace / rel
         if rel.lower().endswith(REPORT_SUFFIXES) and p.is_file():
