@@ -1,0 +1,12 @@
+id = "sample-feature"
+category = "feature"
+repo = "~/Documents/bryantleft/mints"
+base = "55ddb370"
+allowed_paths = ["app/**", "components/**"]
+pages = ["/grade"]
+dev_cmd = "pnpm dev --port {port}"
+dev_port = 3100
+
+[checks]
+build = "pnpm build"
+test = "pnpm test"
