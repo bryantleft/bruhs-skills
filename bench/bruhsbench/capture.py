@@ -1,6 +1,6 @@
 """Screenshot a finished ui/copy run so blind judges can compare arms (Ruling R5).
 
-``capture`` starts ``task.dev_cmd`` (``{port}`` -> ``task.dev_port``) in a disposable clone
+``capture`` starts ``task.dev_cmd`` (``{port}`` -> a free port picked per capture, so captures can run in parallel) in a disposable clone
 of the agent's workspace, so build output never alters the workspace, waits for HTTP 200,
 and screenshots every page at {desktop 1440x900, mobile 390x844} x {light, dark} as
 ``<page-slug>__<viewport>__<scheme>.png`` in ``out`` (``<run_dir>/screens``). The dev
@@ -12,6 +12,7 @@ afterwards. Failures never raise: the outcome lands in ``<run_dir>/grades/captur
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import re
@@ -40,12 +41,6 @@ SCHEMES = ("light", "dark")
 def page_slug(page: str) -> str:
     slug = re.sub(r"[^A-Za-z0-9]+", "-", page).strip("-")
     return slug or "root"
-
-
-def _port_in_use(port: int) -> bool:
-    with socket.socket() as s:
-        s.settimeout(0.5)
-        return s.connect_ex(("127.0.0.1", port)) == 0
 
 
 def _wait_ready(url: str, proc: subprocess.Popen, timeout: float) -> bool:
@@ -77,10 +72,13 @@ def _kill_group(proc: subprocess.Popen) -> None:
     proc.wait()
 
 
-def _shoot(base_url: str, pages: tuple[str, ...], out: Path) -> list[Path]:
+def _shoot(base_url: str, pages: tuple[str, ...], out: Path
+           ) -> tuple[list[Path], dict[str, str]]:
+    """Screenshot every page x variant; a failing page is recorded and skipped."""
     from playwright.sync_api import sync_playwright
 
     files: list[Path] = []
+    page_errors: dict[str, str] = {}
     with sync_playwright() as pw:
         browser = pw.chromium.launch()
         try:
@@ -91,29 +89,41 @@ def _shoot(base_url: str, pages: tuple[str, ...], out: Path) -> list[Path]:
                     try:
                         page = ctx.new_page()
                         for path in pages:
-                            page.goto(base_url + path, wait_until="networkidle",
-                                      timeout=NAV_TIMEOUT_MS)
-                            page.evaluate("document.fonts.ready.then(() => true)")
-                            page.wait_for_timeout(SETTLE_MS)
                             dest = out / f"{page_slug(path)}__{vp_name}__{scheme}.png"
-                            page.screenshot(path=str(dest), full_page=True)
-                            files.append(dest)
+                            try:
+                                page.goto(base_url + path, wait_until="networkidle",
+                                          timeout=NAV_TIMEOUT_MS)
+                                page.evaluate("document.fonts.ready.then(() => true)")
+                                page.wait_for_timeout(SETTLE_MS)
+                                page.screenshot(path=str(dest), full_page=True)
+                                files.append(dest)
+                            except Exception as exc:
+                                dest.unlink(missing_ok=True)
+                                page_errors[dest.name] = f"{type(exc).__name__}: {exc}"[:LOG_TAIL]
                     finally:
                         ctx.close()
         finally:
             browser.close()
-    return files
+    return files, page_errors
+
+
+def _free_port() -> int:
+    """A currently free loopback port (so parallel captures never collide)."""
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
 
 
 def _capture(task: Task, workspace: Path, out: Path, ready_timeout: float
-             ) -> tuple[list[Path], str | None]:
+             ) -> tuple[list[Path], str | None, dict[str, str]]:
     out.mkdir(parents=True, exist_ok=True)
-    port = task.dev_port
-    if _port_in_use(port):
-        return [], f"port {port} already in use"
+    for stale in out.glob("*.png"):
+        stale.unlink()
+    port = _free_port()
     scratch = Path(tempfile.mkdtemp(prefix="capture-", dir=Path(workspace).parent))
     proc = None
     files: list[Path] = []
+    page_errors: dict[str, str] = {}
     error: str | None = None
     try:
         copy = scratch / "ws"
@@ -124,12 +134,12 @@ def _capture(task: Task, workspace: Path, out: Path, ready_timeout: float
                 ["bash", "-c", task.dev_cmd.replace("{port}", str(port))], cwd=copy,
                 env=check_env(), stdin=subprocess.DEVNULL, stdout=logf,
                 stderr=subprocess.STDOUT, start_new_session=True)
-            base_url = f"http://localhost:{port}"
+            base_url = f"http://127.0.0.1:{port}"
             if _wait_ready(base_url + (task.pages[0] if task.pages else "/"), proc,
                            ready_timeout):
                 try:
-                    files = _shoot(base_url, task.pages, out)
-                except Exception as exc:  # keep what was captured; record why it stopped
+                    files, page_errors = _shoot(base_url, task.pages, out)
+                except Exception as exc:  # browser itself failed; keep what exists
                     error = f"screenshot failed: {type(exc).__name__}: {exc}"
                     files = sorted(out.glob("*.png"))
             else:
@@ -141,16 +151,18 @@ def _capture(task: Task, workspace: Path, out: Path, ready_timeout: float
         if proc is not None:
             _kill_group(proc)
         shutil.rmtree(scratch, ignore_errors=True)
-    return files, error
+    return files, error, page_errors
 
 
 def _record(path: Path, task: Task, files: list[Path], error: str | None,
-            applicable: bool = True, reason: str | None = None) -> None:
+            page_errors: dict[str, str] | None = None, applicable: bool = True, reason: str | None = None) -> None:
     rec: dict = {"applicable": applicable}
     if applicable:
         rec.update(pages=list(task.pages), files=[f.name for f in files])
         if error:
             rec["error"] = error
+        if page_errors:
+            rec["page_errors"] = page_errors
     elif reason:
         rec["reason"] = reason
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -170,32 +182,55 @@ def capture(task: Task, workspace: Path, out: Path, *, run_dir: Path | None = No
 
 def _capture_recorded(task: Task, workspace: Path, out: Path, record: Path | None,
                       ready_timeout: float) -> list[Path]:
-    if not (task.dev_cmd and task.dev_port and task.pages):
+    if not (task.dev_cmd and task.pages):
         if record:
             _record(record, task, [], None, applicable=False,
-                    reason="task has no dev_cmd/dev_port/pages")
+                    reason="task has no dev_cmd/pages")
         return []
-    files, error = _capture(task, workspace, out, ready_timeout)
-    if error:
-        print(f"capture {task.id}: {error}", flush=True)
+    files, error, page_errors = _capture(task, workspace, out, ready_timeout)
+    if error or page_errors:
+        print(f"capture {task.id}: {error or page_errors}", flush=True)
     if record:
-        _record(record, task, files, error)
+        _record(record, task, files, error, page_errors)
     return files
+
+
+def _complete(dest: Path, task: Task) -> list[Path]:
+    """The saved baseline's PNGs if its capture.json says it finished cleanly, else []."""
+    try:
+        rec = json.loads((dest / "capture.json").read_text())
+    except (OSError, ValueError):
+        return []
+    files = [dest / n for n in rec.get("files", [])]
+    if (rec.get("applicable") and not rec.get("error") and not rec.get("page_errors")
+            and len(files) == len(task.pages) * len(VIEWPORTS) * len(SCHEMES)
+            and all(f.is_file() for f in files)):
+        return sorted(files)
+    return []
 
 
 def capture_before(task: Task, results_root: Path, work_root: Path, *,
                    ready_timeout: float = READY_TIMEOUT_S) -> list[Path]:
-    """Capture the bare base state once into ``<results_root>/_before/<task.id>``."""
-    dest = Path(results_root) / "_before" / task.id
-    existing = sorted(dest.glob("*.png"))
-    if existing:
-        return existing
-    if not (task.dev_cmd and task.dev_port and task.pages):
+    """Capture the bare base state into ``<results_root>/_before/<task.id>``.
+
+    Skipped when a complete, error-free capture is already there. A per-task file lock
+    serialises concurrent callers, so the second one finds the finished baseline.
+    """
+    if not (task.dev_cmd and task.pages):
         return []
-    workspace = Path(work_root) / "_before" / task.id / "workspace"
-    shutil.rmtree(workspace.parent, ignore_errors=True)
-    try:
-        prepare_workspace(task, "bare", workspace)
-        return _capture_recorded(task, workspace, dest, dest / "capture.json", ready_timeout)
-    finally:
+    before = Path(results_root) / "_before"
+    before.mkdir(parents=True, exist_ok=True)
+    dest = before / task.id
+    with open(before / f"{task.id}.lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        done = _complete(dest, task)
+        if done:
+            return done
+        workspace = Path(work_root) / "_before" / task.id / "workspace"
         shutil.rmtree(workspace.parent, ignore_errors=True)
+        try:
+            prepare_workspace(task, "bare", workspace)
+            return _capture_recorded(task, workspace, dest, dest / "capture.json",
+                                     ready_timeout)
+        finally:
+            shutil.rmtree(workspace.parent, ignore_errors=True)

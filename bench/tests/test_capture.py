@@ -1,4 +1,5 @@
 import json
+from concurrent.futures import ThreadPoolExecutor
 import socket
 import sys
 from dataclasses import replace
@@ -70,14 +71,50 @@ def test_capture_produces_four_variants_per_page(tmp_path, site):
     assert sorted(rec["files"]) == sorted(expected) and "error" not in rec
     # the dev server ran in a clone: the agent workspace is untouched
     assert not list(site.parent.glob("capture-*"))
+    # schemes and viewports really differ
+    by = {f.name: f.read_bytes() for f in files}
+    assert by["root__desktop__light.png"] != by["root__desktop__dark.png"]
+    assert by["root__mobile__light.png"] != by["root__desktop__light.png"]
 
 
-def test_schemes_and_viewports_differ(tmp_path, site):
+def test_parallel_captures_of_same_task_serve_their_own_workspace(tmp_path):
     task = make_task(tmp_path, pages=("/",))
-    files = {f.name: f for f in cap.capture(task, site, tmp_path / "s")}
-    light, dark = files["root__desktop__light.png"], files["root__desktop__dark.png"]
-    assert light.read_bytes() != dark.read_bytes()
-    assert files["root__mobile__light.png"].read_bytes() != light.read_bytes()
+    sites = []
+    for name, bg in (("a", "#f00"), ("b", "#00f")):
+        ws = tmp_path / "work" / name / "workspace"
+        ws.mkdir(parents=True)
+        (ws / "index.html").write_text(f"<!doctype html><body style='background:{bg}'>")
+        sites.append(ws)
+    with ThreadPoolExecutor(2) as ex:
+        a, b = ex.map(lambda ws: cap.capture(task, ws, tmp_path / "out" / ws.parent.name),
+                      sites)
+    assert len(a) == len(b) == 4
+    da = {f.name: f.read_bytes() for f in a}
+    db = {f.name: f.read_bytes() for f in b}
+    assert all(da[n] != db[n] for n in da)
+
+
+def test_one_failing_page_does_not_abort_the_rest(tmp_path, site, monkeypatch):
+    monkeypatch.setattr(cap, "NAV_TIMEOUT_MS", 3000)
+    task = make_task(tmp_path, pages=("/", "/slow", "/grade"))
+    (site / "serve.py").write_text(
+        "import http.server, sys, time\n"
+        "class H(http.server.SimpleHTTPRequestHandler):\n"
+        "    def do_GET(self):\n"
+        "        if self.path == '/slow':\n"
+        "            time.sleep(30)\n"
+        "        super().do_GET()\n"
+        "http.server.ThreadingHTTPServer(('127.0.0.1', int(sys.argv[1])), H).serve_forever()\n")
+    task = replace(task, dev_cmd=f"{sys.executable} serve.py {{port}}")
+    run_dir = tmp_path / "results" / "run"
+
+    files = cap.capture(task, site, run_dir / "screens", run_dir=run_dir)
+
+    names = {f.name for f in files}
+    assert len(names) == 8 and not any(n.startswith("slow") for n in names)
+    rec = json.loads((run_dir / "grades" / "capture.json").read_text())
+    assert len(rec["page_errors"]) == 4
+    assert all(n.startswith("slow__") for n in rec["page_errors"])
 
 
 def test_dev_server_killed_after_capture(tmp_path, site):
@@ -112,12 +149,13 @@ def test_not_applicable_without_dev_cmd(tmp_path, site):
 
 def test_dev_server_env_is_scrubbed(tmp_path, site, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sekrit")
-    (site / "env.html").write_text("x")
+    envfile = tmp_path / "env.txt"
     task = make_task(tmp_path, pages=("/",), dev_cmd=(
-        f"env > leaked.txt; {sys.executable} -m http.server {{port}}"))
-    files = cap.capture(task, site, tmp_path / "s")
-    assert files
-    assert not (site / "leaked.txt").exists()  # ran in the clone, not the workspace
+        f"env > {envfile}; {sys.executable} -m http.server {{port}}"))
+    assert cap.capture(task, site, tmp_path / "s")
+    env = dict(l.split("=", 1) for l in envfile.read_text().splitlines() if "=" in l)
+    assert "ANTHROPIC_API_KEY" not in env and "sekrit" not in envfile.read_text()
+    assert env.get("PATH")
 
 
 def test_capture_before_once(tmp_path, monkeypatch):
@@ -137,3 +175,37 @@ def test_capture_before_once(tmp_path, monkeypatch):
         raise AssertionError("must not recapture")
     monkeypatch.setattr(cap, "_capture", boom)
     assert sorted(cap.capture_before(task, results, work)) == sorted(first)
+
+
+def test_capture_before_recaptures_partial_baseline(tmp_path):
+    fixture = tmp_path / "task" / "fixture"
+    fixture.mkdir(parents=True)
+    (fixture / "index.html").write_text(HTML)
+    task = make_task(tmp_path, pages=("/",))
+    results, work = tmp_path / "results", tmp_path / "work"
+    dest = results / "_before" / "t"
+    dest.mkdir(parents=True)
+    (dest / "root__desktop__light.png").write_bytes(b"stale")
+    (dest / "capture.json").write_text(json.dumps(
+        {"applicable": True, "pages": ["/"], "files": ["root__desktop__light.png"],
+         "error": "boom"}))
+
+    files = cap.capture_before(task, results, work)
+
+    assert len(files) == 4 and all(f.read_bytes() != b"stale" for f in files)
+
+
+def test_concurrent_capture_before_captures_once(tmp_path, monkeypatch):
+    fixture = tmp_path / "task" / "fixture"
+    fixture.mkdir(parents=True)
+    (fixture / "index.html").write_text(HTML)
+    task = make_task(tmp_path, pages=("/",))
+    results, work = tmp_path / "results", tmp_path / "work"
+    calls = []
+    real = cap._capture
+    monkeypatch.setattr(cap, "_capture", lambda *a, **k: calls.append(1) or real(*a, **k))
+
+    with ThreadPoolExecutor(2) as ex:
+        a, b = ex.map(lambda _: cap.capture_before(task, results, work), range(2))
+
+    assert len(calls) == 1 and len(a) == len(b) == 4
