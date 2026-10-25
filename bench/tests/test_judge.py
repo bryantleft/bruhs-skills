@@ -546,9 +546,10 @@ def test_live_judge_has_no_tools(cli, monkeypatch):
         seen["tool_defs"] = [json.loads(p.read_text())
                              for p in root.rglob("tool_definitions.json")]
         if cli == "codex":
+            events = [json.loads(line) for line in out.splitlines() if line.startswith("{")]
             seen["codex_tools"] = [
-                e["item"]["type"] for line in out.splitlines()
-                if line.startswith("{") and (e := json.loads(line)).get("type", "").startswith("item.")
+                e["item"]["type"] for e in events
+                if str(e.get("type")).startswith("item.")
                 and e.get("item", {}).get("type") not in _CODEX_NON_TOOL_ITEMS]
         return code, out, err
 
