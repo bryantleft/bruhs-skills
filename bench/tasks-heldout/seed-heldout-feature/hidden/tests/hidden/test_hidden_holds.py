@@ -4,7 +4,8 @@ Only the API from the prompt and the README is used: create_app(), POST /books,
 checkout/return, GET /books/{id}, GET /members/{m}/books, and the new
 POST/GET /books/{id}/holds and DELETE /books/{id}/holds/{member}. Status codes follow the
 README's conventions (404 unknown book, 409 state conflict, 422 bad body); a successful
-hold or cancel may answer 200, 201 or 204, and its body isn't checked.
+hold or cancel may answer 200, 201 or 204, and its body isn't checked. Dropping a hold you
+don't have may answer anything but a server error (the prompt doesn't settle it).
 """
 
 import pytest
@@ -174,10 +175,11 @@ def test_dropped_member_is_skipped_on_return(api):
     assert line(api, book) == []
 
 
-def test_dropping_a_hold_you_dont_have_is_404(api):
+def test_dropping_a_hold_you_dont_have_changes_nothing(api):
+    # 404, 409 or an idempotent 2xx are all defensible; only a server error isn't
     book = add_book(api, borrower="ana")
     hold(api, book, "sam")
-    assert api.delete(f"/books/{book}/holds/priya").status_code == 404
+    assert api.delete(f"/books/{book}/holds/priya").status_code < 500
     assert line(api, book) == ["sam"]
 
 

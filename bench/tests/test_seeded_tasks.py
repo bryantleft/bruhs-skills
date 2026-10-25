@@ -239,6 +239,8 @@ def test_task_files(task_id):
     assert (REFERENCE / task_id / "apply.sh").is_file()
     assert not (task.dir / "reference").exists()
     assert task.heldout == (task_id in HELDOUT)
+    # a probe left behind by a checklist script would hand agents the grader
+    assert not list(fixture.rglob(".checklist-probe*"))
     if task.category in ("ui", "copy"):
         assert task.pages and task.dev_cmd and "{port}" in task.dev_cmd
         assert task.checklist is not None and task.checklist.is_file()
@@ -545,6 +547,26 @@ def test_capture_screenshots_every_variant(task_id, reference, prepared, tmp_pat
     assert "error" not in rec and "page_errors" not in rec, rec
     assert len(files) == len(task.pages) * len(C.VIEWPORTS) * len(C.SCHEMES), rec
     assert all(f.stat().st_size > 10_000 for f in files)
+
+
+PROBE_START = "cat > .checklist-probe.mjs <<'PROBE'\n"
+
+
+def _probe_prelude(script: str) -> str:
+    """The shared part of a browser-probe script item: the shell lines before the probe,
+    and the probe's prelude up to the end of its ``pageText`` helper."""
+    head, probe = script.split(PROBE_START, 1)
+    end = probe.index("\n}\n", probe.index("async function pageText")) + 3
+    return head + PROBE_START + probe[:end]
+
+
+def test_probe_preludes_are_identical():
+    """The ui/copy script items inline one probe prelude each (checklist scripts can't read
+    the task dir); every copy must be byte-identical."""
+    preludes = {(t, i["id"]): _probe_prelude(i["script"]) for t in VISUAL
+                for i in checklist.load_items(_task(t).checklist) if i["check"] == "script"}
+    assert len(preludes) == 10
+    assert len(set(preludes.values())) == 1, sorted(preludes)
 
 
 def _checklist_hits(task: Task, run_dir: Path, monkeypatch) -> dict[str, bool]:
