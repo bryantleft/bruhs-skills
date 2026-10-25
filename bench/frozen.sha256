@@ -1,0 +1,10 @@
+# bruhsbench task freeze: SHA-256 of each task's manifest (bruhsbench/freeze.py). Regenerate with `bruhsbench freeze` after reviewing the tasks.
+eccc5210dd473cef6b2f22abbe51379ab4f31c9465192f1cd27370fd47c67087  seed-audit-rust
+91991a83372940e8b70e81e15d5e1045348eaefda89fb0747a3a8f02c841cbeb  seed-audit-ts
+d6ae23b1c897dec0313d34b825718c410ca9736ae9985ae222a7067030921c8f  seed-copy-jargon
+109ed785ec1111d2545d50fbc79062eef6338e26c00ab45e9d38933976cb4e53  seed-debug-not-really-fixed
+ca6f79a809ef500e501b58aec7ed30d070bc5370fe3f9092aee5876eb1d96a40  seed-feature-hidden-tests
+3a7639699787a167dc5c11b5c3bdbde5be3b0562a722acda486cbf9d558b2960  seed-heldout-feature
+338244a0264acb2333e9cc6977dc01531efe26ac45559d6518b167fc34f8028f  seed-heldout-ui
+264d4f970c1be588ae399faabee8e64ad2324dd3cc5cb037845c3719ee19f5fe  seed-pr-review
+6fb18f54ea0fc1c58fd40d4dd42dadaaf1880f155f707579d259557a23d21ee7  seed-ship-messy-diff
