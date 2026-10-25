@@ -96,8 +96,11 @@ Run the stages in order: `probe`, `run`, `capture`, `grade`, `judge`, `spotcheck
 - **Tasks.** Public seeded fixtures (`tasks/`) and real tasks from past sessions in private
   repos (`tasks-private/`, gitignored). Each task has one category and a frozen hidden
   checklist, hidden tests or known issues.
-  A task's `setup.sh` (installing deps) runs before the `bench-base` commit; an optional
-  `after_base.sh` runs after it, for tasks that start from uncommitted work. Reference
+  A task's `setup.sh` (installing deps, or putting the repo on the branch a review was
+  left on) runs before the `bench-base` commit; an optional `after_base.sh` runs after it,
+  for tasks that start from uncommitted work. Hidden tests (`hidden/`) are copied into a
+  copy of the finished workspace and run by the task's `checks.hidden`, which is
+  self-contained: tasks that test in a browser build and serve the app themselves. Reference
   solutions live in `tests/reference/<task>/`, outside every workspace, and
   `tests/test_seeded_tasks.py` checks that each seeded task scores low untouched and full
   with its reference solution.
