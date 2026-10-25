@@ -349,7 +349,8 @@ def _ensure_tmp_base() -> Path:
 
 
 def private_tmp(env: Mapping[str, str], root: Path) -> dict[str, str]:
-    """``env`` with ``TMPDIR`` at :func:`tmp_dir` of ``root`` (created): a sandboxed
+    """``env`` with ``TMPDIR`` (and zsh's ``TMPPREFIX``, xcrun's ``xcrun_db``) at
+    :func:`tmp_dir` of ``root`` (created): a sandboxed
     process has no shared temp dir to write to. :func:`profile` makes it writable for
     exactly the process that may write ``root``. Raises :class:`TmpDirTooLong` (R37)."""
     check_tmp_base()
@@ -361,7 +362,11 @@ def private_tmp(env: Mapping[str, str], root: Path) -> dict[str, str]:
         os.mkdir(tmp, 0o700)
     except FileExistsError:  # reused (a real dir of ours, checked above): private again
         os.chmod(tmp, 0o700, follow_symlinks=False)
-    return {**env, "TMPDIR": str(tmp)}
+    # Temp files that ignore TMPDIR go there too: zsh here-documents use $TMPPREFIX
+    # (default /tmp/zsh), and /usr/bin/git's xcrun shim caches in the Darwin temp dir
+    # unless $xcrun_db names a file. Denied, they broke agents' scripts in both arms.
+    return {**env, "TMPDIR": str(tmp), "TMPPREFIX": str(tmp / "zsh"),
+            "xcrun_db": str(tmp / "xcrun_db")}
 
 
 def remove_private_tmp(root: Path) -> None:

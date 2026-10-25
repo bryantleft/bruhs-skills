@@ -807,3 +807,23 @@ def test_tmp_base_must_be_absolute_and_is_measured_resolved(monkeypatch, tmp_pat
     assert sandbox.tmp_base() == Path("/private/tmp/" + "x" * 55)
     with pytest.raises(sandbox.TmpDirTooLong):
         sandbox.check_tmp_base()
+
+
+def test_zsh_heredocs_and_git_work_with_private_tmp(tmp_path):
+    """Agents' shells are zsh (codex runs `zsh -lc`): here-documents use $TMPPREFIX
+    (default /tmp/zsh, outside every writable root), and /usr/bin/git's xcrun shim
+    caches in the Darwin temp dir unless $xcrun_db names a file. Both must land in the
+    process's own private TMPDIR, or legitimate scripts fail in both arms."""
+    root = tmp_path / "root"
+    root.mkdir()
+    env = sandbox.private_tmp({"PATH": os.environ["PATH"], "HOME": str(root)}, root)
+    tmp = env["TMPDIR"]
+    assert env["TMPPREFIX"].startswith(tmp + "/") and env["xcrun_db"].startswith(tmp + "/")
+    proc = subprocess.run(
+        sandbox.wrap(["/bin/zsh", "-c", "cat <<'EOF'\nheredoc-ok\nEOF\n/usr/bin/git --version"],
+                     writable=[root]),
+        cwd=root, env=env, capture_output=True, text=True, timeout=60)
+    assert proc.returncode == 0, proc.stderr
+    assert "heredoc-ok" in proc.stdout and "git version" in proc.stdout
+    assert "Operation not permitted" not in proc.stderr and "operation not permitted" not in proc.stderr
+    sandbox.remove_private_tmp(root)
