@@ -220,6 +220,23 @@ def test_scan_contamination_flags_real_home_and_repos(tmp_path):
                               forbidden=[home], allowed=[work]) == []
 
 
+def test_allowed_paths_with_spaces_are_not_contamination():
+    """A PATH dir with a space (e.g. ~/Library/Application Support/JetBrains/Toolbox/
+    scripts, printed by `echo $PATH`) must not be flagged as its truncated prefix;
+    a sibling under the same prefix still is."""
+    home = Path("/Users/someone")
+    tool = home / "Library/Application Support/JetBrains/Toolbox/scripts"
+    text = (f"PATH=/usr/bin:{tool}:/bin\n{tool}/jetbrains-launcher\n"
+            f"cat '{home}/Library/Application Support/Slack/cookies'\n"
+            f"{home}/Library/Application Support/JetBrains/Toolbox/scripts-evil/x\n")
+    found = scan_contamination(text, forbidden=[home], allowed=[tool])
+    assert found == ["/Users/someone/Library/Application"]  # the Slack and -evil lines
+    assert scan_contamination(f"echo {tool}", forbidden=[home], allowed=[tool]) == []
+    # as it appears inside a JSON transcript: followed by an escaped newline
+    assert scan_contamination(f'"output": "PATH={tool}\\n# AGENTS.md"', forbidden=[home],
+                              allowed=[tool]) == []
+
+
 def test_run_one_marks_contaminated(tmp_path, bruhs_src):
     task = make_task(tmp_path, "t1")
     leak = Path.home() / ".claude" / "CLAUDE.md"

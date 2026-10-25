@@ -382,7 +382,8 @@ def work_root_active(work_root: Path) -> bool:
 
 # --------------------------------------------------------------------------- contamination
 
-_PATH_END = r"""(?=$|[/\s"'`:;,()\[\]{}<>|])"""
+# a backslash ends a path too: JSON transcripts escape the newline or quote after it
+_PATH_END = r"""(?=$|[/\s"'`:;,()\[\]{}<>|\\])"""
 _PATH_TAIL = r"""(?:/[^\s"'`:;,()\[\]{}<>|\\]*)?"""
 
 
@@ -402,13 +403,18 @@ def scan_contamination(text: str, *, forbidden: Sequence[Path],
     other delimiters, and a trailing ``.`` is dropped.
     """
     text = text.replace("\\/", "/")
+    # an allowed root with a space in it (a PATH dir under ~/Library/Application Support)
+    # is cut at the space by the match, so it is also recognised in the text itself
+    spaced = [re.compile(re.escape(form) + _PATH_END)
+              for r in allowed for form in _forms(r) if re.search(r"\s", form)]
     found: set[str] = set()
     for root in forbidden:
         for form in _forms(root):
             for m in re.finditer(re.escape(form) + _PATH_END + _PATH_TAIL, text):
                 path = m.group(0).rstrip(".")
-                if not _within(path, allowed):
-                    found.add(path)
+                if _within(path, allowed) or any(a.match(text, m.start()) for a in spaced):
+                    continue
+                found.add(path)
     return sorted(found)
 
 
