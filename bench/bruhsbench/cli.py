@@ -14,6 +14,10 @@ parallel across runs), deleting the run's work dir (workspace, home) once it is 
 and graded, so a full matrix fits on disk; ``clean`` does the same deletion after the
 per-stage commands. Every stage that starts a run, capture or grade first checks free
 disk (``$BRUHSBENCH_MIN_FREE_GB``) and stops cleanly, resumable, when it is short.
+
+``digest`` writes the real tasks' checklists for the user's review; ``freeze`` then pins
+every task's hash, and ``run``/``pipeline`` (not ``--pilot``) refuse tasks that don't
+match it unless ``--allow-unfrozen`` (see ``freeze.py``).
 """
 
 from __future__ import annotations
@@ -216,9 +220,29 @@ def cmd_probe(args) -> int:
     return 1 if failed else 0
 
 
+def _freeze_record(tasks: list[Task], args) -> dict:
+    """The task hashes for matrix.json; refuses unfrozen tasks outside the pilot unless
+    ``--allow-unfrozen``."""
+    from .freeze import check
+
+    status = check(tasks)
+    if status.unfrozen and not args.pilot:
+        if not args.allow_unfrozen:
+            raise CliError(
+                f"{len(status.unfrozen)} task(s) don't match the freeze:\n{status.message()}\n"
+                "Review them (`bruhsbench digest`), then run `bruhsbench freeze`. "
+                "(--allow-unfrozen skips this check, for development only; it is recorded "
+                "in matrix.json.)")
+        print(f"warning: running {len(status.unfrozen)} unfrozen task(s) "
+              f"(--allow-unfrozen):\n{status.message()}", file=sys.stderr)
+    return {"task_hashes": status.hashes, "unfrozen": status.unfrozen,
+            "allow_unfrozen": bool(args.allow_unfrozen and status.unfrozen and not args.pilot)}
+
+
 def cmd_run(args, post_run: Callable | None = None, disk_guard=None) -> int:
     from .homes import ClaudeAuthMissing
     from .runner import AuthAbort, DiskLow, run_matrix
+    from .sandbox import TmpDirTooLong
 
     if args.pilot and args.tasks:
         raise CliError("--pilot runs the tasks in bench/pilot.toml; don't combine it with --tasks")
@@ -227,6 +251,7 @@ def cmd_run(args, post_run: Callable | None = None, disk_guard=None) -> int:
     tasks = select_tasks(all_tasks, ids, heldout=args.heldout)
     if not tasks:
         raise CliError("no tasks to run")
+    record = _freeze_record(tasks, args)
     repeats = 1 if args.pilot else args.repeats
     models = select_models(args.models)
     root = results_root(args)
@@ -235,7 +260,10 @@ def cmd_run(args, post_run: Callable | None = None, disk_guard=None) -> int:
     try:
         results = run_matrix(tasks, models, ("bare", "bruhs"), repeats, root,
                              parallel=args.parallel, timeout_s=args.timeout * 60,
-                             post_run=post_run, disk_guard=disk_guard or _disk_guard(root))
+                             post_run=post_run, disk_guard=disk_guard or _disk_guard(root),
+                             record=record)
+    except TmpDirTooLong as exc:
+        raise CliError(str(exc)) from None
     except ClaudeAuthMissing:
         print(_claude_guidance(), file=sys.stderr)
         return 2
@@ -614,6 +642,30 @@ def cmd_spotcheck(args) -> int:
     return 0
 
 
+def cmd_freeze(args) -> int:
+    from .freeze import freeze
+
+    tasks = load_all_tasks()
+    if args.tasks:
+        unknown = sorted(set(args.tasks) - {t.id for t in tasks})
+        if unknown:
+            raise CliError(f"unknown task ids: {unknown}")
+    res = freeze(tasks, only=args.tasks)
+    for what, ids in (("new", res.added), ("changed", res.changed),
+                      ("unchanged", res.unchanged), ("dropped", res.dropped)):
+        if ids:
+            print(f"freeze: {what} {len(ids)}: {' '.join(ids)}")
+    return 0
+
+
+def cmd_digest(args) -> int:
+    from .digest import DIGEST_FILE, write_digest
+
+    out = write_digest(load_all_tasks(), Path(args.out) if args.out else DIGEST_FILE)
+    print(f"digest: {out}")
+    return 0
+
+
 def cmd_report(args) -> int:
     from .report import render
     from .score import summarize
@@ -652,12 +704,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     from .runner import DEFAULT_PARALLEL
 
+    def unfrozen(sp):
+        sp.add_argument("--allow-unfrozen", action="store_true",
+                        help="development only: run tasks that don't match `bruhsbench "
+                             "freeze` (recorded in matrix.json)")
+
     sp = sub.add_parser("run", help="run the agent matrix (resumable)")
     common(sp, parallel=DEFAULT_PARALLEL)
     sp.add_argument("--tasks", nargs="+")
     sp.add_argument("--models", nargs="+")
     sp.add_argument("--repeats", type=int, default=3)
     sp.add_argument("--timeout", type=int, default=45, help="per-run timeout, minutes")
+    unfrozen(sp)
     sp.set_defaults(fn=cmd_run)
 
     sp = sub.add_parser("pipeline", help="run -> capture -> grade -> cleanup per run "
@@ -671,7 +729,17 @@ def build_parser() -> argparse.ArgumentParser:
                     help="delete each run's workspace + home once captured and graded")
     sp.add_argument("--post-parallel", type=int, default=2,
                     help="max runs capturing/grading at once next to the agent runs")
+    unfrozen(sp)
     sp.set_defaults(fn=cmd_pipeline)
+
+    sp = sub.add_parser("freeze", help="pin every task's definition and grading (hashes)")
+    sp.add_argument("--tasks", nargs="+", help="refreeze only these (others are kept)")
+    sp.set_defaults(fn=cmd_freeze)
+
+    sp = sub.add_parser("digest", help="markdown digest of the real tasks' checklists, "
+                                       "for review before `freeze`")
+    sp.add_argument("--out", help="output file (default bench/tasks-private/_digest.md)")
+    sp.set_defaults(fn=cmd_digest)
 
     for name, fn, par, help_ in (("capture", cmd_capture, 3, "screenshot ui/copy runs"),
                                  ("grade", cmd_grade, 4, "grade every finished run"),

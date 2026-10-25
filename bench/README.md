@@ -56,6 +56,12 @@ the bruhs arm's home) and `npx`, which starts chrome-devtools-mcp.
   install dirs and caches), other runs, or the keychain, and they get no clipboard,
   app-launching or process inspection. Each process writes only to its own run root and a
   private `TMPDIR`. Network access stays on.
+- **Short private `TMPDIR`.** The Convex local backend binds a unix socket under `TMPDIR`,
+  and macOS caps a socket path at 104 bytes, so `TMPDIR` must be 77 characters or fewer. Each
+  process's `TMPDIR` is therefore `/private/tmp/bb/<12 hex>` (a hash of its root; the base is
+  `$BRUHSBENCH_TMP`), whatever the results-dir name or run id. Only that process can reach
+  it. It is deleted with its run dir or scratch dir. `run`, `pipeline` and workspace setup
+  stop at once if `$BRUHSBENCH_TMP` would make it too long.
 - **Hardened harness.** Git runs on agent-controlled repos with hooks, fsmonitor and filters
   disabled. Agent-written files are read without following symlinks. Transcripts are piped
   straight out of the sandbox, so an agent can't rewrite its own.
@@ -77,7 +83,9 @@ picks any other dir.
 | Command | What it does |
 |---|---|
 | `uv run bruhsbench probe [--models claude codex grok]` | Isolation probe for every CLI x arm: each sees exactly its arm's skills and MCPs, and the two arms differ only by bruhs. Prints setup steps when the claude token is missing. |
-| `uv run bruhsbench run [--pilot] [--tasks ID…] [--models …] [--repeats N] [--heldout] [--parallel N] [--timeout MIN]` | Runs the matrix. Defaults: all non-held-out tasks, 3 models, 2 arms, 3 repeats, 45-minute timeout. `--pilot` runs the tasks in `bench/pilot.toml` with 1 repeat and can't be combined with `--tasks`. Runs that already have `result.json` are skipped. |
+| `uv run bruhsbench digest [--out FILE]` | Writes `tasks-private/_digest.md` (gitignored) for review before freezing. For every non-held-out real task it lists the id, category, verbatim prompt, and each checklist item or known issue with its source (from `*_src.py` or the task's NOTES.md) and any `flag_for_user` note. Seeded tasks get one line each. |
+| `uv run bruhsbench freeze [--tasks ID…]` | Pins every task's definition and grading: one SHA-256 per task, private tasks in `tasks-private/_frozen.sha256` (gitignored), public ones in `bench/frozen.sha256` (committed), each with a `*.manifest.json` of per-file hashes. `--tasks` refreezes only those ids. What is hashed is documented in `bruhsbench/freeze.py`. In short: every file in the task dir (fixture, seed data by content hash, hidden tests, checklist and known-issues JSON, scripts) plus the `_shared/<name>/` dirs its scripts name, minus `NOTES.md`, `*_src.py` and caches. |
+| `uv run bruhsbench run [--pilot] [--tasks ID…] [--models …] [--repeats N] [--heldout] [--parallel N] [--timeout MIN] [--allow-unfrozen]` | Runs the matrix. Defaults: all non-held-out tasks, 3 models, 2 arms, 3 repeats, 45-minute timeout. `--pilot` runs the tasks in `bench/pilot.toml` with 1 repeat and can't be combined with `--tasks`. Runs that already have `result.json` are skipped. Outside `--pilot` it refuses to start if a selected task is missing from the freeze or differs from it, and it names the files that changed. `--allow-unfrozen` overrides that, for development only. Every start records the task hashes it ran with in `matrix.json`, along with any unfrozen tasks and the override. |
 | `uv run bruhsbench pipeline [same options as run] [--no-cleanup] [--post-parallel 2]` | `run`, plus capture (ui/copy), grade and cleanup for each run as soon as it finishes, still in parallel across runs. Once a run is captured and fully graded, its work dir (workspace and home) is deleted and `result.json` records `workspace_deleted: true`. Runs whose grading fails partway, or whose capture hit a harness error (the dev server didn't start, say; page errors alone don't count), keep their workspace, and the next `pipeline` or `capture` call retries them. Use this for the full matrix. |
 | `uv run bruhsbench capture` | Screenshots ui/copy runs and each task's starting state at desktop and mobile sizes, in light and dark. If a run's checklist was already graded without screenshots, a successful capture regrades the checklist and then honesty. The old checklist grade is kept as `grades/checklist.superseded.json`. `pipeline` does the same. |
 | `uv run bruhsbench grade` | Grades every finished run in this order: commands, scope, checklist, audit, honesty. The checklist judges see the screenshots, so run `capture` first (`grade` warns about ui/copy runs without screenshots). Runs with a grader error or an invalid checklist are retried on the next call. |
@@ -89,8 +97,9 @@ picks any other dir.
 Held-out tasks (anything under `tasks-heldout/`, or with `heldout = true`) are refused unless
 you pass `--heldout`. With `--heldout` and no `--tasks`, `run` runs only the held-out set.
 
-Run the stages in order: `probe`, `run`, `capture`, `grade`, `judge`, `spotcheck`, `report`,
-or `probe`, `pipeline`, `judge`, `spotcheck`, `report`. `capture` and `grade` need each
+Before the full matrix, review `digest` once and run `freeze`. Then run the stages in order:
+`probe`, `run`, `capture`, `grade`, `judge`, `spotcheck`, `report`, or `probe`, `pipeline`,
+`judge`, `spotcheck`, `report`. `capture` and `grade` need each
 run's workspace, which lives in the work root under `/private/tmp`. Finish both before a
 reboot clears it. Judging, spot-checks and reports only read the results dir, so they work
 after cleanup.
@@ -172,7 +181,8 @@ would add up to tens of GB, so use `pipeline`, or `clean` after `grade`.
 
 ```
 bench/results/<name>/                 # gitignored, except published/
-  matrix.json, excluded.json          # pinned bruhs commit, CLI versions, models, seed
+  matrix.json, excluded.json          # pinned bruhs commit, CLI versions, models, seed,
+                                      # task hashes per start
   <task>__<cli>__<arm>__r<n>/         # result.json, transcript.jsonl, stderr.txt, diff.patch,
                                       # final.txt, grades/*.json, screens/*.png
   _before/<task>/                     # starting-state screenshots

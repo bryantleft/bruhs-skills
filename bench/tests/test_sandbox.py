@@ -4,7 +4,11 @@ Sentinels are planted in the real home under a unique name and always removed.""
 
 import json
 import os
+import shutil
+import socket
+import stat
 import subprocess
+import tempfile
 import uuid
 from shlex import quote as shlex_quote
 from dataclasses import replace
@@ -253,10 +257,88 @@ def test_cross_run_access_denied(work_base):
     # TMPDIR is private; macOS mktemp ignores it, so its own unguessable names in the
     # (unlistable) Darwin temp dir work too
     proc = sh('python3 -c "import tempfile; print(tempfile.mkstemp()[1])"')
-    assert proc.returncode == 0 and proc.stdout.startswith(str(a.resolve() / ".tmp"))
+    assert proc.returncode == 0 and proc.stdout.startswith(str(sandbox.tmp_dir(a)) + "/")
     assert sh('f=$(mktemp) && echo hi > "$f" && cat "$f"').stdout == "hi\n"
     assert sh(f"ls {os.confstr(65537)}").returncode != 0
 
+
+
+def test_private_tmpdirs_are_short_and_each_process_reaches_only_its_own(work_base):
+    """R37 + R21: TMPDIR lives outside the root (short), and a process can use its own
+    TMPDIR but can't read, write or list another root's or the base."""
+    a, b = work_base["a"], work_base["b"]
+    env_b = sandbox.private_tmp({}, b)
+    (Path(env_b["TMPDIR"]) / "f.txt").write_text("b-tmp-secret\n")
+    env = sandbox.private_tmp({"PATH": os.environ["PATH"]}, a)
+    assert env["TMPDIR"] == str(sandbox.tmp_dir(a)) != env_b["TMPDIR"]
+    assert len(env["TMPDIR"]) <= sandbox.MAX_TMPDIR_LEN
+    assert stat.S_IMODE(os.stat(env["TMPDIR"]).st_mode) == 0o700
+
+    def sh(script):
+        return subprocess.run(sandbox.wrap(["/bin/sh", "-c", script], writable=[a]), cwd=a,
+                              env=env, capture_output=True, text=True, timeout=60)
+
+    assert sh('echo mine > "$TMPDIR/x" && cat "$TMPDIR/x"').stdout == "mine\n"
+    other = Path(env_b["TMPDIR"])
+    proc = sh(f"cat {other / 'f.txt'}")
+    assert proc.returncode != 0 and "secret" not in proc.stdout
+    assert sh(f"echo x > {other / 'g.txt'}").returncode != 0 and not (other / "g.txt").exists()
+    assert sh(f"ls {other}").returncode != 0
+    assert sh(f"ls {sandbox.tmp_base()}").returncode != 0
+    assert sh(f"mkdir {sandbox.tmp_base() / 'mine2'}").returncode != 0
+    # a unix socket in another root's TMPDIR can't be reached either (its own can)
+    for tmp, reachable in ((Path(env["TMPDIR"]), True), (other, False)):
+        sock = tmp / "s.sock"
+        srv = socket.socket(socket.AF_UNIX)
+        srv.bind(str(sock))
+        srv.listen(1)
+        try:
+            proc = sh("python3 -c \"import socket; "
+                      f"socket.socket(socket.AF_UNIX).connect('{sock}')\"")
+            assert (proc.returncode == 0) is reachable, proc.stderr
+        finally:
+            srv.close()
+    sandbox.remove_private_tmp(a)
+    assert not os.path.lexists(env["TMPDIR"])
+
+
+def test_too_long_tmp_base_fails_fast(monkeypatch, tmp_path):
+    monkeypatch.setenv("BRUHSBENCH_TMP", "/private/tmp/" + "x" * 60)
+    with pytest.raises(sandbox.TmpDirTooLong, match="BRUHSBENCH_TMP"):
+        sandbox.check_tmp_base()
+    with pytest.raises(sandbox.TmpDirTooLong):
+        sandbox.private_tmp({}, tmp_path)
+    assert not Path("/private/tmp/" + "x" * 60).exists()
+
+
+def test_tmp_base_must_be_a_real_dir_of_ours(monkeypatch, tmp_path):
+    target = tmp_path / "elsewhere"
+    target.mkdir()
+    link = Path(tempfile.mkdtemp(prefix="bbl-", dir="/private/tmp")) / "base"
+    try:
+        link.symlink_to(target)
+        monkeypatch.setenv("BRUHSBENCH_TMP", str(link))
+        with pytest.raises(sandbox.SandboxUnavailable, match="not a directory you own"):
+            sandbox.private_tmp({}, tmp_path / "root")
+        assert list(target.iterdir()) == []
+    finally:
+        shutil.rmtree(link.parent)
+
+
+def test_planted_link_at_a_tmpdir_is_replaced_not_followed(tmp_path):
+    root, victim = tmp_path / "root", tmp_path / "victim"
+    victim.mkdir()
+    (victim / "keep").write_text("keep")
+    sandbox.private_tmp({}, tmp_path / "other")  # creates the base
+    tmp = sandbox.tmp_dir(root)
+    tmp.symlink_to(victim)
+    env = sandbox.private_tmp({}, root)
+    assert not tmp.is_symlink() and tmp.is_dir() and env["TMPDIR"] == str(tmp)
+    assert (victim / "keep").read_text() == "keep"
+    tmp.rmdir()
+    tmp.symlink_to(victim)
+    sandbox.remove_private_tmp(root)  # removes the link, never what it points at
+    assert not os.path.lexists(tmp) and (victim / "keep").read_text() == "keep"
 
 def test_runner_denies_its_whole_work_root(tmp_path, monkeypatch):
     seen = {}

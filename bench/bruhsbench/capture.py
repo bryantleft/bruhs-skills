@@ -29,7 +29,7 @@ from pathlib import Path
 
 from . import untrusted
 from .graders.commands import clone_tree, sandboxed_check, sandboxed_env, scratch_root
-from .sandbox import private_tmp
+from .sandbox import private_tmp, remove_private_tmp
 from .types import Task
 from .workspace import prepare_workspace
 
@@ -159,6 +159,7 @@ def _capture(task: Task, workspace: Path, out: Path, ready_timeout: float
         if proc is not None:
             _kill_group(proc)
         shutil.rmtree(scratch, ignore_errors=True)
+        remove_private_tmp(scratch)
     return files, error, page_errors
 
 

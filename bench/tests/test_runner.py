@@ -765,3 +765,94 @@ def test_unflag_handles_an_unreadable_immutable_file(tmp_path):
     finally:
         if (d / "f").exists():
             os.chflags(d / "f", 0)
+
+
+# --------------------------------------------------------------------------- R37: TMPDIR
+
+SOCKET_BODY = """
+python3 - <<'PY' > "$(dirname "$0")/sock-$$.txt"
+import os, socket
+path = os.path.join(os.environ["TMPDIR"], "convex-local-backend.sock")
+s = socket.socket(socket.AF_UNIX)
+s.bind(path)
+print(os.environ["TMPDIR"])
+PY
+""" + EDIT_AND_REPLY
+
+
+def test_long_results_dir_gets_a_short_tmpdir_with_room_for_a_socket(tmp_path, bruhs_src):
+    """A 40-character results dir name and a long run id: TMPDIR stays short enough for
+    a unix socket (Convex's local backend binds one under it)."""
+    out = tmp_path / ("r" * 40)
+    spec = RunSpec(make_task(tmp_path, "a-rather-long-task-name-for-tmpdirs"), CLAUDE,
+                   "bruhs", 3)
+    res = run_one(spec, out, bruhs_src=bruhs_src,
+                  command_override=override(fake_agent(tmp_path, SOCKET_BODY)))
+    assert res.status == "ok"
+    run_dir = res.workspace.parent
+    [seen] = [p.read_text().strip() for p in (tmp_path / "side").glob("sock-*.txt")]
+    assert seen == str(sandbox.tmp_dir(run_dir))
+    assert len(str(run_dir / ".tmp")) > sandbox.MAX_TMPDIR_LEN  # the old layout didn't fit
+    # deleting the run deletes its TMPDIR too
+    assert runner.cleanup_run(out, run_dir.parent, spec.run_id) == []
+    assert not os.path.lexists(seen)
+
+
+def test_default_tmpdir_fits_whatever_the_results_name(monkeypatch, tmp_path):
+    monkeypatch.delenv("BRUHSBENCH_TMP")
+    work_root = runner.default_work_root(tmp_path / ("x" * 40))
+    tmp = sandbox.tmp_dir(work_root / ("t" * 60 + "__claude__bruhs__r3"))
+    assert tmp.parent == Path("/private/tmp/bb") and len(str(tmp)) <= sandbox.MAX_TMPDIR_LEN
+    sandbox.check_tmp_base()
+
+
+def test_matrix_fails_fast_on_a_too_long_tmp_base(tmp_path, monkeypatch):
+    monkeypatch.setenv("BRUHSBENCH_TMP", "/private/tmp/" + "x" * 70)
+    out = tmp_path / "out"
+    with pytest.raises(sandbox.TmpDirTooLong, match="77"):
+        run_matrix([make_task(tmp_path, "t1")], [CLAUDE], ["bare"], 1, out,
+                   command_override=lambda spec, argv: ["true"])
+    assert not (out / "matrix.json").exists()
+
+
+def test_rerun_starts_with_a_fresh_tmpdir(tmp_path, bruhs_src):
+    spec = RunSpec(make_task(tmp_path, "t1"), CLAUDE, "bare", 1)
+    run_dir = tmp_path / "work" / runner.results_id(tmp_path / "out") / spec.run_id
+    stale = sandbox.tmp_dir(run_dir)
+    stale.mkdir(parents=True)
+    (stale / "left-over").write_text("x")
+    run_one(spec, tmp_path / "out", bruhs_src=bruhs_src,
+            command_override=override(fake_agent(tmp_path, EDIT_AND_REPLY)))
+    assert not (stale / "left-over").exists()
+
+
+def test_remove_work_root_removes_run_tmpdirs(tmp_path, bruhs_src):
+    out = tmp_path / "out"
+    spec = RunSpec(make_task(tmp_path, "t1"), CLAUDE, "bare", 1)
+    res = run_one(spec, out, bruhs_src=bruhs_src,
+                  command_override=override(fake_agent(tmp_path, EDIT_AND_REPLY)))
+    work_root = res.workspace.parent.parent
+    scratch = work_root / "_scratch" / "grade-x"
+    scratch.mkdir(parents=True)
+    sandbox.private_tmp({}, scratch)
+    tmps = [sandbox.tmp_dir(res.workspace.parent), sandbox.tmp_dir(scratch)]
+    assert all(t.is_dir() for t in tmps)
+    assert runner.remove_work_root(work_root, protect=[out])
+    assert not any(os.path.lexists(t) for t in tmps)
+
+
+def test_matrix_json_records_each_starts_task_hashes(tmp_path):
+    task = make_task(tmp_path, "t1")
+    out = tmp_path / "out"
+    ov = override(fake_agent(tmp_path, EDIT_AND_REPLY))
+    run_matrix([task], [CLAUDE], ["bare"], 1, out, command_override=ov,
+               record={"task_hashes": {"t1": "h1"}, "unfrozen": {}, "allow_unfrozen": False})
+    meta = json.loads((out / "matrix.json").read_text())
+    assert meta["starts"][0]["task_hashes"] == {"t1": "h1"} and "allow_unfrozen" not in meta
+    run_matrix([task], [CLAUDE], ["bare"], 1, out, command_override=ov,
+               record={"task_hashes": {"t1": "h2"}, "unfrozen": {"t1": "changed"},
+                       "allow_unfrozen": True})
+    run_matrix([task], [CLAUDE], ["bare"], 1, out, command_override=ov)
+    meta = json.loads((out / "matrix.json").read_text())
+    assert [s.get("task_hashes") for s in meta["starts"]] == [{"t1": "h1"}, {"t1": "h2"}, None]
+    assert meta["allow_unfrozen"] is True  # sticky once any start overrode the freeze

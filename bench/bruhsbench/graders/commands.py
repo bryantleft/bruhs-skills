@@ -28,9 +28,10 @@ If bench-base can't be restored (no .git / no tag) ``regressions`` and ``removed
 are None and ``error``
 says why; the other checks still run. Checks get the harness environment minus
 credentials and agent-CLI configuration, with ``HOME`` in the scratch dir
-(:func:`sandboxed_env`) and ``TMPDIR`` in it, under the OS sandbox (``sandbox.wrap``):
-agent-written code can't touch the real home or any run root and writes only inside the
-scratch dir. Git on the copies, the report file and the hidden-test overlay go through
+(:func:`sandboxed_env`) and the scratch dir's short private ``TMPDIR``
+(``sandbox.tmp_dir``, R37), under the OS sandbox (``sandbox.wrap``): agent-written code
+can't touch the real home or any run root and writes only inside the scratch dir and that
+``TMPDIR``. Git on the copies, the report file and the hidden-test overlay go through
 ``untrusted`` (R22).
 """
 
@@ -48,7 +49,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .. import untrusted
-from ..sandbox import private_tmp, real_home, wrap
+from ..sandbox import private_tmp, real_home, remove_private_tmp, wrap
 from ..types import Task
 from ..workspace import BASE_TAG
 from . import not_applicable, run_meta, workspace_of, write_grade
@@ -409,6 +410,7 @@ def grade(task: Task, run_dir: Path) -> dict:
             result["hidden"] = {"applicable": False}
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
+        remove_private_tmp(scratch)
 
     result.update(checks=checks, hidden_pass=hidden_pass, hidden_total=hidden_total,
                   regressions=regressions, removed_tests=removed, timed_out=timed_out)

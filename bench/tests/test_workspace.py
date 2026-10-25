@@ -243,3 +243,16 @@ def test_future_commits_unreachable(tmp_path):
     assert later not in revs and base in revs and len(revs) == 2
     assert git(ws, "for-each-ref", "--format=%(refname)").split() == ["refs/tags/bench-base"]
     assert subprocess.run(["git", "cat-file", "-e", later], cwd=ws).returncode != 0
+
+
+def test_prepare_fails_fast_when_tmpdirs_would_be_too_long(tmp_path, monkeypatch):
+    from bruhsbench.sandbox import TmpDirTooLong
+
+    d = tmp_path / "task"
+    (d / "fixture").mkdir(parents=True)
+    (d / "task.toml").write_text('id = "t"\ncategory = "feature"\n')
+    (d / "prompt.md").write_text("p\n")
+    monkeypatch.setenv("BRUHSBENCH_TMP", "/private/tmp/" + "x" * 70)
+    with pytest.raises(TmpDirTooLong, match="77"):
+        prepare_workspace(load_task(d), "bare", tmp_path / "ws")
+    assert not (tmp_path / "ws").exists()

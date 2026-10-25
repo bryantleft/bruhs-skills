@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from bruhsbench import capture as cap
+from bruhsbench import sandbox
 from bruhsbench.types import Task
 
 HTML = """<!doctype html><title>t</title>
@@ -168,7 +169,9 @@ def test_dev_server_env_is_scrubbed(tmp_path, site, monkeypatch):
     # its own HOME and TMPDIR in the grading scratch dir, outside the run root (R21)
     scratch = tmp_path / "work" / "_scratch"
     assert Path(seen["HOME"]).parent.parent == scratch
-    assert Path(seen["TMPDIR"]).parent.parent == scratch
+    # TMPDIR is the scratch dir's own short one (R37)
+    assert seen["TMPDIR"] == str(sandbox.tmp_dir(Path(seen["HOME"]).parent))
+    assert len(seen["TMPDIR"]) <= sandbox.MAX_TMPDIR_LEN
 
 
 def test_capture_before_once(tmp_path, monkeypatch):

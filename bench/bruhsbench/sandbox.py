@@ -10,15 +10,16 @@ SBPL rules win):
 1. *Blocked roots* get no reads, no writes and no unix-socket connects: the real home
    (from the password database, :func:`real_home`), the work base (every run, judge,
    grading and export root, :func:`work_base`), the caller's ``denied`` roots,
-   ``/private/tmp`` and the per-user Darwin dir ``/private/var/folders/<x>/<y>`` (its
-   ``T`` temp and ``C`` cache). Every path rule is emitted in its ``/System/Volumes/Data``
-   firmlink form too.
+   ``/private/tmp``, the private-TMPDIR base (:func:`tmp_base`) and the per-user Darwin
+   dir ``/private/var/folders/<x>/<y>`` (its ``T`` temp and ``C`` cache). Every path
+   rule is emitted in its ``/System/Volumes/Data`` firmlink form too.
 2. ``file-read-metadata`` (stat only, no listing or contents) on the blocked roots,
    their ancestors and the dirs leading to each re-allowed path, so traversal,
    ``getcwd`` and ``realpath`` work.
 3. Read-only: the tool installs in :data:`READ_ALLOW` and ``extra_readable``.
-4. Writes denied everywhere, then allowed on ``/dev``, the caller's ``writable`` roots,
-   and two strictly-anchored name forms in the (unlistable) Darwin temp dir:
+4. Writes denied everywhere, then allowed on ``/dev``, the caller's ``writable`` roots
+   (each with its private ``TMPDIR``, see below), and two strictly-anchored name forms in
+   the (unlistable) Darwin temp dir:
    ``mktemp``'s ``tmp.XXXXXXXXXX`` (macOS ``mktemp`` ignores ``TMPDIR``) and Chrome's
    ProcessSingleton dir ``com.google.Chrome.XXXXXX`` (file part).
 5. **Unix sockets** (``network-outbound`` to a path): denied everywhere, then allowed
@@ -37,6 +38,16 @@ SBPL rules win):
    running app (e.g. Finder) fails at the sender (``-600``); macOS' own Automation/TCC
    check (``-10004``) is only a second layer behind it. Pasteboard mach services
    (:data:`DENIED_MACH`) denied so ``pbpaste`` can't read the user's clipboard.
+
+Private ``TMPDIR`` (R37). A process's ``TMPDIR`` is not inside its root but at
+:func:`tmp_dir` ``= <tmp base>/<12 hex of the root's path hash>`` (default base
+``/private/tmp/bb``, ``$BRUHSBENCH_TMP``): the Convex local backend binds a unix socket
+under ``TMPDIR``, and macOS limits a socket path to 104 bytes, so ``TMPDIR`` must stay
+within :data:`MAX_TMPDIR_LEN` (77) characters however long the results-dir name or run id
+is. :func:`profile` makes ``tmp_dir(root)`` read-write for each ``writable`` root and
+nothing else under the base, so each process still reaches only its own ``TMPDIR`` (R21).
+:func:`private_tmp` creates it (failing fast with :class:`TmpDirTooLong`);
+:func:`remove_private_tmp` deletes it with its root.
 
 The MCP's Chrome keeps its ProcessSingleton dir in the Darwin temp dir (macOS Chrome
 hard-codes it under ``confstr`` ``_CS_DARWIN_USER_TEMP_DIR``, ignoring ``$TMPDIR``, a
@@ -82,9 +93,12 @@ fallback: without ``/usr/bin/sandbox-exec`` :func:`wrap` raises
 
 from __future__ import annotations
 
+import hashlib
+import logging
 import os
 import pwd
 import re
+import stat
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 
@@ -92,7 +106,14 @@ SANDBOX_EXEC = Path("/usr/bin/sandbox-exec")
 DATA_VOLUME = Path("/System/Volumes/Data")
 DEFAULT_WORK_BASE = Path("/private/tmp/bruhsbench")
 SHARED_TMP = Path("/private/tmp")
-TMP_DIRNAME = ".tmp"
+# R37: the Convex local backend binds a unix socket under TMPDIR and macOS caps a socket
+# path (sun_path) at 104 bytes, so every private TMPDIR is short: <tmp base>/<12 hex>.
+TMP_BASE_ENV = "BRUHSBENCH_TMP"
+DEFAULT_TMP_BASE = Path("/private/tmp/bb")
+MAX_TMPDIR_LEN = 77
+TMP_ID_LEN = 12
+
+log = logging.getLogger(__name__)
 
 READ_ALLOW: tuple[Path, ...] = (
     Path(".local/bin"),
@@ -194,19 +215,22 @@ def profile(*, writable: Iterable[Path], extra_readable: Iterable[Path] = (),
             denied: Iterable[Path] = ()) -> str:
     """SBPL for an untrusted process that may write only under ``writable``.
 
-    The blocked roots (real home, work base, ``denied``, shared temp dirs) are
-    unreadable, unwritable and unconnectable except for :data:`READ_ALLOW`,
-    ``extra_readable`` (read-only) and ``writable`` (read-write, incl. its own unix
-    sockets). Raises ``ValueError`` for an ``extra_readable`` or ``writable`` root that
-    resolves into the real home.
+    The blocked roots (real home, work base, ``denied``, shared temp dirs, the private
+    TMPDIR base) are unreadable, unwritable and unconnectable except for
+    :data:`READ_ALLOW`, ``extra_readable`` (read-only) and ``writable`` plus each
+    writable root's :func:`tmp_dir` (read-write, incl. their own unix sockets). Raises
+    ``ValueError`` for an ``extra_readable`` or ``writable`` root that resolves into the
+    real home.
     """
     home = real_home()
     tmp = darwin_temp_dir()
-    blocked = [home, *(Path(d).resolve() for d in (work_base(), *denied, SHARED_TMP))]
+    blocked = [home, *(Path(d).resolve()
+                       for d in (work_base(), *denied, SHARED_TMP, tmp_base()))]
     if tmp is not None:
         blocked.append(tmp.parent)
     extra = [Path(p).resolve() for p in extra_readable]
-    writes = [Path(p).resolve() for p in writable]
+    # each writable root brings its own private TMPDIR (R37), and only its own
+    writes = [Path(q).resolve() for p in writable for q in (p, tmp_dir(p))]
     if inside := [p for p in extra + writes if p.is_relative_to(home)]:
         raise ValueError(f"sandbox roots resolve into the real home: {inside}")
     reads = [home / p for p in READ_ALLOW] + extra
@@ -256,9 +280,85 @@ def wrap(cmd: list[str], *, writable: Iterable[Path], extra_readable: Iterable[P
             profile(writable=writable, extra_readable=extra_readable, denied=denied), *cmd]
 
 
+# --------------------------------------------------------------------------- TMPDIR (R37)
+
+
+class TmpDirTooLong(ValueError):
+    """A private ``TMPDIR`` would be too long for a unix socket path under it."""
+
+
+def tmp_base() -> Path:
+    """Where private ``TMPDIR``s live (``$BRUHSBENCH_TMP``, default ``/private/tmp/bb``)."""
+    return Path(os.environ.get(TMP_BASE_ENV) or DEFAULT_TMP_BASE)
+
+
+def tmp_dir(root: Path) -> Path:
+    """The private ``TMPDIR`` of the sandboxed process whose writable root is ``root``:
+    ``<tmp_base>/<12 hex of sha256(resolved root)>``, short whatever ``root`` is."""
+    key = str(Path(root).resolve()).encode()
+    return tmp_base() / hashlib.sha256(key).hexdigest()[:TMP_ID_LEN]
+
+
+def check_tmp_base() -> None:
+    """Raise :class:`TmpDirTooLong` if private ``TMPDIR``s would exceed
+    :data:`MAX_TMPDIR_LEN` characters (only a long ``$BRUHSBENCH_TMP`` can do that)."""
+    length = len(str(tmp_base())) + 1 + TMP_ID_LEN
+    if length > MAX_TMPDIR_LEN:
+        raise TmpDirTooLong(
+            f"private TMPDIRs under {tmp_base()} would be {length} characters, over "
+            f"{MAX_TMPDIR_LEN}: unix sockets under them (the Convex local backend's) would "
+            f"not fit macOS' 104-byte socket path. Set ${TMP_BASE_ENV} to a shorter dir.")
+
+
+def _real_dir(path: Path) -> bool:
+    try:
+        st = os.lstat(path)
+    except FileNotFoundError:
+        return False
+    return stat.S_ISDIR(st.st_mode) and st.st_uid == os.getuid()
+
+
+def _ensure_tmp_base() -> Path:
+    """The tmp base, created ``0700``; refused if it is a symlink or someone else's
+    (``/private/tmp`` is world-writable)."""
+    base = tmp_base()
+    try:
+        os.mkdir(base, 0o700)
+    except FileExistsError:
+        pass
+    if not _real_dir(base):
+        raise SandboxUnavailable(f"{base} is not a directory you own (a symlink, or "
+                                 f"another user's); set ${TMP_BASE_ENV}")
+    if stat.S_IMODE(os.lstat(base).st_mode) & 0o077:
+        os.chmod(base, 0o700)
+    return base
+
+
 def private_tmp(env: Mapping[str, str], root: Path) -> dict[str, str]:
-    """``env`` with ``TMPDIR`` at ``root/.tmp`` (created): a sandboxed process has no
-    shared temp dir to write to."""
-    tmp = Path(root) / TMP_DIRNAME
-    tmp.mkdir(parents=True, exist_ok=True)
+    """``env`` with ``TMPDIR`` at :func:`tmp_dir` of ``root`` (created): a sandboxed
+    process has no shared temp dir to write to. :func:`profile` makes it writable for
+    exactly the process that may write ``root``. Raises :class:`TmpDirTooLong` (R37)."""
+    check_tmp_base()
+    _ensure_tmp_base()
+    tmp = tmp_dir(root)
+    if os.path.lexists(tmp) and not _real_dir(tmp):  # e.g. a link a process left there
+        remove_private_tmp(root)
+    try:
+        os.mkdir(tmp, 0o700)
+    except FileExistsError:
+        pass
     return {**env, "TMPDIR": str(tmp)}
+
+
+def remove_private_tmp(root: Path) -> None:
+    """Delete ``root``'s private ``TMPDIR`` without following symlinks. Best effort: a
+    failure is logged, never raised (it only costs space in ``/private/tmp``)."""
+    from . import untrusted  # untrusted imports this module
+
+    tmp = tmp_dir(root)
+    if not os.path.lexists(tmp):
+        return
+    try:
+        untrusted.remove(tmp.parent, tmp.name)
+    except (OSError, ValueError) as exc:
+        log.warning("could not delete private TMPDIR %s of %s: %s", tmp, root, exc)

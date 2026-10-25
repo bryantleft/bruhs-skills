@@ -32,6 +32,7 @@ from pathlib import Path
 
 from .. import judge as J
 from .. import untrusted
+from ..sandbox import remove_private_tmp
 from ..types import ModelSpec, Task
 from ..workspace import BASE_TAG
 from . import not_applicable, run_meta, workspace_of, write_grade
@@ -62,6 +63,7 @@ def _run_script(item: dict, workspace: Path, run_dir: Path) -> bool:
         return res.ok
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
+        remove_private_tmp(scratch)
 
 
 def _commits(workspace: Path | None, notes: dict[str, str] | None = None) -> str:

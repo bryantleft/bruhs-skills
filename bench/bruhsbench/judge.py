@@ -57,7 +57,7 @@ from pathlib import Path
 from .graders.scope import parse_diff
 from .homes import BRUHS_REPO, build_home, claude_args
 from . import untrusted
-from .sandbox import private_tmp, wrap
+from .sandbox import private_tmp, remove_private_tmp, wrap
 from .sandbox import work_base as sandbox_work_base
 from .types import MODELS, Cli, ModelSpec, Task
 from .workspace import _BLOCK_RE  # the kind-matched bruhs marker block
@@ -490,6 +490,7 @@ def judge_call(judge: ModelSpec, prompt: str, images: list[Path], schema: dict) 
                             f"stderr tail {stderr[-500:]!r}")
         finally:
             shutil.rmtree(root, ignore_errors=True)
+            remove_private_tmp(root)
     raise JudgeError(f"{judge.cli} judge returned invalid output twice:\n" + "\n".join(failures))
 
 

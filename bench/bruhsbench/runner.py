@@ -3,14 +3,15 @@
 Layout (Ruling R10). Everything an agent touches lives in a *work root* outside the
 user's home (``$BRUHSBENCH_WORK`` or ``/private/tmp/bruhsbench``, plus a per-results
 id): the pinned bruhs export at ``<work>/_bruhs/<commit>/`` and, per run,
-``<work>/<run_id>/{home,workspace,final.txt,.tmp}``; graders' scratch
+``<work>/<run_id>/{home,workspace,final.txt}``, with its ``TMPDIR`` at the short
+``sandbox.tmp_dir(<work>/<run_id>)`` (R37: under 78 characters for unix sockets); graders' scratch
 copies go to ``<work>/_scratch/``, outside every run root. The results dir
 ``<out_root>/<run_id>/`` only receives copies: ``result.json``, ``transcript.jsonl`` (raw
 CLI stdout, streaming JSON for all three CLIs), ``stderr.txt``, ``diff.patch``,
 ``final.txt``.
 
 Sandbox (R19-R22): the agent runs under ``sandbox.wrap`` with only its run dir
-writable (and readable) inside the work base, ``TMPDIR`` at ``<run_dir>/.tmp``, no
+writable (and readable) inside the work base, its own short private ``TMPDIR``, no
 access to the rest of the work base or the real home, no unix sockets but its own, no
 ``lsof``/``ps`` on other processes, and no clipboard or app-launching. Its stdout/stderr
 are drained over pipes into the results dir, so it can't forge its transcript. Other
@@ -59,7 +60,8 @@ from pathlib import Path, PurePath
 from . import untrusted
 from .agents import build_command, is_auth_failure, parse_output, tool_event_count
 from .homes import ClaudeAuthMissing, build_home, claude_auth, export_bruhs
-from .sandbox import private_tmp, real_home, work_base, wrap
+from .sandbox import (check_tmp_base, private_tmp, real_home, remove_private_tmp, work_base,
+                      wrap)
 from .types import Arm, Cli, ModelSpec, RunResult, RunSpec, Task
 from .workspace import BASE_TAG, SetupFailed, check_task_setup, prepare_workspace
 
@@ -268,23 +270,37 @@ def _check_cleanable(work_root: Path, protect: Sequence[Path]) -> Path:
 
 
 def remove_work_dir(work_root: Path, name: str, *, protect: Sequence[Path] = ()) -> bool:
-    """Delete ``<work_root>/<name>`` without following symlinks; False if it wasn't
-    there. ``name`` is one path component (a run id, ``_scratch``, ...)."""
+    """Delete ``<work_root>/<name>`` and its private TMPDIR without following symlinks;
+    False if it wasn't there. ``name`` is one path component (a run id, ``_scratch``,
+    ...)."""
     if name in ("", ".", "..") or Path(name).name != name:
         raise ValueError(f"not a work-root entry name: {name!r}")
     root = _check_cleanable(work_root, protect)
+    remove_private_tmp(root / name)
     if not os.path.lexists(root / name):
         return False
     untrusted.remove(root, name)
     return True
 
 
+def _remove_private_tmps(root: Path) -> None:
+    """The private TMPDIRs of the work root's run dirs and of any grading scratch dir
+    left in ``_scratch`` (their owners normally delete those)."""
+    for parent in (root, root / "_scratch"):
+        if parent.is_symlink() or not parent.is_dir():
+            continue
+        for entry in os.scandir(parent):
+            remove_private_tmp(parent / entry.name)
+
+
 def remove_work_root(work_root: Path, *, protect: Sequence[Path] = ()) -> bool:
-    """Delete the whole work root (every run dir, export, scratch); False if absent."""
+    """Delete the whole work root (every run dir, export, scratch, and their private
+    TMPDIRs); False if absent."""
     try:
         root = _check_cleanable(work_root, protect)
     except FileNotFoundError:
         return False
+    _remove_private_tmps(root)
     untrusted.remove(root.parent, root.name)
     return True
 
@@ -563,6 +579,7 @@ def run_one(
     run_dir = work_root / spec.run_id
     if os.path.lexists(run_dir):  # a partial earlier attempt; symlink-safe removal
         remove_work_dir(work_root, spec.run_id, protect=[out_root])
+    remove_private_tmp(run_dir)  # an earlier attempt's TMPDIR, even without its run dir
     if out_dir.exists():
         shutil.rmtree(out_dir)
     for d in (out_dir, run_dir):
@@ -663,10 +680,13 @@ def _now() -> str:
 
 def _record_matrix(out_root: Path, commit: str, tasks: Sequence[Task],
                    models: Sequence[ModelSpec], arms: Sequence[Arm], repeats: int,
-                   seed: int, timeout_s: int) -> None:
+                   seed: int, timeout_s: int, record: dict | None = None) -> None:
+    """Write (or, on resume, check and extend) matrix.json. ``record`` (the task hashes
+    and freeze status) is stored with this start; an ``allow_unfrozen`` start also
+    marks the whole matrix ``allow_unfrozen``."""
     path = out_root / "matrix.json"
     versions = {cli: cli_version(cli) for cli in dict.fromkeys(m.cli for m in models)}
-    start = {"at": _now(), "cli_versions": versions}
+    start = {"at": _now(), "cli_versions": versions, **(record or {})}
     pinned = {"bruhs_commit": commit, "seed": seed, "repeats": repeats,
               "models": [asdict(m) for m in models], "tasks": sorted(t.id for t in tasks)}
     if path.exists():
@@ -682,6 +702,8 @@ def _record_matrix(out_root: Path, commit: str, tasks: Sequence[Task],
     else:
         meta = {**pinned, "arms": list(arms), "timeout_s": timeout_s,
                 "cli_versions": versions, "starts": [start]}
+    if start.get("allow_unfrozen"):
+        meta["allow_unfrozen"] = True
     path.write_text(json.dumps(meta, indent=2) + "\n")
 
 
@@ -716,6 +738,7 @@ def run_matrix(
     command_override: CommandOverride | None = None,
     disk_guard: DiskGuard | None = None,
     post_run: Callable[[RunSpec, RunResult], None] | None = None,
+    record: dict | None = None,
 ) -> list[RunResult]:
     """Run every (task, model, arm, repeat), skipping runs that already have result.json.
 
@@ -734,7 +757,11 @@ def run_matrix(
     same worker right after each run, and for already-finished runs on resume; it may
     raise :class:`DiskLow` to stop the matrix the same way. Its other exceptions are
     logged and the matrix goes on.
+
+    ``record`` is stored with this start in matrix.json (the CLI passes the task hashes
+    and freeze status).
     """
+    check_tmp_base()  # R37: raises TmpDirTooLong before anything starts
     if any(m.cli == "claude" for m in models):
         claude_auth()  # R20: raises ClaudeAuthMissing before any process starts
     out_root = Path(out_root)
@@ -745,16 +772,16 @@ def run_matrix(
                            parallel=parallel, claude_parallel=claude_parallel,
                            bruhs_commit=bruhs_commit, seed=seed, timeout_s=timeout_s,
                            command_override=command_override, disk_guard=disk_guard,
-                           post_run=post_run)
+                           post_run=post_run, record=record)
 
 
 def _run_matrix(tasks, models, arms, repeats, out_root: Path, work_root: Path, *,
                 parallel, claude_parallel, bruhs_commit, seed, timeout_s,
-                command_override, disk_guard, post_run) -> list[RunResult]:
+                command_override, disk_guard, post_run, record) -> list[RunResult]:
     guard = disk_guard or DiskGuard([work_root, out_root])
     guard.wait("starting the matrix")  # nothing runs yet: raises DiskLow at once if low
     commit = git_head(BRUHS_REPO, bruhs_commit)
-    _record_matrix(out_root, commit, tasks, models, arms, repeats, seed, timeout_s)
+    _record_matrix(out_root, commit, tasks, models, arms, repeats, seed, timeout_s, record)
     bruhs_src = ensure_bruhs_export(work_root, commit)
     kept = _exclude_failed_setup(tasks, out_root, work_root, bruhs_src / "scripts")
 

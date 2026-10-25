@@ -736,3 +736,94 @@ def test_recapture_with_page_errors_regrades_before_cleanup(tmp_path, monkeypatc
     run_matrix([ui], [CLAUDE], ["bare"], 1, root, command_override=ov, post_run=post)
     assert events == [("regrade", True)]  # regraded while the workspace still existed
     assert not (default_work_root(root) / rid).exists()  # then cleaned
+
+
+# --------------------------------------------------------------------------- freeze
+
+
+def _run_args(root, **kw):
+    base = dict(results=str(root), pilot=False, heldout=False, force=False, parallel=1,
+                tasks=None, models=["claude"], repeats=1, timeout=1, allow_unfrozen=False)
+    return type("A", (), {**base, **kw})()
+
+
+@pytest.fixture
+def frozen_env(tmp_path, monkeypatch):
+    """Two tasks, frozen files under tmp_path, run_matrix stubbed to record its call."""
+    from bruhsbench import freeze, runner
+
+    monkeypatch.setattr(freeze, "FROZEN_PUBLIC", tmp_path / "frozen.sha256")
+    monkeypatch.setattr(freeze, "FROZEN_PRIVATE", tmp_path / "_frozen.sha256")
+    tasks = [make_task(tmp_path, "t-a", "feature"), make_task(tmp_path, "t-b", "audit")]
+    monkeypatch.setattr(cli, "load_all_tasks", lambda: tasks)
+    monkeypatch.setattr(cli, "pilot_task_ids", lambda: ["t-a"])
+    calls = []
+    monkeypatch.setattr(runner, "run_matrix", lambda *a, **k: calls.append(k) or [])
+    return tasks, calls
+
+
+def test_run_refuses_unfrozen_tasks(tmp_path, frozen_env):
+    from bruhsbench import freeze
+
+    tasks, calls = frozen_env
+    with pytest.raises(cli.CliError, match="t-a: not frozen"):
+        cli.cmd_run(_run_args(tmp_path / "res"))
+    freeze.freeze(tasks)
+    (tasks[1].dir / "prompt.md").write_text("changed\n")
+    with pytest.raises(cli.CliError, match=r"t-b: changed since the freeze: changed task/prompt"):
+        cli.cmd_run(_run_args(tmp_path / "res"))
+    assert calls == []
+    assert cli.cmd_run(_run_args(tmp_path / "res", tasks=["t-a"])) == 0
+    rec = calls[-1]["record"]
+    assert rec == {"task_hashes": {"t-a": freeze.task_hash(tasks[0])}, "unfrozen": {},
+                   "allow_unfrozen": False}
+
+
+def test_allow_unfrozen_runs_and_is_recorded(tmp_path, frozen_env, capsys):
+    tasks, calls = frozen_env
+    assert cli.cmd_run(_run_args(tmp_path / "res", allow_unfrozen=True)) == 0
+    rec = calls[-1]["record"]
+    assert rec["allow_unfrozen"] is True and set(rec["unfrozen"]) == {"t-a", "t-b"}
+    assert "unfrozen" in capsys.readouterr().err
+
+
+def test_pilot_runs_unfrozen_and_records_hashes(tmp_path, frozen_env):
+    from bruhsbench import freeze
+
+    tasks, calls = frozen_env
+    assert cli.cmd_run(_run_args(tmp_path / "res", pilot=True)) == 0
+    rec = calls[-1]["record"]
+    assert rec["task_hashes"] == {"t-a": freeze.task_hash(tasks[0])}
+    assert rec["allow_unfrozen"] is False and "t-a" in rec["unfrozen"]
+
+
+def test_too_long_tmpdir_is_a_cli_error(tmp_path, frozen_env, monkeypatch, capsys):
+    from bruhsbench import runner, sandbox
+
+    def boom(*a, **k):
+        sandbox.check_tmp_base()
+
+    monkeypatch.setattr(runner, "run_matrix", boom)
+    monkeypatch.setenv("BRUHSBENCH_TMP", "/private/tmp/" + "x" * 70)
+    assert cli.main(["run", "--results", str(tmp_path / "res"), "--allow-unfrozen",
+                     "--models", "claude"]) == 2
+    assert "BRUHSBENCH_TMP" in capsys.readouterr().err
+
+
+def test_freeze_and_digest_commands(tmp_path, frozen_env, capsys, monkeypatch):
+    from bruhsbench import freeze
+
+    tasks, _ = frozen_env
+    assert cli.main(["freeze"]) == 0
+    assert "new 2: t-a t-b" in capsys.readouterr().out
+    assert freeze.check(tasks).unfrozen == {}
+    (tasks[0].dir / "prompt.md").write_text("changed\n")
+    assert cli.main(["freeze", "--tasks", "t-a"]) == 0
+    assert "changed 1: t-a" in capsys.readouterr().out
+    assert cli.main(["freeze", "--tasks", "nope"]) == 2
+    out = tmp_path / "digest.md"
+    assert cli.main(["digest", "--out", str(out)]) == 0
+    assert "`t-a` (feature)" in out.read_text()
+    p = cli.build_parser()
+    assert p.parse_args(["pipeline", "--allow-unfrozen"]).allow_unfrozen is True
+    assert p.parse_args(["run"]).allow_unfrozen is False

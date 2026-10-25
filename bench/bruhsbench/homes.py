@@ -60,7 +60,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .sandbox import real_home as real_home_dir
-from .sandbox import private_tmp, wrap
+from .sandbox import private_tmp, remove_private_tmp, wrap
 from .types import MODELS, Arm, Cli
 
 BRUHS_REPO = Path(__file__).resolve().parents[2]
@@ -380,8 +380,11 @@ def parse_grok_inspect(stdout: str) -> ProbeResult:
 def _run(cmd: list[str], env: dict[str, str], cwd: Path) -> str:
     # R19/R21: sandboxed like a real run; only the probe's run dir, private TMPDIR
     root = Path(env["HOME"]).parent
-    proc = subprocess.run(wrap(cmd, writable=[root]), env=private_tmp(env, root), cwd=cwd,
-                          capture_output=True, text=True, timeout=PROBE_TIMEOUT_S)
+    try:
+        proc = subprocess.run(wrap(cmd, writable=[root]), env=private_tmp(env, root), cwd=cwd,
+                              capture_output=True, text=True, timeout=PROBE_TIMEOUT_S)
+    finally:
+        remove_private_tmp(root)
     if proc.returncode != 0:
         raise LeakError(f"probe command failed ({proc.returncode}): {cmd[:3]}\n"
                         f"{proc.stdout[-2000:]}\n{proc.stderr[-2000:]}")

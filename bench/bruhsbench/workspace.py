@@ -9,6 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from .sandbox import check_tmp_base
 from .types import Arm, Task
 
 DEFAULT_SCRIPTS_DIR = Path(__file__).resolve().parents[2] / "scripts"
@@ -114,7 +115,11 @@ def _run_task_script(task: Task, script: Path | None, dest: Path) -> None:
 def prepare_workspace(
     task: Task, arm: Arm, dest: Path, scripts_dir: Path | None = None
 ) -> Path:
-    """Create a fresh checkout at `dest` for `arm`, run setup, commit it as `bench: base`."""
+    """Create a fresh checkout at `dest` for `arm`, run setup, commit it as `bench: base`.
+
+    Raises ``sandbox.TmpDirTooLong`` first if the sandboxed processes that will use the
+    workspace couldn't get a short enough ``TMPDIR`` (R37)."""
+    check_tmp_base()
     dest = Path(dest)
     if dest.exists() and any(dest.iterdir()):
         raise FileExistsError(f"workspace destination not empty: {dest}")
