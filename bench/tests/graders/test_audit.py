@@ -149,7 +149,38 @@ def test_valid_unlisted_findings_do_not_lower_precision(tmp_path, make_run):
     assert code.startswith("src/db.ts:") and "   50  line 50" in code
     assert "   20  line 20" in code and "   19  line 19" not in code  # +/- 30 lines
     assert "agent edited" not in code
-    assert dict(seen)["nonsense"] == ""
+    assert dict(seen)["nonsense"].startswith("Files in the repository:\nsrc/db.ts\nsrc/other.ts")
+
+
+def test_file_less_findings_get_project_context(tmp_path, make_run):
+    task = audit_task(tmp_path)
+    run = make_run({"README.md": "# shop api\nAuth middleware in src/auth.ts\n",
+                    "package.json": '{"name": "shop", "scripts": {"test": "vitest"}}\n',
+                    "src/auth.ts": "export function requireUser() {}\n",
+                    "test/orders.test.ts": "it('orders', () => {})\n"})
+    run.write({"README.md": "agent rewrote this\n"})
+    run_dir = run.finish()
+    seen = {}
+
+    def classify(finding, code):
+        seen[finding["summary"]] = code
+        return "valid_unlisted"
+
+    findings = [
+        {"file": None, "line": None, "summary": "no tests cover the auth middleware",
+         "severity": "medium"},
+        {"file": "src/missing.ts", "line": 3, "summary": "cites a file that isn't there",
+         "severity": "low"},
+    ]
+    match, _ = by_summary({})
+    g = audit.grade(task, run_dir, extract_findings=lambda *a: findings, match_finding=match,
+                    classify_finding=classify)
+    assert g["valid_unlisted"] == 2 and g["incorrect"] == 0
+    for code in seen.values():
+        assert "Files in the repository:" in code
+        assert "src/auth.ts" in code and "test/orders.test.ts" in code
+        assert "README.md:\n# shop api" in code and "agent rewrote" not in code
+        assert 'package.json:\n{"name": "shop"' in code
 
 
 def test_alternate_locations_match(tmp_path, make_run):

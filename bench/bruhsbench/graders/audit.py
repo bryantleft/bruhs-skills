@@ -17,7 +17,8 @@ Matching, per finding (``unmatched`` = entries no earlier finding matched):
 3. still nothing (including a located finding overlapping no site): ``match_finding``
    over every unmatched entry, decoys included;
 4. still nothing: ``classify_finding`` labels it ``valid_unlisted`` (a real problem the
-   task didn't plant) or ``incorrect``, judged against the code it cites at bench-base.
+   task didn't plant) or ``incorrect``, judged against the code it cites at bench-base
+   (or, citing no readable file, the file list, README and manifests at bench-base).
 
 A match on a decoy counts in ``decoys_flagged``; a second finding on an already-found
 issue is ignored. precision = tp / (tp + incorrect + decoys_flagged): valid findings that
@@ -44,6 +45,8 @@ MAX_FILE_CHARS = 200_000
 CODE_CONTEXT_LINES = 30  # lines of code shown around a finding's cited range
 MAX_CODE_CHARS = 12_000
 VERDICTS = ("valid_unlisted", "incorrect")
+# shown with the file list when a finding cites no readable file
+PROJECT_FILES = ("README.md", "package.json", "Cargo.toml", "pyproject.toml")
 
 
 def _norm(path: str, workspace: Path | None) -> str:
@@ -159,25 +162,52 @@ def match(finding: dict, known: list[dict], workspace: Path | None,
     return kid
 
 
-def code_context(workspace: Path | None, finding: dict) -> str:
-    """The code a finding cites, as it was at bench-base (the agent may have edited the
-    tree): the cited range +/- CODE_CONTEXT_LINES, numbered; "" when there's no file."""
-    file = _norm(str(finding.get("file") or ""), workspace)
-    if workspace is None or not file or file.startswith("/") or ".." in PurePosixPath(file).parts:
-        return ""
+def _base_file(workspace: Path, file: str) -> str | None:
+    """``file`` as it was at bench-base, or None (missing, unsafe path, git refused)."""
+    if not file or file.startswith("/") or ".." in PurePosixPath(file).parts:
+        return None
     try:  # agent-controlled repo: hardened, sandboxed git (R22)
         proc = untrusted.git(workspace, "show", f"{BASE_TAG}:{file}", write=False,
                              check=False, text=True)
     except untrusted.UnsafePath:
+        return None
+    return proc.stdout if proc.returncode == 0 else None
+
+
+def project_context(workspace: Path) -> str:
+    """Codebase-wide evidence at bench-base, for findings that cite no readable file: the
+    file list plus the README and package manifest(s)."""
+    try:
+        proc = untrusted.git(workspace, "ls-tree", "-r", "--name-only", BASE_TAG,
+                             write=False, check=False, text=True)
+    except untrusted.UnsafePath:
         return ""
     if proc.returncode != 0:
         return ""
-    lines = proc.stdout.splitlines()
+    files = proc.stdout.split()
+    parts = ["Files in the repository:\n" + "\n".join(files)]
+    for name in PROJECT_FILES:
+        if name in files and (text := _base_file(workspace, name)) is not None:
+            parts.append(f"{name}:\n{text}")
+    return "\n\n".join(parts)[:MAX_CODE_CHARS]
+
+
+def code_context(workspace: Path | None, finding: dict) -> str:
+    """Evidence for :func:`classify_finding`, as of bench-base (the agent may have edited
+    the tree): the cited range +/- CODE_CONTEXT_LINES, numbered; for a finding with no
+    file, or a file missing at bench-base, the :func:`project_context` instead."""
+    if workspace is None:
+        return ""
+    file = _norm(str(finding.get("file") or ""), workspace)
+    text = _base_file(workspace, file)
+    if text is None:
+        return project_context(workspace)
+    lines = text.splitlines()
     rng = _finding_range(finding)
     a, b = (1, len(lines)) if rng is None else (max(1, rng[0] - CODE_CONTEXT_LINES),
                                                   min(len(lines), rng[1] + CODE_CONTEXT_LINES))
-    text = "\n".join(f"{n:>5}  {lines[n - 1]}" for n in range(a, b + 1))
-    return f"{file}:\n{text}"[:MAX_CODE_CHARS]
+    numbered = "\n".join(f"{n:>5}  {lines[n - 1]}" for n in range(a, b + 1))
+    return f"{file}:\n{numbered}"[:MAX_CODE_CHARS]
 
 
 def _ratio(n: int, d: int) -> float:

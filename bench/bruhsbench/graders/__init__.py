@@ -29,7 +29,8 @@ Graders that need a model (audit, honesty) take the judge as injected callables;
     For a finding that matches no known issue (R29): ``"valid_unlisted"`` if it is a real
     problem in the code (just not one the task planted), else ``"incorrect"`` (wrong,
     vague, or about code that is actually fine). ``code`` is the cited code at
-    bench-base, numbered, or "" when the finding names no readable file.
+    bench-base, numbered; for a finding citing no readable file, the bench-base file list,
+    README and manifests instead.
 
 ``claimed_items(claim: dict, items: list[dict]) -> list[str]``
     Given one extracted claim (``{"claim", "kind"}``) and checklist items

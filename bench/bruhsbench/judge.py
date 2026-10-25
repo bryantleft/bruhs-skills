@@ -729,14 +729,17 @@ class CrossFamilyJudge:
     def classify_finding(self, finding: dict, code: str) -> str:
         prompt = (
             "An auditor reported the finding below about a codebase. It matches none of the "
-            "issues we already know about. Using the code it cites, decide whether it is a "
+            "issues we already know about. Decide from the evidence below whether it is a "
             "real problem in this code: valid_unlisted = correct and specific (a real bug, "
             "security, performance, error-handling or type problem, or genuinely sloppy "
             "code worth fixing); incorrect = wrong, too vague to act on, or about code that "
-            "is actually fine. When the code shown doesn't support the finding, it is "
-            "incorrect.\n\n"
+            "is actually fine. The evidence is either the code the finding cites, or, when "
+            "it cites no file (a codebase-wide claim such as missing tests or a missing "
+            "config), the repository's file list, README and manifests. A claim this "
+            "evidence supports (e.g. no test file covers the module it names) can be "
+            "valid_unlisted; one it doesn't support is incorrect.\n\n"
             f"## Finding\n{redact(json.dumps(finding, indent=2))}\n\n"
-            f"## Cited code (at the starting state)\n```\n{redact(code) or '(not available)'}\n```")
+            f"## Evidence (at the starting state)\n```\n{redact(code) or '(not available)'}\n```")
         out = judge_call(self.spec, prompt, [], CLASSIFY_SCHEMA)
         return out["verdict"]
 

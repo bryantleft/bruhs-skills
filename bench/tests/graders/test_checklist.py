@@ -167,3 +167,21 @@ def test_ship_evidence_unreadable_repo_is_noted(tmp_path):
     (tmp_path / "ws").mkdir()
     assert checklist.ship_evidence(tmp_path / "ws", notes) == "(git state unreadable)"
     assert "git" in notes
+
+
+def test_ship_evidence_includes_unstaged_changes(tmp_path, make_run):
+    r = make_run({"app.py": "x = 1\n"}, run_id="ship__claude__bare__r1")
+    r.write({"app.py": "x = 3\n"})  # not staged: grading without runner._write_diff
+    text = checklist.ship_evidence(r.workspace)
+    assert "+x = 3" in text.split("## Uncommitted changes", 1)[1]
+
+
+def test_ship_prompt_skips_head_only_commit_messages(run, monkeypatch):
+    task, run_dir, _ = run
+    calls = []
+    monkeypatch.setattr(checklist, "_commits", lambda *a: calls.append(a) or "x")
+    fake, _ = votes({"codex": {"commit-msg": True, "no-debug": True, "pr-body": True},
+                     "grok": {"commit-msg": True, "no-debug": True, "pr-body": True}})
+    monkeypatch.setattr(J, "judge_call", fake)
+    checklist.grade(task, run_dir, [SPEC["codex"], SPEC["grok"]])
+    assert calls == []

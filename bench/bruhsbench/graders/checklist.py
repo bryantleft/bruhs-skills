@@ -105,7 +105,9 @@ def ship_evidence(workspace: Path | None, notes: dict[str, str] | None = None) -
             patch = _git_out(workspace, "show", "--format=", "--binary", sha)
             commits.append(f"### commit {short} (on: {', '.join(on)})\n{message}\n"
                            f"```diff\n{J.diff_for_judge(patch)}```")
-        uncommitted = _git_out(workspace, "diff", "--cached", "--binary", "HEAD")
+        # staged + unstaged changes to tracked files; new files show once staged
+        # (runner._write_diff stages everything with ``git add -A`` before grading)
+        uncommitted = _git_out(workspace, "diff", "--binary", "HEAD")
     except untrusted.UnsafePath as exc:
         if notes is not None:
             notes["git"] = str(exc)
@@ -169,8 +171,9 @@ def _votes(task: Task, run_dir: Path, items: list[dict], judges: list[ModelSpec]
         workspace = workspace_of(run_dir)
         git_state = (ship_evidence(workspace, notes) if task.category == SHIP_CATEGORY
                      else None)
-        prompt = judge_prompt(task, run_dir, items, [p.name for p in images],
-                              _commits(workspace, notes), git_state)
+        commits = _commits(workspace, notes) if git_state is None else ""
+        prompt = judge_prompt(task, run_dir, items, [p.name for p in images], commits,
+                              git_state)
         for judge in judges:
             try:
                 answer = J.judge_call(judge, prompt, images, J.CHECKLIST_SCHEMA)
