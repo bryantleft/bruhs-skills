@@ -1,0 +1,1 @@
+marketing ran our landing page through chatgpt and now it's all buzzwords, emoji and fluff, and it's way too long, nobody is going to read all that. can you rewrite the copy so it's tight and sounds like an actual person wrote it? keep the real info the same though (plans, prices, limits, what the product actually does)

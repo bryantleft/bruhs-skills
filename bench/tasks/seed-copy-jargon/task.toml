@@ -1,0 +1,15 @@
+id = "seed-copy-jargon"
+category = "copy"
+# Primary metric: blind pairwise preference over the screenshots and diffs (copy tasks).
+# checklist.json is graded alongside: script items read the rendered page in headless
+# Chromium (word count inside <main>, banned words, emoji, em-dash stacks, plan prices),
+# judge items check that every listed fact survived and that the voice is plain.
+allowed_paths = ["src/**", "tests/**", "public/**", "index.html", "README.md"]
+pages = ["/"]
+# production build served by `vite preview`; {port} is picked free per capture
+dev_cmd = "./node_modules/.bin/vite build --logLevel error && ./node_modules/.bin/vite preview --host 127.0.0.1 --port {port} --strictPort"
+
+[checks]
+build = "./node_modules/.bin/tsc --noEmit && ./node_modules/.bin/vite build"
+typecheck = "./node_modules/.bin/tsc --noEmit"
+test = "NODE_OPTIONS=--no-warnings ./node_modules/.bin/vitest run --reporter=json --outputFile=$BRUHSBENCH_REPORT"
