@@ -26,7 +26,7 @@ run dir without it is partial and is redone on resume.
 
 Contamination (R9/R14): after each run the transcript, stderr and the CLI's own
 session logs inside the run's home are scanned for absolute paths under the real home
-or the source repos. ``contaminated`` is None when none of that material shows any
+or the source repos (minus the sandbox's read-only tool installs and PATH dirs). ``contaminated`` is None when none of that material shows any
 tool-level event (nothing to check), else True/False.
 
 A failing run never takes the matrix down: harness exceptions are recorded as
@@ -60,8 +60,8 @@ from pathlib import Path, PurePath
 from . import untrusted
 from .agents import build_command, is_auth_failure, parse_output, tool_event_count
 from .homes import ClaudeAuthMissing, build_home, claude_auth, export_bruhs
-from .sandbox import (check_tmp_base, private_tmp, real_home, remove_private_tmp, work_base,
-                      wrap)
+from .sandbox import (READ_ALLOW, check_tmp_base, private_tmp, real_home, remove_private_tmp,
+                      work_base, wrap)
 from .types import Arm, Cli, ModelSpec, RunResult, RunSpec, Task
 from .workspace import BASE_TAG, SetupFailed, check_task_setup, prepare_workspace
 
@@ -437,9 +437,12 @@ def _contamination(spec: RunSpec, stdout: str, stderr: str, run_dir: Path, work_
     # reading the user's config; everything else under ~ is.
     path_dirs = [Path(p) for p in env.get("PATH", "").split(os.pathsep)
                  if p and Path(p) != home_dir and Path(p).is_absolute()]
+    # Likewise the tool installs the sandbox lets every run read (sandbox.READ_ALLOW,
+    # e.g. Playwright's browsers, which agents point PLAYWRIGHT_BROWSERS_PATH at).
+    tool_dirs = [home_dir / p for p in READ_ALLOW]
     logs = [_read_untrusted(run_dir, rel, skipped) for rel in session_logs(run_dir)]
     found = scan_contamination("\n".join([stdout, stderr, *logs]), forbidden=forbidden,
-                               allowed=[work_root, *path_dirs])
+                               allowed=[work_root, *path_dirs, *tool_dirs])
     if found:
         return True, found
     tool_level = (tool_event_count(spec.model.cli, stdout) > 0

@@ -66,8 +66,9 @@ the bruhs arm's home) and `npx`, which starts chrome-devtools-mcp.
   disabled. Agent-written files are read without following symlinks. Transcripts are piped
   straight out of the sandbox, so an agent can't rewrite its own.
 - **Contamination check.** Each transcript and CLI session log is scanned for paths under
-  the real home or the task's source repo. A contaminated run drops its (task, model, repeat)
-  pair from both arms.
+  the real home or the task's source repo, other than the tool installs the sandbox lets
+  every run read (Playwright's browsers, node, the CLIs). A contaminated run drops its
+  (task, model, repeat) pair from both arms.
 - **Blind judging.** Judges run with no tools. They see redacted diffs, final messages and
   screenshots in a seeded A/B order, and never judge their own model family's runs.
 - **Accepted limitations.** Localhost TCP between sandboxed processes is open. In the bruhs

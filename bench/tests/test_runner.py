@@ -230,6 +230,19 @@ def test_run_one_marks_contaminated(tmp_path, bruhs_src):
     assert str(leak) in res.contamination
 
 
+def test_sandbox_readable_tool_dirs_are_not_contamination(tmp_path, bruhs_src):
+    """Tool installs the sandbox lets every run read (e.g. Playwright's browser cache,
+    which agents point PLAYWRIGHT_BROWSERS_PATH at) aren't the user's material; a path
+    beside them still is."""
+    task = make_task(tmp_path, "t1")
+    tool = Path.home() / "Library" / "Caches" / "ms-playwright" / "chromium-1"
+    leak = Path.home() / "Library" / "Caches" / "other-app"
+    body = f"echo 'PLAYWRIGHT_BROWSERS_PATH={tool} and {leak}' >&2\n{EDIT_AND_REPLY}"
+    res = run_one(RunSpec(task, CLAUDE, "bare", 1), tmp_path / "out", bruhs_src=bruhs_src,
+                  command_override=override(fake_agent(tmp_path, body)))
+    assert res.contaminated is True and res.contamination == [str(leak)]
+
+
 def reply_with(transcript: str) -> str:
     return f"cat <<'EOF'\n{transcript}\nEOF\n"
 
