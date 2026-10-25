@@ -23,26 +23,28 @@ SBPL rules win):
    ProcessSingleton dir ``com.google.Chrome.XXXXXX`` (file part).
 5. **Unix sockets** (``network-outbound`` to a path): denied everywhere, then allowed
    only for the system resolver (:data:`SYSTEM_SOCKETS`, mDNSResponder -- DNS uses a
-   unix socket), the caller's ``writable`` roots (a run's own dev-server / MCP sockets)
-   and the Chrome singleton socket. Nothing else: the user's ssh-agent,
-   ``~/.docker/run/docker.sock``, and other runs' or the user's real Chrome sockets are
-   all unreachable. TCP (``remote ip``) is untouched -- localhost dev servers and the
-   chrome-devtools websocket keep working (see the localhost note below).
-6. ``process-info*`` denied except ``(target self)``: ``lsof -U`` / ``ps`` can't
-   enumerate other processes' fds or sockets, so a socket whose path can't be guessed
-   can't be discovered either.
+   unix socket) and the caller's ``writable`` roots (a run's own dev-server / MCP
+   sockets). Nothing else: the user's ssh-agent, ``~/.docker/run/docker.sock``, and
+   other runs' or the user's real Chrome singleton sockets are all unreachable. TCP
+   (``remote ip``) is untouched -- localhost dev servers and the chrome-devtools
+   websocket keep working (see the localhost note below).
+6. Enumeration is closed: ``process-info*`` is denied except ``(target self)`` (no
+   ``lsof``/``ps`` on other processes) and ``sysctl`` ``net.local.*`` is denied (no
+   ``netstat -f unix`` listing of every bound unix socket on the machine).
 7. ``lsopen`` denied: ``open``/LaunchServices can't launch an app (an app launches as a
    child of launchd, outside this sandbox -- the classic escape). ``appleevent-send``
-   denied as defence in depth. Pasteboard mach services (:data:`DENIED_MACH`) denied so
-   ``pbpaste`` can't read the user's clipboard.
+   denied: this is the **primary barrier** against Apple-Event escapes -- an event to a
+   running app (e.g. Finder) fails at the sender (``-600``); macOS' own Automation/TCC
+   check (``-10004``) is only a second layer behind it. Pasteboard mach services
+   (:data:`DENIED_MACH`) denied so ``pbpaste`` can't read the user's clipboard.
 
-The Chrome singleton socket is the one unix socket allowed outside a writable root.
-macOS Chrome hard-codes it under the Darwin temp dir (``confstr`` ``_CS_DARWIN_USER_TEMP_DIR``),
-ignoring ``$TMPDIR``, a short ``--user-data-dir`` and every flag (verified), so it can't
-be moved into the run root. The exposure is bounded: the dir name has random characters,
-the Darwin temp dir can't be listed (step 1-2), and ``process-info`` is denied (step 6),
-so another run's or the user's real Chrome socket path can't be discovered -- only brute
-forced over a socket with no feedback. Accepted limitation: **localhost TCP stays open**
+The MCP's Chrome keeps its ProcessSingleton dir in the Darwin temp dir (macOS Chrome
+hard-codes it under ``confstr`` ``_CS_DARWIN_USER_TEMP_DIR``, ignoring ``$TMPDIR``, a
+short ``--user-data-dir`` and every flag -- verified), so the profile allows creating
+``com.google.Chrome.XXXXXX`` there (file ops only). It needs no outbound connect: Chrome
+binds its own fresh singleton, and a refused connect to a pre-existing one just means
+"no other instance" (verified: the MCP works without it). So no Chrome singleton --
+another run's or the user's real one -- can be connected to. Accepted limitation: **localhost TCP stays open**
 (``127.0.0.1`` / ``::1``), because dev servers and the chrome-devtools MCP need it; a run
 can in principle reach a port another run is listening on. Ports are picked free per
 capture and runs are short-lived, so this is tolerated.
@@ -228,6 +230,8 @@ def profile(*, writable: Iterable[Path], extra_readable: Iterable[Path] = (),
         f"(allow network-outbound {_subpaths([*SYSTEM_SOCKETS, *writes])})",
         "(deny process-info*)",
         "(allow process-info* (target self))",
+        # netstat/sysctl net.local.* lists every bound unix socket on the machine
+        '(deny sysctl-read (sysctl-name-prefix "net.local"))',
         "(deny lsopen)",
         "(deny appleevent-send)",
         f"(deny mach-lookup {mach})",
@@ -237,7 +241,7 @@ def profile(*, writable: Iterable[Path], extra_readable: Iterable[Path] = (),
     if tmp is not None:
         rules.append(f"(allow file-read* file-write* {_temp_regex(tmp, _MKTEMP_RE)})")
         rules.append(
-            f"(allow file-read* file-write* network-outbound {_temp_regex(tmp, _CHROME_RE)})")
+            f"(allow file-read* file-write* {_temp_regex(tmp, _CHROME_RE)})")
     return "\n".join(rules) + "\n"
 
 

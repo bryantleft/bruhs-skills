@@ -121,17 +121,28 @@ def _clear_at(dfd: int, name: str) -> None:
 
 
 def _rmtree_at(dfd: int, name: str) -> None:
-    sub = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=dfd)
+    """Recursively remove ``name`` under ``dfd`` without following symlinks; entries that
+    vanish meanwhile are skipped."""
+    try:
+        sub = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=dfd)
+    except FileNotFoundError:
+        return
     try:
         for entry in os.listdir(sub):
-            st = os.stat(entry, dir_fd=sub, follow_symlinks=False)
-            if stat.S_ISDIR(st.st_mode):
-                _rmtree_at(sub, entry)
-            else:
-                os.unlink(entry, dir_fd=sub)
+            try:
+                st = os.stat(entry, dir_fd=sub, follow_symlinks=False)
+                if stat.S_ISDIR(st.st_mode):
+                    _rmtree_at(sub, entry)
+                else:
+                    os.unlink(entry, dir_fd=sub)
+            except FileNotFoundError:
+                continue
     finally:
         os.close(sub)
-    os.rmdir(name, dir_fd=dfd)
+    try:
+        os.rmdir(name, dir_fd=dfd)
+    except FileNotFoundError:
+        pass
 
 
 def _child_dir(dfd: int, name: str) -> int:
@@ -202,13 +213,17 @@ def _git_env() -> dict[str, str]:
 
 def _filter_names(repo: Path, denied: Iterable[Path]) -> list[str]:
     """``filter.<name>.*`` drivers in the repo's config, includes followed. NUL-delimited
-    so values with newlines can't inject keys; config read failure means none."""
+    so values with newlines can't inject keys. Fails closed: if the config can't be read
+    the drivers are unknown, so :class:`UnsafePath` is raised instead of running git."""
     proc = subprocess.run(
         wrap([*GIT, *HARDEN, "config", "--includes", "--null", "--get-regexp", r"^filter\."],
              writable=[], extra_readable=[repo], denied=denied),
         cwd=repo, env=_git_env(), capture_output=True, text=True)
-    if proc.returncode not in (0, 1):  # 1 = no matching keys
+    if proc.returncode == 1 and not proc.stdout:  # no matching keys
         return []
+    if proc.returncode != 0:
+        raise UnsafePath(f"git config unreadable in {repo} (exit {proc.returncode}): "
+                         f"{proc.stderr.strip()[-300:]}")
     names = set()
     for record in proc.stdout.split("\0"):
         key = record.split("\n", 1)[0]  # "key\nvalue"; key is the first line

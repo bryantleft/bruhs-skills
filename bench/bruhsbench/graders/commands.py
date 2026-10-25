@@ -349,12 +349,16 @@ def grade(task: Task, run_dir: Path) -> dict:
         if "test" in task.checks:
             base = scratch / "base"
             clone_tree(workspace, base)
-            problem = _base_problem(base, workspace)
+            try:  # fails closed on an unreadable/hostile repo config (R22)
+                problem = _base_problem(base, workspace)
+                if problem is None:
+                    _to_base(base)
+            except (untrusted.UnsafePath, subprocess.CalledProcessError) as exc:
+                problem = f"git refused: {exc}"
         if problem is not None:
             result["error"] = f"regressions not computed: {problem}"
             regressions = None
         elif "test" in task.checks:
-            _to_base(base)
             base_res = run_check("test", task.checks["test"], base, scratch, log_dir)
             regressions = _regressions("test", base_res, after_results["test"])
 

@@ -303,14 +303,9 @@ def _sbx(root, script, **kw):
 
 
 def test_clipboard_cannot_be_read(tmp_path):
-    marker = f"clip-{uuid.uuid4().hex}"
-    had = subprocess.run(["pbpaste"], capture_output=True, text=True).stdout
-    try:
-        subprocess.run(["pbcopy"], input=marker, text=True)
-        proc = _sbx(tmp_path, "pbpaste")
-        assert marker not in proc.stdout and (proc.returncode != 0 or proc.stdout == "")
-    finally:
-        subprocess.run(["pbcopy"], input=had, text=True)
+    """Read-only: never writes the user's clipboard. A sandboxed pbpaste gets nothing."""
+    proc = _sbx(tmp_path, "pbpaste")
+    assert proc.returncode != 0 or proc.stdout == ""
 
 
 def test_launching_apps_is_blocked(tmp_path):
@@ -321,9 +316,8 @@ def test_launching_apps_is_blocked(tmp_path):
         assert _sbx(tmp_path, "open -a TextEdit").returncode != 0
         assert _sbx(tmp_path, f"open -g -j {harmless}").returncode != 0
         assert not subprocess.run(["pgrep", "-x", "TextEdit"], capture_output=True).stdout
-    finally:
-        subprocess.run(["osascript", "-e", 'tell application "TextEdit" to quit'],
-                       capture_output=True)
+    finally:  # if a denial ever failed, kill what started -- never a launching `tell`
+        subprocess.run(["pkill", "-x", "TextEdit"], capture_output=True)
 
 
 def test_other_processes_cannot_be_enumerated(tmp_path):
@@ -379,6 +373,79 @@ def _accept_quietly(srv):
         conn.close()
     except OSError:
         pass
+
+
+def test_foreign_chrome_singleton_socket_unreachable(tmp_path):
+    """A Chrome singleton socket made outside the sandbox (stand-in for the user's real
+    browser or another run's) can't be connected to, even at its exact path."""
+    import shutil
+    import socket
+    import threading
+    tdir = sandbox.darwin_temp_dir()
+    if tdir is None:
+        pytest.skip("no Darwin temp dir")
+    sdir = tdir / f"com.google.Chrome.{uuid.uuid4().hex[:6]}"
+    sdir.mkdir()
+    sock_path = sdir / "SingletonSocket"
+    srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        srv.bind(str(sock_path))
+        srv.listen(1)
+        threading.Thread(target=_accept_quietly, args=(srv,), daemon=True).start()
+        prog = ("import socket,sys\n"
+                "s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)\n"
+                "try:\n s.connect(sys.argv[1]); print('OK')\n"
+                "except Exception as e: print(type(e).__name__)\n")
+        proc = _sbx(tmp_path, f'python3 -c {shlex_quote(prog)} "{sock_path}"')
+        assert "OK" not in proc.stdout, proc.stdout
+    finally:
+        srv.close()
+        shutil.rmtree(sdir, ignore_errors=True)
+
+
+def test_unix_sockets_cannot_be_listed(tmp_path):
+    proc = _sbx(tmp_path, "netstat -f unix 2>/dev/null")
+    assert not [ln for ln in proc.stdout.splitlines() if "/" in ln], proc.stdout[:500]
+
+
+def test_apple_event_to_running_finder_fails(tmp_path):
+    """appleevent-send is the barrier: a non-launching query to a running app fails."""
+    if subprocess.run(["pgrep", "-x", "Finder"], capture_output=True).returncode != 0:
+        pytest.skip("Finder is not running")
+    try:
+        proc = _sbx(tmp_path, "osascript -e 'tell application \"Finder\" to get name of "
+                              "startup disk'")
+    except subprocess.TimeoutExpired:
+        return  # not delivered either
+    assert proc.returncode != 0 and proc.stdout.strip() == ""
+
+
+def test_execute_returns_despite_setsid_descendant(tmp_path, monkeypatch):
+    """A descendant that setsid()s out of the process group and keeps the pipes open
+    must not hang the run past the timeout + grace; its leftover output is orphaned."""
+    import sys
+    import time
+    monkeypatch.setattr(runner, "KILL_GRACE_S", 1)
+    pidfile = tmp_path / "orphan.pid"
+    code = ("import subprocess,sys,time\n"
+            "p=subprocess.Popen(['/bin/sleep','60'],start_new_session=True)\n"
+            f"open({str(pidfile)!r},'w').write(str(p.pid))\n"
+            "print('hello',flush=True); time.sleep(60)\n")
+    start = time.monotonic()
+    try:
+        rc, timed_out, orphaned = runner._execute(
+            "r", [sys.executable, "-c", code], tmp_path, dict(os.environ),
+            tmp_path / "out", tmp_path / "err", 1, runner.RunControl())
+        elapsed = time.monotonic() - start
+        assert timed_out and orphaned
+        assert elapsed < 1 + 2 * runner.KILL_GRACE_S + 3, elapsed
+        assert "hello" in (tmp_path / "out").read_text()
+    finally:
+        if pidfile.exists():
+            try:
+                os.kill(int(pidfile.read_text()), 9)
+            except (ProcessLookupError, ValueError):
+                pass
 
 
 def test_agent_cannot_forge_its_transcript(tmp_path, monkeypatch):
@@ -447,6 +514,20 @@ def hostile_repo(tmp_path):
     (repo / "a.txt").write_text("changed\n")
     (repo / "b.txt").write_text("new\n")
     return repo, markers
+
+
+def test_unreadable_git_config_fails_closed(tmp_path):
+    """If the repo config includes a file git can't read in the sandbox, the filter
+    drivers are unknown: refuse (and let graders record it) instead of running git."""
+    repo = tmp_path / "work" / "run" / "workspace"
+    repo.mkdir(parents=True)
+    _git(repo, "init", "-q", "-b", "main")
+    inc = tmp_path / "outside.cfg"  # tmp_path is a blocked root; only the repo is readable
+    inc.write_text("[filter \"x\"]\n\tclean = cat\n")
+    _git(repo, "config", "include.path", str(inc))
+    with pytest.raises(untrusted.UnsafePath):
+        untrusted.git(repo, "status")
+    assert checklist._commits(repo, errs := {}) == "" and "git" in errs
 
 
 def test_hostile_repo_fires_with_plain_git(hostile_repo):

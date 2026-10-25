@@ -55,13 +55,15 @@ def _run_script(item: dict, workspace: Path, run_dir: Path) -> bool:
         shutil.rmtree(scratch, ignore_errors=True)
 
 
-def _commits(workspace: Path | None) -> str:
+def _commits(workspace: Path | None, errors: dict[str, str] | None = None) -> str:
     if workspace is None:
         return ""
-    try:  # agent-controlled repo: hardened, sandboxed git (R22)
+    try:  # agent-controlled repo: hardened, sandboxed git (R22); fails closed
         proc = untrusted.git(workspace, "log", "--format=commit%n%B", f"{BASE_TAG}..HEAD",
                              write=False, check=False, text=True)
-    except untrusted.UnsafePath:
+    except untrusted.UnsafePath as exc:
+        if errors is not None:
+            errors["git"] = str(exc)
         return ""
     return proc.stdout.strip() if proc.returncode == 0 else ""
 
@@ -97,7 +99,7 @@ def _votes(task: Task, run_dir: Path, items: list[dict], judges: list[ModelSpec]
     votes: dict[str, dict[str, bool | None]] = {i: {} for i in ids}
     screens = sorted((Path(run_dir) / "screens").glob("*.png"))
     prompt = judge_prompt(task, run_dir, items, [J.redact(s.name) for s in screens],
-                          _commits(workspace_of(run_dir)))
+                          _commits(workspace_of(run_dir), errors))
     stage = Path(tempfile.mkdtemp(prefix="checklist-", dir=J._work_base()))
     try:
         images = []

@@ -41,6 +41,7 @@ import logging
 import os
 import random
 import re
+import select
 import shutil
 import signal
 import subprocess
@@ -254,29 +255,43 @@ def _kill_group(pgid: int, sig: int) -> None:
         pass
 
 
-def _drain(src, dst) -> None:
-    for chunk in iter(lambda: src.read(65536), b""):
+DRAIN_POLL_S = 0.2
+
+
+def _drain(fd: int, dst, stop: threading.Event) -> None:
+    """Copy pipe ``fd`` into ``dst`` until EOF or ``stop`` (polled, so a descendant
+    that escaped the process group and still holds the pipe can't block us forever)."""
+    while not stop.is_set():
+        ready, _, _ = select.select([fd], [], [], DRAIN_POLL_S)
+        if not ready:
+            continue
+        chunk = os.read(fd, 65536)
+        if not chunk:
+            return
         dst.write(chunk)
-    src.close()
 
 
 def _execute(run_id: str, argv: list[str], cwd: Path, env: dict[str, str], stdout: Path,
-             stderr: Path, timeout_s: float, control: RunControl) -> tuple[int, bool]:
-    """Run ``argv`` in its own process group; returns (exit code, timed out).
+             stderr: Path, timeout_s: float, control: RunControl) -> tuple[int, bool, bool]:
+    """Run ``argv`` in its own process group; returns (exit code, timed out, orphaned).
 
     R22: the agent's stdout/stderr are read over pipes and written to ``stdout`` /
     ``stderr`` by the harness, so the agent has no file to reopen and rewrite -- it
-    cannot forge its own transcript.
+    cannot forge its own transcript. After the process group is gone the drains get
+    ``KILL_GRACE_S`` to reach EOF; a ``setsid()`` descendant still holding the pipes
+    then only loses its remaining output (``orphaned`` = True), it can't hang the run.
     """
     with open(stdout, "wb") as out, open(stderr, "wb") as err:
         proc = control.spawn(run_id, lambda: subprocess.Popen(
             argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, start_new_session=True))
-        readers = [threading.Thread(target=_drain, args=(proc.stdout, out), daemon=True),
-                   threading.Thread(target=_drain, args=(proc.stderr, err), daemon=True)]
+        stop = threading.Event()
+        pipes = [(proc.stdout, out), (proc.stderr, err)]
+        readers = [threading.Thread(target=_drain, args=(src.fileno(), dst, stop), daemon=True)
+                   for src, dst in pipes]
         for t in readers:
             t.start()
-        timed_out = False
+        timed_out = orphaned = False
         try:
             proc.wait(timeout=timeout_s)
         except subprocess.TimeoutExpired:
@@ -290,12 +305,20 @@ def _execute(run_id: str, argv: list[str], cwd: Path, env: dict[str, str], stdou
         finally:
             # whatever the agent left running (dev servers, watchers) goes too
             _kill_group(proc.pid, signal.SIGKILL)
+            deadline = time.monotonic() + KILL_GRACE_S
             for t in readers:
-                t.join()
+                t.join(timeout=max(0.0, deadline - time.monotonic()))
+            if any(t.is_alive() for t in readers):
+                orphaned = True
+                stop.set()
+                for t in readers:
+                    t.join(timeout=DRAIN_POLL_S * 5)
+            for src, _ in pipes:
+                src.close()
             control.release(proc)
     if control.stopped.is_set():
         raise RunInterrupted(run_id)
-    return proc.returncode, timed_out
+    return proc.returncode, timed_out, orphaned
 
 
 def _write_diff(workspace: Path, dest: Path) -> bool:
@@ -368,8 +391,8 @@ def run_one(
     # reopen and forge.
     with claude_slots if (cli == "claude" and claude_slots is not None) else nullcontext():
         start = time.monotonic()
-        code, timed_out = _execute(spec.run_id, argv, workspace, env, transcript,
-                                   out_dir / "stderr.txt", timeout_s, control)
+        code, timed_out, orphaned = _execute(spec.run_id, argv, workspace, env, transcript,
+                                             out_dir / "stderr.txt", timeout_s, control)
         wall_s = time.monotonic() - start
 
     unsafe: list[str] = []
@@ -394,6 +417,7 @@ def run_one(
         input_tokens=parsed.input_tokens, output_tokens=parsed.output_tokens,
         cost_usd=parsed.cost_usd, final_message=final,
         contaminated=contaminated, contamination=contamination, unsafe_files=unsafe,
+        orphaned_output=orphaned,
     )
     _write_result(out_dir, result)
     return result

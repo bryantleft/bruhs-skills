@@ -79,3 +79,6 @@ class RunResult:
     error: str | None = None  # traceback when the harness itself failed during the run
     # R22: agent-writable files the harness refused to read (symlink, FIFO, hard link, ...)
     unsafe_files: list[str] = field(default_factory=list)
+    # a descendant that left the process group still held the output pipes after the run
+    # (its remaining output was dropped instead of hanging the harness)
+    orphaned_output: bool = False
