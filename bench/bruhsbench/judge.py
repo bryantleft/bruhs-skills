@@ -510,8 +510,9 @@ def _pngs(d: Path) -> list[Path]:
 
 
 def stage_images(sources: list[tuple[str, Path]], stage: Path) -> list[Path]:
-    """Copy each ``(prefix, image)`` to ``stage/<prefix><redacted name>``; a name that
-    redaction made collide gets ``-<n>`` appended. Raises :class:`JudgeError` on failure."""
+    """Copy each ``(prefix, image)`` to ``stage/<prefix><redacted name>``. A name that
+    redaction made collide gets ``-<n>`` on its page segment, keeping the
+    ``<page>__<viewport>__<scheme>`` format. Raises :class:`JudgeError` on failure."""
     out: list[Path] = []
     try:
         stage.mkdir(parents=True, exist_ok=True)
@@ -519,11 +520,11 @@ def stage_images(sources: list[tuple[str, Path]], stage: Path) -> list[Path]:
             img = Path(img)
             # redact each __-separated part (page slug, viewport, scheme) on its own so
             # a removed slug doesn't take the rest of the name with it
-            stem = prefix + "__".join(redact(part) or "page" for part in img.stem.split("__"))
-            dest, n = stage / f"{stem}{img.suffix}", 1
+            page, *rest = [redact(part) or "page" for part in img.stem.split("__")]
+            dest, n = stage / f"{prefix}{'__'.join([page, *rest])}{img.suffix}", 1
             while dest.exists():
                 n += 1
-                dest = stage / f"{stem}-{n}{img.suffix}"
+                dest = stage / f"{prefix}{'__'.join([f'{page}-{n}', *rest])}{img.suffix}"
             shutil.copyfile(img, dest)
             out.append(dest)
     except OSError as exc:

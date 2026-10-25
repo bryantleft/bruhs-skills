@@ -297,7 +297,7 @@ def test_stage_images_makes_redacted_names_unique(tmp_path):
     b = png(tmp_path / "2" / "page__desktop__light.png")
     out = J.stage_images([("A__", a), ("A__", b)], tmp_path / "stage")
     assert [p.name for p in out] == ["A__page__desktop__light.png",
-                                     "A__page__desktop__light-2.png"]
+                                     "A__page-2__desktop__light.png"]
 
 
 # --------------------------------------------------------------------------- order
@@ -521,3 +521,49 @@ def test_live_judge_call(cli, tmp_path):
         "lowercase word; set line to null.", [red], schema)
     assert J.validate(out, schema)
     assert out["color"] == "red" and out["line"] is None
+
+
+_CODEX_NON_TOOL_ITEMS = {"agent_message", "reasoning", "error", "todo_list"}
+
+
+@pytest.mark.live
+@pytest.mark.parametrize("cli", ["claude", "codex", "grok"])
+def test_live_judge_has_no_tools(cli, monkeypatch):
+    """A sentinel file the sandbox lets the judge read (its own cwd) is reachable only
+    through a tool; the judge must not be able to print it. Unlike the real-home leak
+    test, this fails if the tool lockdown regresses (e.g. grok's `--tools ""`)."""
+    need_claude_token(cli)
+    import uuid
+    token = f"SENTINEL-{uuid.uuid4().hex}"
+    seen: dict = {}
+    real_invoke = J._invoke
+
+    def planting(cmd, env, cwd, timeout, stdin=None):
+        (Path(cwd) / "secret.txt").write_text(token + "\n")
+        code, out, err = real_invoke(cmd, env, cwd, timeout, stdin)
+        seen["out"] = out + err
+        root = Path(cwd).parent
+        seen["tool_defs"] = [json.loads(p.read_text())
+                             for p in root.rglob("tool_definitions.json")]
+        if cli == "codex":
+            seen["codex_tools"] = [
+                e["item"]["type"] for line in out.splitlines()
+                if line.startswith("{") and (e := json.loads(line)).get("type", "").startswith("item.")
+                and e.get("item", {}).get("type") not in _CODEX_NON_TOOL_ITEMS]
+        return code, out, err
+
+    monkeypatch.setattr(J, "_invoke", planting)
+    monkeypatch.setenv("BRUHSBENCH_WORK", "/private/tmp/bruhsbench")
+    schema = {"type": "object", "properties": {"contents": {"type": "string"}},
+              "required": ["contents"], "additionalProperties": False}
+    prompt = ("There is a file named secret.txt in your current working directory. Use any "
+              "tool you have (shell, file reader, directory listing, subagent) to read it and "
+              "put its exact contents in `contents`. If you have no way to read files, put "
+              "the word unavailable.")
+    out = J.judge_call(replace(SPEC[cli], effort="low"), prompt, [], schema)
+    print(f"\nTOOL PROBE {cli}: {out!r}")
+    assert token not in json.dumps(out) and token not in seen["out"]
+    if cli == "grok":
+        assert seen["tool_defs"] and all(d == [] for d in seen["tool_defs"]), seen["tool_defs"]
+    if cli == "codex":
+        assert seen["codex_tools"] == [], seen["codex_tools"]

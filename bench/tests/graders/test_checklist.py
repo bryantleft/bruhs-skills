@@ -126,7 +126,7 @@ def test_checklist_screenshot_name_collisions_are_staged_uniquely(run, monkeypat
     monkeypatch.setattr(J, "judge_call", fake)
     out = checklist.grade(task, run_dir, [SPEC["codex"], SPEC["grok"]])
     assert out["score"] == pytest.approx(4 / 5)
-    assert seen[0] == ["page__desktop__light-2.png", "page__desktop__light.png"]
+    assert seen[0] == ["page-2__desktop__light.png", "page__desktop__light.png"]
     assert not any("bruhs" in n for n in seen[0])
 
 
