@@ -315,31 +315,70 @@ def cleanup_run(out_root: Path, work_root: Path, run_id: str) -> list[str]:
 ACTIVE_LOCK = ".active.lock"
 
 
+def _open_lock(work_root: Path):
+    Path(work_root).mkdir(parents=True, exist_ok=True)
+    return open(Path(work_root) / ACTIVE_LOCK, "a")
+
+
+def _still_linked(f, work_root: Path) -> bool:
+    """The locked file is still the one at the lock path (``clean --all`` may have
+    deleted it, with the whole work root, while we waited)."""
+    try:
+        st = os.stat(Path(work_root) / ACTIVE_LOCK)
+    except FileNotFoundError:
+        return False
+    fst = os.fstat(f.fileno())
+    return (st.st_dev, st.st_ino) == (fst.st_dev, fst.st_ino)
+
+
 @contextmanager
 def hold_active(work_root: Path):
-    """Shared lock on ``<work_root>/.active.lock`` while a matrix uses the work root;
-    ``clean --all`` (:func:`work_root_active`) refuses while any holder is live."""
-    Path(work_root).mkdir(parents=True, exist_ok=True)
-    with open(Path(work_root) / ACTIVE_LOCK, "a") as f:
+    """Shared lock on ``<work_root>/.active.lock`` while ``run``/``pipeline``/``capture``/
+    ``grade`` use the work root; ``clean --all`` (:func:`exclusive_work_root`) can't
+    delete it meanwhile."""
+    while True:
+        f = _open_lock(work_root)
         fcntl.flock(f, fcntl.LOCK_SH)
-        try:
-            yield
-        finally:
-            fcntl.flock(f, fcntl.LOCK_UN)
+        if _still_linked(f, work_root):
+            break
+        f.close()  # a `clean --all` removed it while we waited; lock the new one
+    try:
+        yield
+    finally:
+        fcntl.flock(f, fcntl.LOCK_UN)
+        f.close()
 
 
-def work_root_active(work_root: Path) -> bool:
-    """A ``run``/``pipeline`` currently holds the work root's active lock."""
-    path = Path(work_root) / ACTIVE_LOCK
-    if not path.is_file():
-        return False
-    with open(path, "a") as f:
+class WorkRootBusy(Exception):
+    """A run/pipeline/capture/grade holds the work root."""
+
+
+@contextmanager
+def exclusive_work_root(work_root: Path):
+    """Exclusive lock on the work root's active lock for the whole of a ``clean --all``;
+    :class:`WorkRootBusy` at once if anything holds it. Nothing is created when there is
+    no work root."""
+    if not Path(work_root).is_dir():
+        yield
+        return
+    f = _open_lock(work_root)
+    try:
         try:
             fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            return True
-        fcntl.flock(f, fcntl.LOCK_UN)
-        return False
+            raise WorkRootBusy(str(work_root)) from None
+        yield
+    finally:
+        f.close()  # also releases the lock
+
+
+def work_root_active(work_root: Path) -> bool:
+    """A ``run``/``pipeline``/``capture``/``grade`` currently holds the work root."""
+    try:
+        with exclusive_work_root(work_root):
+            return False
+    except WorkRootBusy:
+        return True
 
 
 # --------------------------------------------------------------------------- contamination

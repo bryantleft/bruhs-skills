@@ -254,10 +254,13 @@ def cmd_run(args, post_run: Callable | None = None, disk_guard=None) -> int:
 
 def _post_processor(root: Path, guard, *, cleanup: bool, post_parallel: int = 2) -> Callable:
     """The pipeline's per-run step after the agent finishes: capture (ui/copy) ->
-    grade -> delete the run's work dir once nothing needs it. Disk is checked before
-    capture and before grade with the matrix's own ``guard`` (so it waits while other
-    runs are live; :class:`~bruhsbench.runner.DiskLow` stops the matrix). At most
-    ``post_parallel`` runs capture or grade at once, next to the live agent runs."""
+    grade -> delete the run's work dir once nothing needs it.
+
+    Disk is checked with the matrix's own ``guard`` before capture and before grade, and
+    *before* taking one of the ``post_parallel`` capture/grade slots, so a run waiting
+    for space never holds a slot. Runs with only cleanup left take no slot and never
+    wait: they are what frees space. :class:`~bruhsbench.runner.DiskLow` stops the
+    matrix."""
     import threading
 
     from .capture import capture_before
@@ -273,19 +276,19 @@ def _post_processor(root: Path, guard, *, cleanup: bool, post_parallel: int = 2)
         if meta.get("workspace_deleted"):
             return
         gradeable = meta.get("status") not in ("error", "setup_failed")
-        with slots:
-            if (gradeable and task.category in PAIRWISE and _own_exclusion(d) is None
-                    and not _capture_finished(d)):
-                ws = workspace_of(d)
-                if ws is not None:
-                    guard.wait(f"capturing {d.name}")
-                    capture_before(task, root, work_root)  # once per task, file-locked
-                    for _attempt in range(2):  # one retry for a flaky dev server
-                        _capture_run(d, task, ws)
-                        if _captured(d):
-                            break
-            if gradeable and not _graded(d):
-                guard.wait(f"grading {d.name}")
+        ws = workspace_of(d)
+        if (gradeable and ws is not None and task.category in PAIRWISE
+                and _own_exclusion(d) is None and not _capture_finished(d)):
+            guard.wait(f"capturing {d.name}")
+            with slots:
+                capture_before(task, root, work_root)  # once per task, file-locked
+                for _attempt in range(2):  # one retry for a flaky dev server
+                    _capture_and_refresh(d, task, ws)
+                    if _captured(d):
+                        break
+        if gradeable and not _graded(d):
+            guard.wait(f"grading {d.name}")
+            with slots:
                 _grade_run(d, task)
         if cleanup:
             if _done_with_workspace(d, task):
@@ -297,6 +300,55 @@ def _post_processor(root: Path, guard, *, cleanup: bool, post_parallel: int = 2)
                 log.warning("%s: grading incomplete, workspace kept (rerun to retry)", d.name)
 
     return post_run
+
+
+def _checklist_stale(d: Path, task: Task) -> bool:
+    """A ui/copy run's checklist was graded without the screenshots a later successful
+    capture now provides."""
+    from .graders import read_grade
+
+    if task.category not in PAIRWISE or not _captured(d):
+        return False
+    g = read_grade(d, "checklist")
+    if not g or not g.get("applicable") or not any((d / "screens").glob("*.png")):
+        return False
+    if "screens" in g:
+        return g["screens"] == 0
+    # graded before the count was recorded: stale if graded before this capture
+    grades = d / "grades"
+    return (grades / "checklist.json").stat().st_mtime < (grades / "capture.json").stat().st_mtime
+
+
+def _regrade_after_capture(d: Path, task: Task) -> None:
+    """Regrade the checklist with the new screenshots, then honesty (it reads the
+    checklist). The earlier checklist is kept as ``grades/checklist.superseded.json``."""
+    import traceback
+
+    from .graders import checklist, honesty, read_grade, write_grade
+    from .judge import judges_for, make_judge, parse_run_id
+
+    old = read_grade(d, "checklist") or {}
+    write_grade(d, "checklist.superseded", {
+        **old, "superseded": True,
+        "reason": "graded without screenshots; regraded after a successful capture"})
+    cli = parse_run_id(d.name)[1]
+    judge = make_judge(cli)
+    for name, fn in (
+            ("checklist", lambda: checklist.grade(task, d, judges_for(cli))),
+            ("honesty", lambda: honesty.grade(task, d, extract_claims=judge.extract_claims,
+                                              claimed_items=judge.claimed_items))):
+        try:
+            fn()
+        except Exception:  # recorded like grade_all does; `grade` retries it
+            write_grade(d, name, {"applicable": True, "error": traceback.format_exc()})
+    print(f"regraded {d.name}: checklist + honesty with the new screenshots", flush=True)
+
+
+def _capture_and_refresh(d: Path, task: Task, ws: Path) -> None:
+    """Capture, then regrade a checklist that was graded without screenshots."""
+    _capture_run(d, task, ws)
+    if _checklist_stale(d, task):
+        _regrade_after_capture(d, task)
 
 
 def _capture_finished(d: Path) -> bool:
@@ -336,20 +388,24 @@ def _clean_done(root: Path, args) -> tuple[int, list[str], dict[str, list[str]]]
 
 def cmd_clean(args) -> int:
     """Delete work-root dirs of runs that are captured + graded (``--all``: the whole
-    work root of this results dir, refused while a run/pipeline holds it unless
+    work root of this results dir, refused while a run/pipeline/capture/grade holds it unless
     ``--force``). Never touches the results dir itself."""
-    from .runner import (default_work_root, mark_workspace_deleted, remove_work_root,
-                         work_root_active)
+    from contextlib import nullcontext
+
+    from .runner import (WorkRootBusy, default_work_root, exclusive_work_root,
+                         mark_workspace_deleted, remove_work_root)
     from .untrusted import RemoveIncomplete
 
     root = results_root(args)
     work_root = default_work_root(root)
     if args.all:
-        if work_root_active(work_root) and not args.force:
-            raise CliError(f"a `run` or `pipeline` is using {work_root}; wait for it to "
-                           "finish (or pass --force to delete it anyway)")
-        try:
-            removed = remove_work_root(work_root, protect=[root])
+        try:  # the exclusive lock is held for the whole removal
+            with nullcontext() if args.force else exclusive_work_root(work_root):
+                removed = remove_work_root(work_root, protect=[root])
+        except WorkRootBusy:
+            raise CliError(f"a `run`, `pipeline`, `capture` or `grade` is using {work_root}; "
+                           "wait for it to finish (or pass --force to delete it anyway)"
+                           ) from None
         except RemoveIncomplete as exc:
             print(f"clean: could not delete {len(exc.leftovers)} path(s) under {work_root}:",
                   file=sys.stderr)
@@ -449,6 +505,7 @@ def _capture_run(d: Path, task: Task, ws: Path) -> None:
 
 def cmd_grade(args) -> int:
     from .graders import run_meta
+    from .runner import default_work_root, hold_active
     from .score import load_runs
 
     root = results_root(args)
@@ -474,13 +531,15 @@ def cmd_grade(args) -> int:
         print(f"warning: not regrading {len(gone)} runs whose workspace was deleted: {gone}",
               file=sys.stderr)
     print(f"grade: {len(todo)} runs to grade in {root}")
-    return _guarded_parallel(_grade_run, todo, args.parallel, _disk_guard(root), "grading")
+    with hold_active(default_work_root(root)):  # `clean --all` waits for us
+        return _guarded_parallel(_grade_run, todo, args.parallel, _disk_guard(root),
+                                 "grading")
 
 
 def cmd_capture(args) -> int:
     from .capture import capture_before
     from .graders import workspace_of
-    from .runner import DiskLow, default_work_root
+    from .runner import DiskLow, default_work_root, hold_active
     from .score import load_runs
 
     root = results_root(args)
@@ -500,16 +559,19 @@ def cmd_capture(args) -> int:
         todo.append((d, task, ws))
     print(f"capture: {len(tasks)} ui/copy tasks, {len(todo)} runs to capture")
     guard = _disk_guard(root)
-    for task in tasks.values():  # baseline once per task (skipped when complete)
-        if args.force:
-            shutil.rmtree(root / "_before" / task.id, ignore_errors=True)
-        try:
-            guard.wait(f"capturing the {task.id} baseline")
-        except DiskLow as exc:
-            print(f"stopped: {exc}", file=sys.stderr)
-            return DISK_LOW_EXIT
-        capture_before(task, root, work_root)
-    return _guarded_parallel(_capture_run, todo, args.parallel, guard, "capturing")
+    with hold_active(work_root):  # `clean --all` waits for us
+        for task in tasks.values():  # baseline once per task (skipped when complete)
+            if args.force:
+                shutil.rmtree(root / "_before" / task.id, ignore_errors=True)
+            try:
+                guard.wait(f"capturing the {task.id} baseline")
+            except DiskLow as exc:
+                print(f"stopped: {exc}", file=sys.stderr)
+                return DISK_LOW_EXIT
+            capture_before(task, root, work_root)
+        # a run graded before its first good capture gets checklist + honesty regraded
+        return _guarded_parallel(_capture_and_refresh, todo, args.parallel, guard,
+                                 "capturing")
 
 
 def cmd_judge(args) -> int:

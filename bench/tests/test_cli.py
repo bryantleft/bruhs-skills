@@ -474,3 +474,200 @@ def test_pipeline_caps_concurrent_post_processing(tmp_path, monkeypatch, fake_ag
     run_matrix([feat], [CLAUDE], ["bare", "bruhs"], 2, root, parallel=4,
                command_override=override(fake_agent(tmp_path, EDIT_AND_REPLY)), post_run=post)
     assert peak[0] == 1
+
+
+# --------------------------------------------------------------------------- fix round 2
+
+
+def _spec(task, cli_="claude", arm="bare", rep=1):
+    from bruhsbench.types import ModelSpec, RunSpec
+
+    return RunSpec(task, ModelSpec(cli_, "m", "high"), arm, rep)
+
+
+def test_cleanup_only_runs_never_wait_or_take_a_slot(tmp_path, monkeypatch):
+    import threading
+
+    from bruhsbench.runner import DiskGuard, default_work_root
+
+    t = make_task(tmp_path, "t-audit", "audit")
+    root = tmp_path / "res"
+    busy = make_run(root, t, "claude", "bare", 1)       # still has grading to do
+    done = make_run(root, t, "claude", "bruhs", 1)      # graded: only cleanup left
+    _all_graded(done)
+    for d in (busy, done):
+        (default_work_root(root) / d.name / "workspace").mkdir(parents=True)
+    in_grade, release = threading.Event(), threading.Event()
+
+    def blocking_grade(d, task):
+        in_grade.set()
+        release.wait(10)
+        _all_graded(d)
+
+    monkeypatch.setattr(cli, "_grade_run", blocking_grade)
+    free = {"gb": 50.0}
+    guard = DiskGuard([tmp_path], min_gb=40, free_fn=lambda p: free["gb"], wait_s=0)
+    post = cli._post_processor(root, guard, cleanup=True, post_parallel=1)
+    th = threading.Thread(target=post, args=(_spec(t, arm="bare"), None))
+    th.start()
+    try:
+        assert in_grade.wait(10)  # the only slot is taken by a slow grade
+        free["gb"] = 1.0          # and the disk is full: cleanup must still go through
+        post(_spec(t, arm="bruhs"), None)
+        assert not (default_work_root(root) / done.name).exists()
+    finally:
+        release.set()
+        th.join()
+
+
+def test_disk_wait_happens_outside_the_slot(tmp_path, monkeypatch):
+    import threading
+
+    from bruhsbench.runner import DiskGuard
+
+    t = make_task(tmp_path, "t-audit", "audit")
+    root = tmp_path / "res"
+    a = make_run(root, t, "claude", "bare", 1)
+    b = make_run(root, t, "claude", "bruhs", 1)
+    graded = []
+    monkeypatch.setattr(cli, "_grade_run", lambda d, task: graded.append(d.name) or
+                        _all_graded(d))
+    free = {"gb": 1.0}
+    waiting, go = threading.Event(), threading.Event()
+
+    def sleep(_s):
+        waiting.set()
+        go.wait(10)
+        free["gb"] = 50.0
+
+    guard = DiskGuard([tmp_path], min_gb=40, free_fn=lambda p: free["gb"], poll_s=1,
+                      wait_s=60, sleep=sleep)
+    post = cli._post_processor(root, guard, cleanup=False, post_parallel=1)
+    held, release = threading.Event(), threading.Event()
+
+    def other_job():  # a live agent run, so waiting for space makes sense
+        with guard.job():
+            held.set()
+            release.wait(10)
+
+    other = threading.Thread(target=other_job)
+    other.start()
+    held.wait(10)
+    th = threading.Thread(target=post, args=(_spec(t, arm="bare"), None))
+    th.start()
+    try:
+        assert waiting.wait(10)  # run a waits for disk...
+        guard._free_fn = lambda p: 50.0
+        post(_spec(t, arm="bruhs"), None)  # ...without holding the only slot
+        assert graded == [b.name]
+    finally:
+        go.set()
+        th.join()
+        release.set()
+        other.join()
+    assert graded == [b.name, a.name]
+
+
+def test_clean_all_holds_the_exclusive_lock_while_removing(tmp_path, monkeypatch):
+    from bruhsbench import runner
+
+    root, runs, work, precious, tasks = _clean_fixture(tmp_path)
+    work_root = runner.default_work_root(root)
+    real = runner.remove_work_root
+    seen = []
+
+    def spy(wr, **kw):
+        seen.append(runner.work_root_active(wr))  # anyone else trying now is refused
+        return real(wr, **kw)
+
+    monkeypatch.setattr(runner, "remove_work_root", spy)
+    assert cli.cmd_clean(_args(root, all=True)) == 0
+    assert seen == [True] and not work_root.exists()
+
+
+def test_capture_and_grade_hold_the_active_lock(tmp_path, monkeypatch):
+    from bruhsbench.runner import default_work_root, work_root_active
+
+    t = make_task(tmp_path, "t-ui", "ui", pages=["/"])
+    root = tmp_path / "res"
+    d = make_run(root, t, "claude", "bare", 1)
+    ws = default_work_root(root) / d.name / "workspace"
+    ws.mkdir(parents=True)
+    meta = json.loads((d / "result.json").read_text())
+    (d / "result.json").write_text(json.dumps({**meta, "workspace": str(ws)}))
+    monkeypatch.setattr(cli, "_task_index", lambda heldout: {t.id: t})
+    monkeypatch.setattr("bruhsbench.capture.capture_before", lambda *a, **k: [])
+    seen = []
+    monkeypatch.setattr(cli, "_capture_run",
+                        lambda d, task, ws: seen.append(("capture", work_root_active(
+                            default_work_root(root)))))
+    monkeypatch.setattr(cli, "_grade_run",
+                        lambda d, task: seen.append(("grade", work_root_active(
+                            default_work_root(root)))))
+    cli.cmd_capture(_args(root))
+    cli.cmd_grade(_args(root))
+    assert seen == [("capture", True), ("grade", True)]
+    assert not work_root_active(default_work_root(root))
+
+
+def test_hold_active_relocks_after_clean_all_removed_the_root(tmp_path):
+    import threading
+    import time
+
+    from bruhsbench import runner
+
+    wr = tmp_path / "work" / "w"
+    wr.mkdir(parents=True)
+    entered = threading.Event()
+
+    def later_run():
+        with runner.hold_active(wr):
+            entered.set()
+            time.sleep(0.3)
+
+    with runner.exclusive_work_root(wr):
+        th = threading.Thread(target=later_run)
+        th.start()
+        time.sleep(0.2)
+        assert not entered.is_set()  # blocked behind the clean
+        runner.remove_work_root(wr)
+    assert entered.wait(10)
+    assert runner.work_root_active(wr)  # it holds the lock at the live path
+    th.join()
+
+
+def test_recapture_regrades_checklist_and_honesty(tmp_path, monkeypatch):
+    from results_fixture import PNG
+
+    from bruhsbench.graders import checklist, honesty
+
+    t = make_task(tmp_path, "t-ui", "ui", pages=["/"])
+    root = tmp_path / "res"
+    d = make_run(root, t, "claude", "bare", 1)
+    _all_graded(d)
+    (d / "grades" / "checklist.json").write_text(json.dumps(
+        {"applicable": True, "score": 0.5, "items": [], "screens": 0}))
+    calls = []
+
+    def good_capture(d, task, ws):
+        (d / "screens").mkdir(exist_ok=True)
+        (d / "screens" / "root__desktop__light.png").write_bytes(PNG)
+        (d / "grades" / "capture.json").write_text(json.dumps({"applicable": True}))
+
+    def fake_checklist(task, run_dir, judges):
+        calls.append("checklist")
+        (run_dir / "grades" / "checklist.json").write_text(json.dumps(
+            {"applicable": True, "score": 1.0, "items": [], "screens": 1}))
+
+    monkeypatch.setattr(cli, "_capture_run", good_capture)
+    monkeypatch.setattr(checklist, "grade", fake_checklist)
+    monkeypatch.setattr(honesty, "grade", lambda *a, **k: calls.append("honesty"))
+    monkeypatch.setattr("bruhsbench.judge.make_judge", lambda c: SimpleNamespace(
+        extract_claims=None, claimed_items=None))
+    cli._capture_and_refresh(d, t, tmp_path)
+    assert calls == ["checklist", "honesty"]
+    old = json.loads((d / "grades" / "checklist.superseded.json").read_text())
+    assert old["superseded"] is True and old["score"] == 0.5
+    calls.clear()
+    cli._capture_and_refresh(d, t, tmp_path)  # graded with screenshots: nothing to redo
+    assert calls == []

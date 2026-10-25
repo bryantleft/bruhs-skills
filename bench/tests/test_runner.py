@@ -714,3 +714,38 @@ def test_active_lock_held_during_matrix(tmp_path):
                command_override=override(fake_agent(tmp_path, EDIT_AND_REPLY)))
     assert seen == [True]
     assert not runner.work_root_active(runner.default_work_root(out))
+
+
+def test_unflag_never_goes_through_a_swapped_symlink(tmp_path, monkeypatch):
+    from bruhsbench import untrusted
+
+    real_chflags = os.chflags
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "f").write_text("x")
+    real_chflags(outside / "f", stat.UF_IMMUTABLE)
+    a = tmp_path / "tree" / "a"
+    a.mkdir(parents=True)
+    (a / "f").write_text("y")
+    (a / "link").symlink_to(outside / "f")
+    real_chflags(a / "f", stat.UF_IMMUTABLE)
+
+    def no_path_chflags(*args, **kwargs):
+        raise AssertionError("path-based chflags used")
+
+    monkeypatch.setattr(os, "chflags", no_path_chflags)
+    dfd = os.open(a, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        # the agent swaps the dir we hold an fd on for a symlink to an outside dir
+        a.rename(tmp_path / "tree" / "a-old")
+        a.symlink_to(outside)
+        untrusted._unflag(dfd, "f")
+        untrusted._unflag(dfd, "link")  # a symlink entry: its target is never touched
+    finally:
+        os.close(dfd)
+        monkeypatch.undo()
+    try:
+        assert os.stat(outside / "f").st_flags & stat.UF_IMMUTABLE
+        assert not os.stat(tmp_path / "tree" / "a-old" / "f").st_flags & stat.UF_IMMUTABLE
+    finally:
+        real_chflags(outside / "f", 0)

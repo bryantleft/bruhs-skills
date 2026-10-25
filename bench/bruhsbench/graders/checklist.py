@@ -221,8 +221,10 @@ def grade(task: Task, run_dir: Path, judges: list[ModelSpec]) -> dict:
         score = None
     else:
         score = sum(i["hit"] for i in graded) / len(graded) if graded else 0.0
+    # how many screenshots the judges could see (0: graded before a successful capture,
+    # so the pipeline/capture regrade it once screenshots exist)
     result = {"applicable": True, "items": graded, "score": score, "judge_errors": errors,
-              "notes": notes}
+              "notes": notes, "screens": len(list((Path(run_dir) / "screens").glob("*.png")))}
     if invalid:
         result["invalid"] = True
     return write_grade(run_dir, "checklist", result)

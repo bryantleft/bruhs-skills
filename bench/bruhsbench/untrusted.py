@@ -158,32 +158,71 @@ class RemoveIncomplete(OSError):
         self.leftovers = leftovers
 
 
-def _unflag(dfd: int, name: str, path: str) -> None:
-    """Clear BSD file flags (uchg, schg-free ones) on ``name`` under ``dfd``. chflags has
-    no fd form, so it goes by ``path`` with ``follow_symlinks=False``, and only when
-    ``path`` is still the very inode reached through the fds (no swapped-in symlink)."""
+def _libc_fchflags():
+    try:
+        import ctypes
+        import ctypes.util
+
+        libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
+        fn = libc.fchflags
+        fn.argtypes = [ctypes.c_int, ctypes.c_uint]
+        fn.restype = ctypes.c_int
+        return fn
+    except (OSError, AttributeError):
+        return None
+
+
+_FCHFLAGS = _libc_fchflags()
+
+
+def _fchflags_clear(fd: int) -> None:
+    """Clear the BSD flags (uchg, uappnd, ...) of the open file ``fd``; no path involved."""
+    if _FCHFLAGS is not None:
+        _FCHFLAGS(fd, 0)  # best effort: a failure just leaves the delete failing
+
+
+def _unflag(dfd: int, name: str) -> None:
+    """Clear the flags on entry ``name`` of the directory ``dfd`` and on ``dfd`` itself,
+    by fds only (``fchflags``): the entry is opened relative to ``dfd`` with
+    ``O_NOFOLLOW`` (a symlink itself via ``O_SYMLINK``), so a swapped-in symlink anywhere
+    can't redirect it. A path-based chflags is never used."""
+    _fchflags_clear(dfd)
     try:
         st = os.stat(name, dir_fd=dfd, follow_symlinks=False)
-        pst = os.stat(path, follow_symlinks=False)
-        if (st.st_dev, st.st_ino) == (pst.st_dev, pst.st_ino) and st.st_flags:
-            os.chflags(path, 0, follow_symlinks=False)
-    except (OSError, AttributeError):
-        pass
+    except OSError:
+        return
+    if stat.S_ISLNK(st.st_mode):
+        flags = getattr(os, "O_SYMLINK", None)
+        if flags is None:
+            return  # a symlink's own flags rarely block unlink; skip it
+        flags |= os.O_RDONLY
+    elif stat.S_ISDIR(st.st_mode):
+        flags = _DIR_FLAGS
+    else:
+        flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+    try:
+        fd = os.open(name, flags, dir_fd=dfd)
+    except OSError:
+        return
+    try:
+        if stat.S_ISLNK(st.st_mode) or (os.fstat(fd).st_dev, os.fstat(fd).st_ino) == (
+                st.st_dev, st.st_ino):
+            _fchflags_clear(fd)
+    finally:
+        os.close(fd)
 
 
-def _purge_at(dfd: int, name: str, path: str, parent_path: str, pfd: int | None,
-              parent_name: str | None, errors: list[str]) -> None:
-    """Best-effort, symlink-safe removal of ``name`` under ``dfd`` (path ``path``); what
-    can't be removed is appended to ``errors``. On EPERM (an immutable flag on the entry
-    or its directory) the flags are cleared and the delete retried once."""
+def _purge_at(dfd: int, name: str, path: str, errors: list[str]) -> None:
+    """Best-effort, symlink-safe removal of ``name`` under ``dfd`` (``path`` is only for
+    reporting); what can't be removed is appended to ``errors``. On EPERM (an immutable
+    flag on the entry or its directory) the flags are cleared by fd and the delete
+    retried once."""
 
     def retry(op) -> None:
         try:
             op()
         except PermissionError:
-            _unflag(dfd, name, path)
-            if pfd is not None and parent_name is not None:
-                _unflag(pfd, parent_name, parent_path)
+            _unflag(dfd, name)
             try:
                 op()
             except OSError:
@@ -212,11 +251,13 @@ def _purge_at(dfd: int, name: str, path: str, parent_path: str, pfd: int | None,
         return
     try:
         try:
+            if os.fstat(sub).st_flags:  # an immutable dir: clear it (by fd) first
+                _fchflags_clear(sub)
             os.fchmod(sub, 0o700)  # a read-only dir can't have its entries unlinked
         except OSError:
             pass
         for entry in os.listdir(sub):
-            _purge_at(sub, entry, f"{path}/{entry}", path, dfd, name, errors)
+            _purge_at(sub, entry, f"{path}/{entry}", errors)
     finally:
         os.close(sub)
     retry(lambda: os.rmdir(name, dir_fd=dfd))
@@ -233,7 +274,7 @@ def remove(root: Path, name: str) -> None:
     fd = os.open(root, _DIR_FLAGS)
     errors: list[str] = []
     try:
-        _purge_at(fd, name, str(Path(root) / name), str(root), None, None, errors)
+        _purge_at(fd, name, str(Path(root) / name), errors)
     finally:
         os.close(fd)
     if errors:
