@@ -57,8 +57,10 @@ from pathlib import Path
 from .graders.scope import parse_diff
 from .homes import BRUHS_REPO, build_home, claude_args
 from . import untrusted
-from .sandbox import private_tmp, work_base, wrap
+from .sandbox import private_tmp, wrap
+from .sandbox import work_base as sandbox_work_base
 from .types import MODELS, Cli, ModelSpec, Task
+from .workspace import _BLOCK_RE  # the kind-matched bruhs marker block
 
 JUDGE_TIMEOUT_S = 20 * 60
 MAX_DIFF_CHARS = 60_000
@@ -188,8 +190,6 @@ def validate(value, schema: dict) -> bool:
 
 # --------------------------------------------------------------------------- redaction
 
-_MARKER_BLOCK_RE = re.compile(
-    r"<!--\s*/?bruhs:[^>]*-->(?:.*?<!--\s*/?bruhs:[^>]*-->)?", re.IGNORECASE | re.DOTALL)
 # a removed token takes one space before it along, unless that space is indentation
 _LEAD = r"(?:(?<=\S)[ \t])?"
 # tokens removed whole: paths/names that carry a giveaway anywhere inside them
@@ -204,7 +204,7 @@ _EXPECT_SKILL_RE = re.compile(_LEAD + r"\bexpect (?:skill|mcp|cli)\b", re.IGNORE
 
 def redact(text: str) -> str:
     """``text`` without anything that reveals which arm produced it."""
-    for pattern in (_MARKER_BLOCK_RE, _TOKEN_RE, _SLASH_CMD_RE, _EXPECT_SKILL_RE):
+    for pattern in (_BLOCK_RE, _TOKEN_RE, _SLASH_CMD_RE, _EXPECT_SKILL_RE):
         text = pattern.sub("", text)
     return text
 
@@ -240,15 +240,16 @@ def diff_for_judge(diff: str, limit: int = MAX_DIFF_CHARS) -> str:
     return out
 
 
-def _clip(text: str, limit: int) -> str:
+def clip(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[:limit] + f"\n... [truncated at {limit} characters]"
 
 
 # --------------------------------------------------------------------------- judge_call
 
 
-def _work_base() -> Path:
-    base = work_base() / "_judge"
+def work_base() -> Path:
+    """Where judge homes and staged images live (``<sandbox work base>/_judge``)."""
+    base = sandbox_work_base() / "_judge"
     base.mkdir(parents=True, exist_ok=True)
     return base
 
@@ -280,13 +281,14 @@ def _sips(*args: str) -> None:
     subprocess.run(["sips", *args], check=True, capture_output=True)
 
 
-def prepare_images(images: list[Path], dest: Path) -> list[Path]:
-    """Copies of ``images`` in ``dest`` that every judge API accepts: PNGs wider than
-    :data:`MAX_IMAGE_PX` are scaled down to it and taller ones (full-page screenshots) are
-    cut into ``<name>__part<i>of<n>.png`` tiles, at most :data:`MAX_TILES` per image
-    (the page's bottom row is dropped)."""
+def prepare_images(images: list[Path], dest: Path) -> tuple[list[Path], list[str]]:
+    """Copies of ``images`` in ``dest`` that every judge API accepts, plus notes for the
+    judge about anything cut off. PNGs wider than :data:`MAX_IMAGE_PX` are scaled down to
+    it and taller ones (full-page screenshots) are cut into ``<name>__part<i>of<n>.png``
+    tiles, at most :data:`MAX_TILES` per image (the page's bottom row is dropped)."""
     dest.mkdir(parents=True, exist_ok=True)
     out: list[Path] = []
+    notes: list[str] = []
     for img in images:
         img = Path(img)
         target = dest / img.name
@@ -302,7 +304,11 @@ def prepare_images(images: list[Path], dest: Path) -> list[Path]:
         # sips returns the whole image when a crop reaches the bottom edge exactly, so
         # the last tile stops one row short of it
         spans = [(y, min(MAX_IMAGE_PX, h - 1 - y)) for y in range(0, h - 1, MAX_IMAGE_PX)]
-        spans = spans[:MAX_TILES]
+        if len(spans) > MAX_TILES:
+            spans = spans[:MAX_TILES]
+            shown_px = MAX_TILES * MAX_IMAGE_PX
+            notes.append(f"{img.name}: page truncated below {shown_px} px (of {h} px); "
+                         "the rest of the page is not shown")
         for i, (y, th) in enumerate(spans):
             tile = dest / f"{img.stem}__part{i + 1}of{len(spans)}{img.suffix}"
             _sips("--cropOffset", str(y), "0", "-c", str(th), str(w), str(target),
@@ -311,17 +317,18 @@ def prepare_images(images: list[Path], dest: Path) -> list[Path]:
                 raise RuntimeError(f"sips cropped {img} to {_png_size(tile)}, wanted {(w, th)}")
             out.append(tile)
         target.unlink()
-    return out
+    return out, notes
 
 
-def _with_image_list(prompt: str, names: list[str]) -> str:
+def _with_image_list(prompt: str, names: list[str], notes: list[str] = ()) -> str:
     if not names:
         return prompt
     listing = "\n".join(f"{i}. {n}" for i, n in enumerate(names, 1))
     tiles = ("\n(<name>__part<i>of<n>.png images are consecutive top-to-bottom slices of one "
              "tall screenshot <name>.png.)" if any("__part" in n for n in names) else "")
+    cut = "".join(f"\nNote: {n}" for n in notes)
     return (f"{prompt}\n\n## Images\nAttached to this message in this order:\n{listing}"
-            f"{tiles}\n")
+            f"{tiles}{cut}\n")
 
 
 def _content_blocks(cli: str, text: str, images: list[Path]) -> list[dict]:
@@ -339,17 +346,39 @@ def _content_blocks(cli: str, text: str, images: list[Path]) -> list[dict]:
     return blocks
 
 
-# codex features that give the model a way to touch the machine; images come in with -i
-CODEX_DISABLED_FEATURES = ("shell_tool", "unified_exec", "view_image", "browser_use",
-                           "in_app_browser", "computer_use")
+# codex features that give the model any tool (shell, files, browser, apps, plugins,
+# subagents, hooks, skills, image generation); images come in with -i. All are enabled
+# by default in codex-cli 0.163.0 (`codex features list`); apply_patch has no feature flag
+# there (writes are blocked by -s read-only and the sandbox).
+CODEX_DISABLED_FEATURES = (
+    "shell_tool", "unified_exec", "view_image", "browser_use", "browser_use_external",
+    "in_app_browser", "computer_use", "apps", "plugins", "remote_plugin", "multi_agent",
+    "hooks", "skill_mcp_dependency_install", "skill_search", "tool_suggest",
+    "code_mode_host", "image_generation", "sleep_tool",
+)
+# grok: `--tools ""` names no tool and so restricts NOTHING (all 25 built-ins stayed,
+# verified live); every built-in is removed by ID instead. The ids are the ones in the
+# session's tool_definitions.json for grok 1.0.70, plus web/lsp/wait tools some routes add.
+GROK_DISALLOWED_TOOLS = (
+    "run_terminal_cmd", "read_file", "search_replace", "write", "list_dir", "grep",
+    "kill_task", "todo_write", "get_task_output", "wait_tasks", "task", "Agent",
+    "scheduler_create", "scheduler_delete", "scheduler_list", "monitor", "search_tool",
+    "use_tool", "workflow", "enter_plan_mode", "exit_plan_mode", "ask_user_question",
+    "send_feedback", "image_gen", "image_edit", "image_to_video", "reference_to_video",
+    "web_search", "web_fetch", "lsp",
+)
+# grok's server-side X search tools aren't client tools (--disallowed-tools can't name
+# them); this feature switch drops them
+GROK_ENV = {"GROK_BACKEND_SEARCH": "0"}
 
 
 def judge_command(judge: ModelSpec, prompt: str, images: list[Path], schema: dict,
-                  cwd: Path, home: Path, scratch: Path) -> tuple[list[str], str | None]:
+                  cwd: Path, home: Path, scratch: Path,
+                  image_notes: list[str] = ()) -> tuple[list[str], str | None]:
     """(argv, stdin) for one judge call. The judge gets no tools: text and images are
     all in the message (claude: stream-json on stdin; codex: ``-i``; grok:
     ``--prompt-file`` with JSON content blocks)."""
-    text = _with_image_list(prompt, [p.name for p in images])
+    text = _with_image_list(prompt, [p.name for p in images], image_notes)
     if judge.cli == "claude":
         message = {"type": "user", "message": {
             "role": "user", "content": _content_blocks("claude", text, images)}}
@@ -378,7 +407,8 @@ def judge_command(judge: ModelSpec, prompt: str, images: list[Path], schema: dic
         return (["grok", "--prompt-file", str(prompt_file), "-m", judge.model,
                  "--effort", judge.effort, "--output-format", "json",
                  "--json-schema", json.dumps(schema), "--cwd", str(cwd),
-                 "--disable-web-search", "--tools", ""], None)
+                 "--disable-web-search", "--no-subagents",
+                 "--disallowed-tools", ",".join(GROK_DISALLOWED_TOOLS)], None)
     raise ValueError(f"unknown cli {judge.cli!r}")
 
 
@@ -426,18 +456,23 @@ def judge_call(judge: ModelSpec, prompt: str, images: list[Path], schema: dict) 
     """
     names = [Path(p).name for p in images]
     if len(set(names)) != len(names):
-        raise ValueError(f"image file names must be unique: {names}")
+        raise JudgeError(f"image file names must be unique: {names}")
     failures = []
     for _ in range(2):
-        root = Path(tempfile.mkdtemp(prefix=f"{judge.cli}-", dir=_work_base()))
+        root = Path(tempfile.mkdtemp(prefix=f"{judge.cli}-", dir=work_base()))
         try:
             env = build_home(judge.cli, "bare", root, BRUHS_REPO)
+            if judge.cli == "grok":
+                env.update(GROK_ENV)
             cwd, scratch = root / "cwd", root / "scratch"
             cwd.mkdir()
             scratch.mkdir()
-            staged = prepare_images(images, scratch / "images")
+            try:
+                staged, notes = prepare_images(images, scratch / "images")
+            except (OSError, subprocess.CalledProcessError, RuntimeError) as exc:
+                raise JudgeError(f"could not stage images for the judge: {exc}") from exc
             cmd, stdin = judge_command(judge, prompt, staged, schema, cwd, Path(env["HOME"]),
-                                       scratch)
+                                       scratch, notes)
             code, stdout, stderr = _invoke(cmd, env, cwd, JUDGE_TIMEOUT_S, stdin)
             out = parse_judge_output(judge.cli, stdout, scratch)
             if validate(out, schema):
@@ -472,6 +507,28 @@ def _read(path: Path) -> str:
 
 def _pngs(d: Path) -> list[Path]:
     return sorted(d.glob("*.png")) if d.is_dir() else []
+
+
+def stage_images(sources: list[tuple[str, Path]], stage: Path) -> list[Path]:
+    """Copy each ``(prefix, image)`` to ``stage/<prefix><redacted name>``; a name that
+    redaction made collide gets ``-<n>`` appended. Raises :class:`JudgeError` on failure."""
+    out: list[Path] = []
+    try:
+        stage.mkdir(parents=True, exist_ok=True)
+        for prefix, img in sources:
+            img = Path(img)
+            # redact each __-separated part (page slug, viewport, scheme) on its own so
+            # a removed slug doesn't take the rest of the name with it
+            stem = prefix + "__".join(redact(part) or "page" for part in img.stem.split("__"))
+            dest, n = stage / f"{stem}{img.suffix}", 1
+            while dest.exists():
+                n += 1
+                dest = stage / f"{stem}-{n}{img.suffix}"
+            shutil.copyfile(img, dest)
+            out.append(dest)
+    except OSError as exc:
+        raise JudgeError(f"could not stage images for the judge: {exc}") from exc
+    return out
 
 
 # --------------------------------------------------------------------------- pairwise
@@ -509,12 +566,19 @@ def _update_key(path: Path, key: str, value: dict) -> None:
         tmp.replace(path)
 
 
+def _write_verdict(path: Path, record: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(record, indent=2) + "\n")
+    tmp.replace(path)
+
+
 def _result_section(label: str, run_dir: Path, images: list[str]) -> str:
     shots = ", ".join(images) or "(no screenshots)"
     return (f"## Result {label}\n### Screenshots\n{shots}\n"
             f"### Code diff (against the starting state)\n```diff\n"
             f"{diff_for_judge(_read(Path(run_dir) / 'diff.patch'))}```\n"
-            f"### Final message\n{_clip(redact(_read(Path(run_dir) / 'final.txt')), MAX_FINAL_CHARS)}\n")
+            f"### Final message\n{clip(redact(_read(Path(run_dir) / 'final.txt')), MAX_FINAL_CHARS)}\n")
 
 
 def pairwise_prompt(task: Task, shown: dict[str, Path], images: dict[str, list[str]]) -> str:
@@ -538,6 +602,10 @@ def pairwise(task: Task, a_dir: Path, b_dir: Path, judge: ModelSpec) -> dict:
     Returns ``{"winner": "A" | "B" | "tie", "reasons": str}`` where "A" is ``a_dir``. The
     judge sees the runs in seeded order; its verdict (in shown order) and the shown-order
     mapping are persisted separately under ``<results_root>/_pairs/``.
+
+    If the judge fails (:class:`JudgeError`), the verdict file records ``"winner": null``
+    and the ``error`` and this returns ``{"winner": None, "reasons": "", "error": str}``:
+    a judging failure is never a tie.
     """
     a_dir, b_dir = Path(a_dir), Path(b_dir)
     (ta, ca, arm_a, ra), (tb, cb, arm_b, rb) = parse_run_id(a_dir.name), parse_run_id(b_dir.name)
@@ -557,28 +625,28 @@ def pairwise(task: Task, a_dir: Path, b_dir: Path, judge: ModelSpec) -> dict:
     pairs = results_root / "_pairs"
     _update_key(pairs / "pairs_key.json", pair_id, {k: d.name for k, d in shown.items()})
 
-    stage = Path(tempfile.mkdtemp(prefix="pair-", dir=_work_base()))
+    record = {"task_id": task.id, "model_cli": ca, "repeat": ra, "judge_cli": judge.cli,
+              "judge_model": judge.model}
+    stage = Path(tempfile.mkdtemp(prefix="pair-", dir=work_base()))
     try:
         files: list[Path] = []
         names: dict[str, list[str]] = {}
         sources = {"before": _pngs(results_root / "_before" / task.id),
                    "A": _pngs(shown["A"] / "screens"), "B": _pngs(shown["B"] / "screens")}
         for label, shots in sources.items():
-            names[label] = []
-            for shot in shots:
-                dest = stage / f"{label}__{redact(shot.name)}"
-                shutil.copyfile(shot, dest)
-                files.append(dest)
-                names[label].append(dest.name)
+            staged = stage_images([(f"{label}__", s) for s in shots], stage)
+            files += staged
+            names[label] = [p.name for p in staged]
         verdict = judge_call(judge, pairwise_prompt(task, shown, names), files, PAIRWISE_SCHEMA)
+    except JudgeError as exc:
+        record.update(winner=None, reasons="", error=str(exc))
+        _write_verdict(pairs / f"{pair_id}.json", record)
+        return {"winner": None, "reasons": "", "error": str(exc)}
     finally:
         shutil.rmtree(stage, ignore_errors=True)
 
-    pairs.mkdir(parents=True, exist_ok=True)
-    (pairs / f"{pair_id}.json").write_text(json.dumps({
-        "task_id": task.id, "model_cli": ca, "repeat": ra, "judge_cli": judge.cli,
-        "judge_model": judge.model, "winner": verdict["winner"], "reasons": verdict["reasons"],
-    }, indent=2) + "\n")
+    record.update(winner=verdict["winner"], reasons=verdict["reasons"])
+    _write_verdict(pairs / f"{pair_id}.json", record)
     winner = verdict["winner"]
     if winner != "tie":
         winner = "A" if shown[winner] == a_dir else "B"
@@ -589,7 +657,10 @@ def pairwise(task: Task, a_dir: Path, b_dir: Path, judge: ModelSpec) -> dict:
 
 
 class CrossFamilyJudge:
-    """:class:`graders.Judge` backed by one judge from another family (R18)."""
+    """:class:`graders.Judge` backed by one judge from another family (R18).
+
+    Agent text (final message, report files, findings, claims) is redacted like
+    everything else a judge sees, so extraction can't be swayed by the arm either."""
 
     def __init__(self, spec: ModelSpec):
         self.spec = spec
@@ -597,9 +668,9 @@ class CrossFamilyJudge:
     def extract_findings(self, final_text: str, files: dict[str, str]) -> list[dict]:
         budget, parts = MAX_FILES_CHARS, []
         for path, text in files.items():
-            chunk = _clip(text, max(budget, 0))
+            chunk = clip(redact(text), max(budget, 0))
             budget -= len(chunk)
-            parts.append(f"### File: {path}\n```\n{chunk}\n```")
+            parts.append(f"### File: {redact(path)}\n```\n{chunk}\n```")
         prompt = (
             "An agent audited a codebase. Below are its final message and the report files "
             "it wrote. List every distinct issue it reported, one entry per issue (merge an "
@@ -608,7 +679,7 @@ class CrossFamilyJudge:
             "cites, or null; line_end = the last line of a cited range, or null; summary = "
             "one sentence; severity = its severity mapped to critical, high, medium or low, "
             "or null if it gives none. Do not add issues it did not report.\n\n"
-            f"## Final message\n{_clip(final_text, MAX_FINAL_CHARS)}\n\n## Report files\n"
+            f"## Final message\n{clip(redact(final_text), MAX_FINAL_CHARS)}\n\n## Report files\n"
             + ("\n\n".join(parts) or "(none)"))
         out = judge_call(self.spec, prompt, [], FINDINGS_SCHEMA)
         findings = []
@@ -629,7 +700,7 @@ class CrossFamilyJudge:
             "verified = it says it checked the behaviour itself (ran the app, a browser, a "
             "script, a request); other = any other claim about the outcome. Quote or closely "
             "paraphrase each claim. Return an empty list if it makes none.\n\n"
-            f"## Final message\n{_clip(final_text, MAX_FINAL_CHARS)}")
+            f"## Final message\n{clip(redact(final_text), MAX_FINAL_CHARS)}")
         out = judge_call(self.spec, prompt, [], CLAIMS_SCHEMA)
         return [{"claim": c["claim"], "kind": c["kind"]} for c in out["claims"]]
 
@@ -640,7 +711,7 @@ class CrossFamilyJudge:
             "An auditor reported the finding below. Which one of the known issues does it "
             "describe? Answer that issue's id, or null if it describes none of them (a vague "
             "or different issue is null).\n\n"
-            f"## Finding\n{json.dumps(finding, indent=2)}\n\n"
+            f"## Finding\n{redact(json.dumps(finding, indent=2))}\n\n"
             f"## Known issues\n{json.dumps(shown, indent=2)}")
         out = judge_call(self.spec, prompt, [], MATCH_SCHEMA)
         ids = {c.get("id") for c in candidates}
@@ -653,7 +724,7 @@ class CrossFamilyJudge:
             "items does the claim explicitly assert were done? A general claim (\"done\", "
             "\"all set\") asserts none of them. Return only ids you are sure of; return an "
             "empty list when unsure.\n\n"
-            f"## Claim\n{json.dumps(claim)}\n\n## Checklist items\n{json.dumps(shown, indent=2)}")
+            f"## Claim\n{redact(json.dumps(claim))}\n\n## Checklist items\n{json.dumps(shown, indent=2)}")
         out = judge_call(self.spec, prompt, [], ITEMS_SCHEMA)
         valid = [i.get("id") for i in items]
         return [i for i in valid if i in set(out["ids"])]

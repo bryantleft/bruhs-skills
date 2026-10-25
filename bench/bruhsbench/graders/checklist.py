@@ -9,10 +9,14 @@ list of items is accepted too).
   answers all judge items in one call from a blind record of the run (task prompt,
   redacted diff and final message, commit messages, screenshots). Each judge's vote is
   kept in ``votes``; an item is hit only with a strict majority, so with two judges a 1-1
-  split is a miss. A judge that fails (or omits an item) casts no vote.
+  split is a miss.
 
 Result (``grades/checklist.json``): ``{applicable, items: [{id, hit, by, votes?}], score,
-judge_errors}`` with ``score`` = hits / items.
+judge_errors, notes}`` with ``score`` = hits / items. A judging failure is never scored as
+the agent's miss: if any judge fails (``JudgeError``) or leaves a judge item unanswered,
+the grade is ``invalid: true`` with ``score: None``, judge items get ``hit: None``, and the
+reasons are in ``judge_errors``. ``notes`` holds non-judge problems (e.g. unreadable git
+history, whose commit messages are then missing from the judges' evidence).
 """
 
 from __future__ import annotations
@@ -55,15 +59,15 @@ def _run_script(item: dict, workspace: Path, run_dir: Path) -> bool:
         shutil.rmtree(scratch, ignore_errors=True)
 
 
-def _commits(workspace: Path | None, errors: dict[str, str] | None = None) -> str:
+def _commits(workspace: Path | None, notes: dict[str, str] | None = None) -> str:
     if workspace is None:
         return ""
     try:  # agent-controlled repo: hardened, sandboxed git (R22); fails closed
         proc = untrusted.git(workspace, "log", "--format=commit%n%B", f"{BASE_TAG}..HEAD",
                              write=False, check=False, text=True)
     except untrusted.UnsafePath as exc:
-        if errors is not None:
-            errors["git"] = str(exc)
+        if notes is not None:
+            notes["git"] = str(exc)
         return ""
     return proc.stdout.strip() if proc.returncode == 0 else ""
 
@@ -85,27 +89,30 @@ def judge_prompt(task: Task, run_dir: Path, items: list[dict], screens: list[str
         f"## Checklist items\n{listing}\n\n"
         f"## Code diff (against the starting state)\n```diff\n"
         f"{J.diff_for_judge(diff.read_text(errors='replace') if diff.is_file() else '')}```\n\n"
-        f"## Commit messages\n{J.redact(commits[:MAX_COMMITS_CHARS]) or '(no commits)'}\n\n"
+        f"## Commit messages\n{J.clip(J.redact(commits), MAX_COMMITS_CHARS) or '(no commits)'}\n\n"
         f"## Screenshots\n{', '.join(screens) or '(none)'}\n\n"
         f"## Final message\n"
-        f"{J.redact(final.read_text(errors='replace')[:J.MAX_FINAL_CHARS] if final.is_file() else '')}\n"
+        f"{J.clip(J.redact(final.read_text(errors='replace') if final.is_file() else ''), J.MAX_FINAL_CHARS)}\n"
     )
 
 
 def _votes(task: Task, run_dir: Path, items: list[dict], judges: list[ModelSpec],
-           errors: dict[str, str]) -> dict[str, dict[str, bool | None]]:
-    """item id -> {judge cli: hit or None}."""
+           errors: dict[str, str], notes: dict[str, str]) -> dict[str, dict[str, bool | None]]:
+    """item id -> {judge cli: hit or None}; failures and unanswered items land in
+    ``errors``."""
     ids = [i["id"] for i in items]
     votes: dict[str, dict[str, bool | None]] = {i: {} for i in ids}
-    screens = sorted((Path(run_dir) / "screens").glob("*.png"))
-    prompt = judge_prompt(task, run_dir, items, [J.redact(s.name) for s in screens],
-                          _commits(workspace_of(run_dir), errors))
-    stage = Path(tempfile.mkdtemp(prefix="checklist-", dir=J._work_base()))
+    stage = Path(tempfile.mkdtemp(prefix="checklist-", dir=J.work_base()))
     try:
-        images = []
-        for s in screens:
-            images.append(stage / J.redact(s.name))
-            shutil.copyfile(s, images[-1])
+        try:
+            images = J.stage_images(
+                [("", s) for s in sorted((Path(run_dir) / "screens").glob("*.png"))], stage)
+        except J.JudgeError as exc:
+            for judge in judges:
+                errors[judge.cli] = str(exc)
+            return {i: {j.cli: None for j in judges} for i in ids}
+        prompt = judge_prompt(task, run_dir, items, [p.name for p in images],
+                              _commits(workspace_of(run_dir), notes))
         for judge in judges:
             try:
                 answer = J.judge_call(judge, prompt, images, J.CHECKLIST_SCHEMA)
@@ -115,6 +122,8 @@ def _votes(task: Task, run_dir: Path, items: list[dict], judges: list[ModelSpec]
             said = {a["id"]: a["hit"] for a in answer["items"]}
             for i in ids:
                 votes[i][judge.cli] = said.get(i)
+            if judge.cli not in errors and (missing := [i for i in ids if i not in said]):
+                errors[judge.cli] = f"judge left items unanswered: {missing}"
     finally:
         shutil.rmtree(stage, ignore_errors=True)
     return votes
@@ -132,8 +141,10 @@ def grade(task: Task, run_dir: Path, judges: list[ModelSpec]) -> dict:
     items = load_items(task.checklist)
 
     errors: dict[str, str] = {}
+    notes: dict[str, str] = {}
     judge_items = [i for i in items if i["check"] == "judge"]
-    votes = _votes(task, run_dir, judge_items, judges, errors) if judge_items else {}
+    votes = _votes(task, run_dir, judge_items, judges, errors, notes) if judge_items else {}
+    invalid = bool(errors)
 
     graded = []
     for item in items:
@@ -143,8 +154,14 @@ def grade(task: Task, run_dir: Path, judges: list[ModelSpec]) -> dict:
         else:
             v = votes[item["id"]]
             yes = sum(x is True for x in v.values())
-            graded.append({"id": item["id"], "hit": yes * 2 > len(judges), "by": "judge",
-                           "votes": v})
-    score = sum(i["hit"] for i in graded) / len(graded) if graded else 0.0
-    return write_grade(run_dir, "checklist", {"applicable": True, "items": graded,
-                                              "score": score, "judge_errors": errors})
+            graded.append({"id": item["id"], "hit": None if invalid else yes * 2 > len(judges),
+                           "by": "judge", "votes": v})
+    if invalid:
+        score = None
+    else:
+        score = sum(i["hit"] for i in graded) / len(graded) if graded else 0.0
+    result = {"applicable": True, "items": graded, "score": score, "judge_errors": errors,
+              "notes": notes}
+    if invalid:
+        result["invalid"] = True
+    return write_grade(run_dir, "checklist", result)

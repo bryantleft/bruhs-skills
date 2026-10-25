@@ -56,7 +56,7 @@ def test_checklist_script_and_judge_items(run, monkeypatch):
     task, run_dir, workspace = run
     fake, calls = votes({
         "codex": {"commit-msg": True, "no-debug": True, "pr-body": False},
-        "grok": {"commit-msg": True, "no-debug": False},  # omits pr-body
+        "grok": {"commit-msg": True, "no-debug": False, "pr-body": False},
     })
     monkeypatch.setattr(J, "judge_call", fake)
     out = checklist.grade(task, run_dir, [SPEC["codex"], SPEC["grok"]])
@@ -68,8 +68,9 @@ def test_checklist_script_and_judge_items(run, monkeypatch):
     assert items["no-debug"]["hit"] is False  # 1-1 tie -> miss
     assert items["no-debug"]["votes"] == {"codex": True, "grok": False}
     assert items["pr-body"]["hit"] is False and items["pr-body"]["votes"] == {
-        "codex": False, "grok": None}
+        "codex": False, "grok": False}
     assert out["score"] == pytest.approx(2 / 5)
+    assert out["judge_errors"] == {} and "invalid" not in out
     assert json.loads((run_dir / "grades" / "checklist.json").read_text()) == out
     # one batched call per judge; the agent's workspace is untouched by scripts
     assert sorted(j.cli for j, _ in calls) == ["codex", "grok"]
@@ -81,20 +82,52 @@ def test_checklist_script_and_judge_items(run, monkeypatch):
     assert "Use --fast for speed." in prompt
 
 
-def test_checklist_judge_error_counts_as_no_vote(run, monkeypatch):
+def _judge_items_all_hit(judge):
+    return {"items": [{"id": i["id"], "hit": True, "evidence": ""} for i in ITEMS
+                      if i["check"] == "judge"]}
+
+
+@pytest.mark.parametrize("failure", ["error", "omitted"])
+def test_checklist_judge_failure_invalidates_grade(run, monkeypatch, failure):
+    """A judge that fails or skips an item makes the grade invalid; it is never scored
+    as the agent missing the item."""
     task, run_dir, _ = run
 
     def fake(judge, prompt, images, schema):
         if judge.cli == "grok":
-            raise J.JudgeError("bad output twice")
-        return {"items": [{"id": i["id"], "hit": True, "evidence": ""} for i in ITEMS
-                          if i["check"] == "judge"]}
+            if failure == "error":
+                raise J.JudgeError("bad output twice")
+            return {"items": [{"id": "commit-msg", "hit": True, "evidence": ""}]}
+        return _judge_items_all_hit(judge)
 
     monkeypatch.setattr(J, "judge_call", fake)
     out = checklist.grade(task, run_dir, [SPEC["codex"], SPEC["grok"]])
+    assert out["invalid"] is True and out["score"] is None
+    assert "grok" in out["judge_errors"] and "codex" not in out["judge_errors"]
     judged = [i for i in out["items"] if i["by"] == "judge"]
-    assert all(i["hit"] is False and i["votes"] == {"codex": True, "grok": None} for i in judged)
-    assert "grok" in out["judge_errors"]
+    assert judged and all(i["hit"] is None for i in judged)
+    assert all(i["votes"]["codex"] is True for i in judged)
+    scripted = {i["id"]: i["hit"] for i in out["items"] if i["by"] == "script"}
+    assert scripted == {"readme": True, "changelog": False}
+    assert json.loads((run_dir / "grades" / "checklist.json").read_text()) == out
+
+
+def test_checklist_screenshot_name_collisions_are_staged_uniquely(run, monkeypatch):
+    task, run_dir, _ = run
+    for name in ("bruhs-home__desktop__light", "page__desktop__light"):  # redact to the same
+        (run_dir / "screens").mkdir(exist_ok=True)
+        (run_dir / "screens" / f"{name}.png").write_bytes(b"\x89PNG fake")
+    seen = []
+
+    def fake(judge, prompt, images, schema):
+        seen.append(sorted(p.name for p in images))
+        return _judge_items_all_hit(judge)
+
+    monkeypatch.setattr(J, "judge_call", fake)
+    out = checklist.grade(task, run_dir, [SPEC["codex"], SPEC["grok"]])
+    assert out["score"] == pytest.approx(4 / 5)
+    assert seen[0] == ["page__desktop__light-2.png", "page__desktop__light.png"]
+    assert not any("bruhs" in n for n in seen[0])
 
 
 def test_checklist_refuses_own_family_judge(run, monkeypatch):

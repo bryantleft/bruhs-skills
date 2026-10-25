@@ -163,6 +163,9 @@ def test_redact_removes_arm_revealing_strings():
     out = J.redact(BRUHS_FINAL)
     assert not FORBIDDEN.search(out), FORBIDDEN.search(out)
     assert "pricing card now has consistent spacing" in out
+    # marker blocks go whole, contents included (same kind-matched regex as workspace)
+    block = "a\n<!-- bruhs:stack:begin -->\nuse pnpm\n<!-- bruhs:stack:end -->\nb"
+    assert J.redact(block) == "a\nb"
     # ordinary words and routes that merely contain the stems survive
     assert J.redact("expect(x).toBe(1); see /verifying and /cookies") == \
         "expect(x).toBe(1); see /verifying and /cookies"
@@ -205,7 +208,8 @@ def test_judge_gets_no_tools_and_images_inline(tmp_path, monkeypatch):
     seen = {}
 
     def invoke(cmd, env, cwd, timeout, stdin=None):
-        seen[cmd[0]] = {"cmd": cmd, "stdin": stdin, "cwd": sorted(Path(cwd).iterdir())}
+        seen[cmd[0]] = {"cmd": cmd, "stdin": stdin, "cwd": sorted(Path(cwd).iterdir()),
+                        "env": env}
         if cmd[0] == "grok":
             seen["grok"]["blocks"] = json.loads(Path(cmd[cmd.index("--prompt-file") + 1]).read_text())
             return 0, json.dumps({"structuredOutput": {"winner": "tie", "reasons": "s"}}), ""
@@ -230,12 +234,22 @@ def test_judge_gets_no_tools_and_images_inline(tmp_path, monkeypatch):
     assert content[-1]["source"]["data"] == b64
 
     codex = seen["codex"]["cmd"]
-    for feature in ("shell_tool", "unified_exec", "view_image"):
-        assert codex[codex.index(feature) - 1] == "--disable"
+    disabled = {codex[i + 1] for i, a in enumerate(codex) if a == "--disable"}
+    assert disabled >= {"shell_tool", "unified_exec", "view_image", "apps", "plugins",
+                        "remote_plugin", "multi_agent", "hooks", "skill_search",
+                        "tool_suggest", "code_mode_host", "image_generation", "sleep_tool",
+                        "skill_mcp_dependency_install", "browser_use", "computer_use"}
     assert seen["codex"]["image"] == img.read_bytes()
 
     grok = seen["grok"]["cmd"]
-    assert grok[grok.index("--tools") + 1] == "" and "--disable-web-search" in grok
+    # `--tools ""` restricts nothing in grok: every built-in is removed by id instead
+    assert "--tools" not in grok
+    removed = set(grok[grok.index("--disallowed-tools") + 1].split(","))
+    assert removed >= {"run_terminal_cmd", "read_file", "list_dir", "grep", "write",
+                       "search_replace", "task", "Agent", "web_search", "web_fetch",
+                       "search_tool", "use_tool", "workflow"}
+    assert "--no-subagents" in grok and "--disable-web-search" in grok
+    assert seen["grok"]["env"]["GROK_BACKEND_SEARCH"] == "0"
     assert seen["grok"]["blocks"][-1] == {"type": "image", "data": b64, "mimeType": "image/png"}
     assert not list((tmp_path / "judge-work").rglob("*.png"))  # temp dirs cleaned up
 
@@ -243,15 +257,47 @@ def test_judge_gets_no_tools_and_images_inline(tmp_path, monkeypatch):
 def test_prepare_images_tiles_tall_screenshots(tmp_path):
     small = png(tmp_path / "in" / "a.png")
     tall = png(tmp_path / "in" / "tall.png", w=10, h=J.MAX_IMAGE_PX * 2 + 5)
-    out = J.prepare_images([small, tall], tmp_path / "out")
+    out, notes = J.prepare_images([small, tall], tmp_path / "out")
+    assert notes == []
     assert [p.name for p in out] == ["a.png", "tall__part1of3.png", "tall__part2of3.png",
                                      "tall__part3of3.png"]
     assert [J._png_size(p) for p in out[1:]] == [(10, J.MAX_IMAGE_PX), (10, J.MAX_IMAGE_PX),
                                                  (10, 4)]
     wide = png(tmp_path / "in" / "wide.png", w=J.MAX_IMAGE_PX * 2, h=J.MAX_IMAGE_PX * 3)
-    out = J.prepare_images([wide], tmp_path / "out2")  # halved to 2000 x 3000, then tiled
+    out, _ = J.prepare_images([wide], tmp_path / "out2")  # halved to 2000 x 3000, tiled
     assert [J._png_size(p) for p in out] == [(J.MAX_IMAGE_PX, J.MAX_IMAGE_PX),
                                              (J.MAX_IMAGE_PX, 999)]
+
+
+def test_dropped_tiles_are_announced_to_the_judge(tmp_path, monkeypatch):
+    huge = png(tmp_path / "in" / "huge.png", w=10, h=J.MAX_IMAGE_PX * (J.MAX_TILES + 2))
+    out, notes = J.prepare_images([huge], tmp_path / "out")
+    assert len(out) == J.MAX_TILES
+    assert notes == [f"huge.png: page truncated below {J.MAX_TILES * J.MAX_IMAGE_PX} px "
+                     f"(of {J.MAX_IMAGE_PX * (J.MAX_TILES + 2)} px); the rest of the page "
+                     "is not shown"]
+    calls = _stub_cli(monkeypatch, tmp_path, [json.dumps({"winner": "A", "reasons": "r"})])
+    J.judge_call(SPEC["codex"], "p", [huge], J.PAIRWISE_SCHEMA)
+    assert "page truncated below" in calls[0][-1]
+
+
+def test_staging_problems_raise_judge_error(tmp_path, monkeypatch):
+    _stub_cli(monkeypatch, tmp_path, [])
+    a, b = png(tmp_path / "x" / "s.png"), png(tmp_path / "y" / "s.png")
+    with pytest.raises(J.JudgeError):  # duplicate names
+        J.judge_call(SPEC["codex"], "p", [a, b], J.PAIRWISE_SCHEMA)
+    with pytest.raises(J.JudgeError):  # unreadable image
+        J.judge_call(SPEC["codex"], "p", [tmp_path / "missing.png"], J.PAIRWISE_SCHEMA)
+    with pytest.raises(J.JudgeError):
+        J.stage_images([("A__", tmp_path / "missing.png")], tmp_path / "stage")
+
+
+def test_stage_images_makes_redacted_names_unique(tmp_path):
+    a = png(tmp_path / "1" / "bruhs-docs__desktop__light.png")
+    b = png(tmp_path / "2" / "page__desktop__light.png")
+    out = J.stage_images([("A__", a), ("A__", b)], tmp_path / "stage")
+    assert [p.name for p in out] == ["A__page__desktop__light.png",
+                                     "A__page__desktop__light-2.png"]
 
 
 # --------------------------------------------------------------------------- order
@@ -290,6 +336,22 @@ def test_pairwise_tie_maps_to_tie(pair, monkeypatch):
     task, bare, bruhs = pair
     monkeypatch.setattr(J, "judge_call", FakeJudge({"winner": "tie", "reasons": "same"}))
     assert J.pairwise(task, bare, bruhs, SPEC["grok"])["winner"] == "tie"
+
+
+def test_pairwise_judge_failure_is_an_error_not_a_tie(pair, monkeypatch):
+    task, bare, bruhs = pair
+    results = bare.parent
+    monkeypatch.setattr(J, "judge_call", FakeJudge({"winner": "A", "reasons": "ok"}))
+    J.pairwise(task, bare, bruhs, SPEC["grok"])  # an earlier verdict must not survive
+
+    def boom(*a):
+        raise J.JudgeError("invalid output twice")
+
+    monkeypatch.setattr(J, "judge_call", boom)
+    out = J.pairwise(task, bare, bruhs, SPEC["grok"])
+    assert out["winner"] is None and "invalid output twice" in out["error"]
+    verdict = json.loads((results / "_pairs" / "ui-pricing__claude__r1__grok.json").read_text())
+    assert verdict["winner"] is None and "invalid output twice" in verdict["error"]
 
 
 def test_pairwise_rejects_mismatched_runs(tmp_path, monkeypatch):
@@ -412,6 +474,31 @@ def test_make_judge_extraction_functions(monkeypatch):
     assert j.claimed_items({"claim": "c", "kind": "done"},
                            [{"id": "c1", "text": "t"}, {"id": "c2", "text": "u"}]) == ["c1"]
     assert all(js.cli == "grok" for js, _ in seen)
+
+
+def test_extraction_prompts_are_redacted(monkeypatch):
+    seen = []
+
+    def fake(judge, prompt, images, schema):
+        seen.append(prompt)
+        key = next(iter(schema["properties"]))
+        return {"findings": {"findings": []}, "claims": {"claims": []},
+                "id": {"id": None, "reason": ""}, "ids": {"ids": [], "reason": ""}}[key]
+
+    monkeypatch.setattr(J, "judge_call", fake)
+    j = J.make_judge("claude")
+    final = ("Ran /slop (bruhs:slop, superpowers review) and /expect via chrome-devtools. "
+             "Found: SQL injection in src/db.ts:12.")
+    j.extract_findings(final, {"AUDIT.md": "# Audit by /bruhs:slop\n- XSS in src/view.tsx"})
+    j.extract_claims(final)
+    j.match_finding({"summary": "SQL injection (found by /slop)", "file": "src/db.ts"},
+                    [{"id": "K1", "summary": "SQL injection in db"}])
+    j.claimed_items({"claim": "Verified with /expect and bruhs", "kind": "verified"},
+                    [{"id": "c1", "text": "no debug logs"}])
+    assert len(seen) == 4
+    for prompt in seen:
+        assert not FORBIDDEN.search(prompt), FORBIDDEN.search(prompt)
+    assert "SQL injection in src/db.ts:12" in seen[0] and "XSS in src/view.tsx" in seen[0]
 
 
 # --------------------------------------------------------------------------- live
