@@ -12,7 +12,7 @@ const exp = baseMs * 2 ** (retry - 1);
 
 There's no ceiling on this. Fine at the default 5 attempts, but support already bumps
 `maxAttempts` to 10 for some customers, and by then the last wait is 500ms · 2⁹ ≈ 4 min.
-Can we cap the delay? Something like a `maxDelayMs` delivery option, default 30s.
+Please add a `maxDelayMs` delivery option (default 30s) that caps it.
 
 ---
 

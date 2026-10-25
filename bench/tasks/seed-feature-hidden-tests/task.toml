@@ -8,5 +8,7 @@ typecheck = "./node_modules/.bin/tsc --noEmit"
 lint = "./node_modules/.bin/eslint ."
 test = "NODE_OPTIONS=--no-warnings ./node_modules/.bin/vitest run --reporter=json --outputFile=$BRUHSBENCH_REPORT"
 # self-contained: builds, serves the app on a free port against tests/hidden/groups.json
-# (tests/hidden/server.ts), then checks the API over HTTP and the page in headless Chromium
-hidden = "NEXT_TELEMETRY_DISABLED=1 ./node_modules/.bin/next build && NODE_OPTIONS=--no-warnings ./node_modules/.bin/vitest run --config vitest.hidden.config.ts --reporter=json --outputFile=$BRUHSBENCH_REPORT"
+# (tests/hidden/server.ts), then checks the API over HTTP and the page in headless Chromium.
+# The hidden files sit outside the project during `next build`, so the agent's tsconfig
+# (type-checked by the build) never sees them.
+hidden = "H=$(mktemp -d) && mv tests/hidden vitest.hidden.config.ts \"$H\"/ && { NEXT_TELEMETRY_DISABLED=1 ./node_modules/.bin/next build; rc=$?; mv \"$H\"/hidden tests/hidden && mv \"$H\"/vitest.hidden.config.ts . && [ $rc -eq 0 ]; } && NODE_OPTIONS=--no-warnings ./node_modules/.bin/vitest run --config vitest.hidden.config.ts --reporter=json --outputFile=$BRUHSBENCH_REPORT"

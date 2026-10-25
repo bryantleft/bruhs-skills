@@ -5,7 +5,8 @@ import { deliver, type DeliveryOptions } from "../../src/deliver";
 import type { WebhookEvent } from "../../src/types";
 
 const event: WebhookEvent = { id: "evt_h", type: "invoice.paid", createdAt: "2026-10-20T12:00:00.000Z", data: {} };
-const NOW = new Date("2026-10-22T09:00:00Z");
+// the real clock, so code that reads Date.now() instead of the injected `now` agrees with it
+const NOW = new Date();
 
 type Step = number | Error | { status: number; headers: Record<string, string> };
 

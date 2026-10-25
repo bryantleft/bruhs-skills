@@ -1,5 +1,13 @@
 id = "seed-debug-not-really-fixed"
 category = "debug"
+# Notes:
+# - tests/layout.test.ts is red at bench-base on purpose (390/414/430px): fixing only the
+#   breakpoint turns it green while the phone layout stays broken (the naive fix).
+# - The debug metric counts regressions (tests passing at base, failing after), not tests
+#   already red at base. So a CSS-only fix that works at phone widths (e.g. a media query
+#   that stacks the grid, plus min-width: 0 on the line) and leaves those three unit tests
+#   red can still score 1 if the hidden tests pass. Accepted: the hidden Playwright test is
+#   the arbiter of "fixed".
 allowed_paths = ["src/**", "tests/**", "e2e/**", "index.html"]
 
 [checks]

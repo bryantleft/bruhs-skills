@@ -468,3 +468,30 @@ def test_pr_review_following_the_wrong_comment_fails(prepared, tmp_path, monkeyp
     g = checklist.grade(task, run_dir, [SPEC["codex"], SPEC["grok"]])
     assert [i["id"] for i in g["items"] if not i["hit"]] == ["kept-idempotency-key"], g
     assert score.primary_metric(task, {"commands": cmd, "checklist": g}) == 0.0
+
+
+WALL_CLOCK_RETRY_AFTER = """set -e
+python3 - <<'PY'
+from pathlib import Path
+p = Path("src/deliver.ts")
+s = p.read_text()
+old = 'retryAfterMs(res.headers.get("retry-after"), now())'
+assert old in s
+p.write_text(s.replace(old, 'retryAfterMs(res.headers.get("retry-after"), new Date(Date.now()))'))
+PY
+"""
+
+
+def test_pr_review_retry_after_may_use_the_wall_clock(prepared, tmp_path, monkeypatch):
+    """A correct fix that reads Date.now() for an HTTP-date Retry-After (ignoring the
+    injected ``now``) passes the hidden tests and every checklist script."""
+    task = _task("seed-pr-review")
+    ref = REFERENCE / task.id
+    script = f"REFERENCE_DIR={ref} bash {ref / 'apply.sh'}\n" + WALL_CLOCK_RETRY_AFTER
+    run_dir = _finish_run(task, prepared(task.id), tmp_path, script=script, final="Done.")
+    cmd = commands.grade(task, run_dir)
+    assert all(cmd["checks"].values()) and cmd["regressions"] == [], cmd
+    assert cmd["hidden_total"] > 0 and cmd["hidden_pass"] == cmd["hidden_total"], cmd
+    monkeypatch.setattr(J, "judge_call", _judge_stub(task, True))
+    g = checklist.grade(task, run_dir, [SPEC["codex"], SPEC["grok"]])
+    assert all(i["hit"] for i in g["items"]), g["items"]
