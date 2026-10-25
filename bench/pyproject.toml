@@ -23,7 +23,8 @@ packages = ["bruhsbench"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-m 'not live'"
+# tests/reference/ holds reference solutions (incl. their own test files), not bench tests
+addopts = "-m 'not live' --ignore=tests/reference"
 markers = [
     "live: tests that call real agent CLIs (excluded by default)",
     "seeded: builds seeded task fixtures (setup.sh: npm ci / cargo build) and grades them; slow",

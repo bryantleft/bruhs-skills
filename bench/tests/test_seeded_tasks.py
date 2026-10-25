@@ -12,7 +12,13 @@ with deterministic stand-ins for the model-backed parts: audit findings are pars
 are answered "hit" for the reference run and "miss" otherwise; completion claims are a
 single "fixed" claim when the run's final message says so (honesty then checks it against
 the hidden tests). The score is ``score.primary_metric`` where the category has one per run
-(feature, debug, pr-review), else the audit F1 / ship checklist score.
+(feature, debug, pr-review), else the audit F1 / ship, ui and copy checklist score (ui and
+copy are decided by blind pairwise preference; their checklist is what can be checked per
+run). ui and copy tasks also get a real screenshot capture (``capture.capture``: their
+``dev_cmd`` and ``pages``) of the untouched and the reference workspace.
+
+Held-out tasks (``tasks-heldout/``) are sealed from runs, not from these checks: they are
+loaded with ``include_heldout=True`` and validated the same way.
 
 Workspaces are prepared once per task per session (setup installs pinned deps: npm ci,
 cargo build), so these tests are marked ``seeded`` and skip when the toolchain is missing.
@@ -22,6 +28,7 @@ branch in ``_grade``.
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 import re
@@ -31,10 +38,11 @@ from pathlib import Path
 
 import pytest
 
+from bruhsbench import capture as C
 from bruhsbench import judge as J
 from bruhsbench import score
 from bruhsbench.graders import audit, checklist, commands, honesty, read_grade
-from bruhsbench.tasks import BENCH_DIR, load_task
+from bruhsbench.tasks import BENCH_DIR, HELDOUT_DIR, load_tasks
 from bruhsbench.types import MODELS, Task
 from bruhsbench.workspace import BASE_TAG, GIT, prepare_workspace
 
@@ -42,11 +50,16 @@ pytestmark = pytest.mark.seeded
 
 REFERENCE = Path(__file__).parent / "reference"
 TASKS_DIR = BENCH_DIR / "tasks"
+HELDOUT_TASKS_DIR = BENCH_DIR / HELDOUT_DIR
+HELDOUT = ["seed-heldout-feature", "seed-heldout-ui"]
 SEEDED = ["seed-audit-ts", "seed-audit-rust", "seed-ship-messy-diff",
-          "seed-feature-hidden-tests", "seed-debug-not-really-fixed", "seed-pr-review"]
+          "seed-feature-hidden-tests", "seed-debug-not-really-fixed", "seed-pr-review",
+          "seed-copy-jargon", *HELDOUT]
 TOOLS = {"seed-audit-ts": ["npm", "node"], "seed-audit-rust": ["cargo"],
          "seed-ship-messy-diff": ["npm", "node"], "seed-feature-hidden-tests": ["npm", "node"],
-         "seed-debug-not-really-fixed": ["npm", "node"], "seed-pr-review": ["npm", "node"]}
+         "seed-debug-not-really-fixed": ["npm", "node"], "seed-pr-review": ["npm", "node"],
+         "seed-copy-jargon": ["npm", "node"], "seed-heldout-feature": ["uv"],
+         "seed-heldout-ui": ["npm", "node"]}
 # checks that fail on the untouched fixture by design (the debug task ships a red unit test)
 RED_AT_BASE = {"seed-debug-not-really-fixed": {"test"}}
 SPEC = {m.cli: m for m in MODELS}
@@ -54,8 +67,14 @@ RUN_CLI = "claude"  # the graded runs' family; checklist judges are the other tw
 FINDING_RE = re.compile(r"^#{2,4} \[(\w+)\] (\S+?):(\d+)(?:-(\d+))?\s*$", re.MULTILINE)
 
 
+@functools.cache
+def _tasks() -> dict[str, Task]:
+    return {t.id: t for root in (TASKS_DIR, HELDOUT_TASKS_DIR)
+            for t in load_tasks(root, include_heldout=True)}
+
+
 def _task(task_id: str) -> Task:
-    return load_task(TASKS_DIR / task_id)
+    return _tasks()[task_id]
 
 
 def _git(cwd: Path, *args: str) -> str:
@@ -170,7 +189,7 @@ def _grade(task: Task, run_dir: Path, monkeypatch, *, reference: bool) -> float:
             assert g["incorrect"] == 0 and g["valid_unlisted"] == 0, g
             assert g["severity_accuracy"] == 1.0, g
         return g["f1"]
-    if task.category == "ship":
+    if task.category in ("ship", "ui", "copy"):
         monkeypatch.setattr(J, "judge_call", _judge_stub(task, reference))
         g = checklist.grade(task, run_dir, [SPEC["codex"], SPEC["grok"]])
         assert "invalid" not in g, g
@@ -206,10 +225,10 @@ def test_task_files(task_id):
     task = _task(task_id)
     fixture = task.dir / "fixture"
     assert (fixture / ".gitignore").is_file()
-    lock = [p for p in ("package-lock.json", "pnpm-lock.yaml", "Cargo.lock")
+    lock = [p for p in ("package-lock.json", "pnpm-lock.yaml", "Cargo.lock", "uv.lock")
             if (fixture / p).is_file()]
     assert lock, "fixture has no lockfile"
-    for build_dir in ("node_modules", "target", "dist"):
+    for build_dir in ("node_modules", "target", "dist", ".venv"):
         assert not (fixture / build_dir).exists(), f"{build_dir}/ left in the fixture"
     assert task.setup is not None and task.checks.get("test")
     if task.hidden_tests is not None:
@@ -219,6 +238,16 @@ def test_task_files(task_id):
         assert word not in prompt
     assert (REFERENCE / task_id / "apply.sh").is_file()
     assert not (task.dir / "reference").exists()
+    assert task.heldout == (task_id in HELDOUT)
+    if task.category in ("ui", "copy"):
+        assert task.pages and task.dev_cmd and "{port}" in task.dev_cmd
+        assert task.checklist is not None and task.checklist.is_file()
+
+
+def test_heldout_tasks_are_sealed():
+    """Held-out tasks load only with include_heldout=True."""
+    assert load_tasks(HELDOUT_TASKS_DIR) == []
+    assert sorted(t.id for t in load_tasks(HELDOUT_TASKS_DIR, include_heldout=True)) == HELDOUT
 
 
 AUDITS = [t for t in SEEDED if _task(t).category == "audit"]
@@ -495,3 +524,97 @@ def test_pr_review_retry_after_may_use_the_wall_clock(prepared, tmp_path, monkey
     monkeypatch.setattr(J, "judge_call", _judge_stub(task, True))
     g = checklist.grade(task, run_dir, [SPEC["codex"], SPEC["grok"]])
     assert all(i["hit"] for i in g["items"]), g["items"]
+
+
+# --------------------------------------------------------------------------- ui / copy
+
+
+VISUAL = [t for t in SEEDED if _task(t).category in ("ui", "copy")]
+
+
+@pytest.mark.parametrize("reference", [False, True], ids=["untouched", "reference"])
+@pytest.mark.parametrize("task_id", VISUAL)
+def test_capture_screenshots_every_variant(task_id, reference, prepared, tmp_path):
+    """The task's dev_cmd serves its pages, sandboxed like a real capture: every page at
+    both viewports in both color schemes, with no errors."""
+    task = _task(task_id)
+    run_dir = _finish_run(task, prepared(task_id), tmp_path, reference=reference)
+    workspace = Path(json.loads((run_dir / "result.json").read_text())["workspace"])
+    files = C.capture(task, workspace, run_dir / "screens", run_dir=run_dir)
+    rec = json.loads((run_dir / "grades" / "capture.json").read_text())
+    assert "error" not in rec and "page_errors" not in rec, rec
+    assert len(files) == len(task.pages) * len(C.VIEWPORTS) * len(C.SCHEMES), rec
+    assert all(f.stat().st_size > 10_000 for f in files)
+
+
+def _checklist_hits(task: Task, run_dir: Path, monkeypatch) -> dict[str, bool]:
+    monkeypatch.setattr(J, "judge_call", _judge_stub(task, False))
+    g = checklist.grade(task, run_dir, [SPEC["codex"], SPEC["grok"]])
+    return {i["id"]: i["hit"] for i in g["items"] if i["by"] == "script"}
+
+
+SCRUB_WORDS_AND_EMOJI = r"""set -e
+python3 - <<'PY'
+import re
+from pathlib import Path
+for p in ("src/App.tsx", "src/plans.ts", "index.html"):
+    f = Path(p)
+    s = re.sub(r"[\U0001F300-\U0001FAFF☀-➿]", "", f.read_text())
+    for word, plain in (("seamlessly", "easily"), ("Seamlessly", "Easily"),
+                        ("seamless", "smooth"), ("leverages", "uses"), ("leveraging", "using"),
+                        ("Leverage", "Use"), ("leverage", "use"), ("Unlock", "Get"),
+                        ("unlock", "get")):
+        s = s.replace(word, plain)
+    f.write_text(s)
+PY
+"""
+
+CUT_PRICING_AND_FAQ = r"""set -e
+python3 - <<'PY'
+import re
+from pathlib import Path
+f = Path("src/App.tsx")
+s = f.read_text()
+s, n = re.subn(r'\n        <section id="(pricing|faq)".*?</section>\n', "\n", s, flags=re.S)
+assert n == 2
+s = s.replace('import { PLANS, formatPrice } from "./plans";\n', "")
+f.write_text(s)
+PY
+"""
+
+
+@pytest.mark.parametrize("script, expected", [
+    (SCRUB_WORDS_AND_EMOJI, {"shorter": False, "no-buzzwords": True, "no-emoji": True,
+                             "no-dash-stacks": False, "plans-and-prices": True}),
+    (CUT_PRICING_AND_FAQ, {"shorter": True, "no-buzzwords": False, "no-emoji": False,
+                           "no-dash-stacks": False, "plans-and-prices": False}),
+], ids=["find-and-replace", "cut-sections"])
+def test_copy_scripts_score_each_problem_separately(script, expected, prepared, tmp_path,
+                                                     monkeypatch):
+    """Swapping the banned words and dropping emoji doesn't make the page shorter or fix
+    the dash stacks; cutting pricing and the FAQ makes it shorter but loses the prices."""
+    task = _task("seed-copy-jargon")
+    run_dir = _finish_run(task, prepared(task.id), tmp_path, script=script)
+    assert _checklist_hits(task, run_dir, monkeypatch) == expected
+
+
+DROP_FOCUS_RESET = r"""set -e
+python3 - <<'PY'
+from pathlib import Path
+f = Path("src/styles.css")
+s = f.read_text()
+old = "*:focus {\n  outline: none;\n}\n\n"
+assert old in s
+f.write_text(s.replace(old, ""))
+PY
+"""
+
+
+def test_ui_focus_reset_removed_shows_browser_focus_rings(prepared, tmp_path, monkeypatch):
+    """Removing only the global ``outline: none`` brings back the browser's own focus rings
+    (the focus item holds); the other objective problems are still there."""
+    task = _task("seed-heldout-ui")
+    run_dir = _finish_run(task, prepared(task.id), tmp_path, script=DROP_FOCUS_RESET)
+    assert _checklist_hits(task, run_dir, monkeypatch) == {
+        "no-overflow-390": False, "focus-visible": True, "named-controls": False,
+        "labelled-fields": False, "keyboard-toggles": False}
