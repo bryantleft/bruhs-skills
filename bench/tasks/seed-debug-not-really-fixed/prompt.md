@@ -1,0 +1,1 @@
+checkout is broken on my phone (iphone 13). the cart and order summary are squished side by side and the pay button is cut off on the right, i have to scroll sideways to even get to it. looks fine on desktop. can you fix it?

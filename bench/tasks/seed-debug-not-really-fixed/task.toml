@@ -1,0 +1,11 @@
+id = "seed-debug-not-really-fixed"
+category = "debug"
+allowed_paths = ["src/**", "tests/**", "e2e/**", "index.html"]
+
+[checks]
+build = "./node_modules/.bin/tsc --noEmit && ./node_modules/.bin/vite build"
+typecheck = "./node_modules/.bin/tsc --noEmit"
+test = "NODE_OPTIONS=--no-warnings ./node_modules/.bin/vitest run --reporter=json --outputFile=$BRUHSBENCH_REPORT"
+# self-contained: production build, `vite preview` on a free port (started by the config's
+# webServer), headless Chromium at phone and desktop widths; JUnit report
+hidden = "./node_modules/.bin/vite build --logLevel error && HIDDEN_PORT=$(node -e 'const s=require(\"net\").createServer().listen(0,\"127.0.0.1\",()=>{console.log(s.address().port);s.close()})') PLAYWRIGHT_JUNIT_OUTPUT_NAME=$BRUHSBENCH_REPORT ./node_modules/.bin/playwright test -c playwright.hidden.config.ts --reporter=junit"
