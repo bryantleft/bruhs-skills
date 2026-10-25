@@ -91,6 +91,11 @@ class RunInterrupted(Exception):
     """The matrix was stopped while this run was live; nothing is recorded for it."""
 
 
+class MatrixMismatch(ValueError):
+    """Resuming a results dir with a different matrix, or with a task whose definition
+    changed since the matrix was pinned."""
+
+
 class DiskLow(Exception):
     """Too little free disk to start (or capture/grade) a run; the matrix stops cleanly
     and is resumable."""
@@ -683,7 +688,9 @@ def _record_matrix(out_root: Path, commit: str, tasks: Sequence[Task],
                    seed: int, timeout_s: int, record: dict | None = None) -> None:
     """Write (or, on resume, check and extend) matrix.json. ``record`` (the task hashes
     and freeze status) is stored with this start; an ``allow_unfrozen`` start also
-    marks the whole matrix ``allow_unfrozen``."""
+    marks the whole matrix ``allow_unfrozen``. The first start's ``task_hashes`` are
+    pinned top-level: a resume whose task hashes differ raises :class:`MatrixMismatch`,
+    and graders/judges check against them (:func:`pinned_task_hashes`)."""
     path = out_root / "matrix.json"
     versions = {cli: cli_version(cli) for cli in dict.fromkeys(m.cli for m in models)}
     start = {"at": _now(), "cli_versions": versions, **(record or {})}
@@ -696,15 +703,34 @@ def _record_matrix(out_root: Path, commit: str, tasks: Sequence[Task],
         if changed:
             detail = "; ".join(f"{k}: matrix.json has {meta.get(k)!r}, now {pinned[k]!r}"
                                for k in changed)
-            raise ValueError(f"refusing to resume {out_root}: the matrix changed ({detail}). "
-                             "Use a new results dir for a different matrix.")
+            raise MatrixMismatch(f"refusing to resume {out_root}: the matrix changed "
+                                 f"({detail}). Use a new results dir for a different matrix.")
+        hashes, pinned_hashes = start.get("task_hashes"), meta.get("task_hashes")
+        if hashes is not None and pinned_hashes is not None:
+            moved = sorted(t for t in hashes if pinned_hashes.get(t) != hashes[t])
+            if moved:
+                raise MatrixMismatch(
+                    f"refusing to resume {out_root}: task(s) {moved} changed since this "
+                    "matrix started (their hashes differ from matrix.json's task_hashes). "
+                    "Restore them, or use a new results dir.")
         meta["starts"].append(start)
     else:
         meta = {**pinned, "arms": list(arms), "timeout_s": timeout_s,
                 "cli_versions": versions, "starts": [start]}
+    if start.get("task_hashes") is not None and meta.get("task_hashes") is None:
+        meta["task_hashes"] = start["task_hashes"]  # pinned by the first start that has them
     if start.get("allow_unfrozen"):
         meta["allow_unfrozen"] = True
     path.write_text(json.dumps(meta, indent=2) + "\n")
+
+
+def pinned_task_hashes(out_root: Path) -> dict[str, str] | None:
+    """The task hashes matrix.json pinned at the first start (None: no matrix.json, or
+    one written before hashes were pinned)."""
+    path = Path(out_root) / "matrix.json"
+    if not path.is_file():
+        return None
+    return json.loads(path.read_text()).get("task_hashes")
 
 
 def _exclude_failed_setup(tasks: Sequence[Task], out_root: Path, work_root: Path,

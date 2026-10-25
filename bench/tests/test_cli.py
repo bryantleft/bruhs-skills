@@ -754,6 +754,7 @@ def frozen_env(tmp_path, monkeypatch):
 
     monkeypatch.setattr(freeze, "FROZEN_PUBLIC", tmp_path / "frozen.sha256")
     monkeypatch.setattr(freeze, "FROZEN_PRIVATE", tmp_path / "_frozen.sha256")
+    monkeypatch.setattr(cli, "RESULTS_DIR", tmp_path / "results")
     tasks = [make_task(tmp_path, "t-a", "feature"), make_task(tmp_path, "t-b", "audit")]
     monkeypatch.setattr(cli, "load_all_tasks", lambda: tasks)
     monkeypatch.setattr(cli, "pilot_task_ids", lambda: ["t-a"])
@@ -827,3 +828,82 @@ def test_freeze_and_digest_commands(tmp_path, frozen_env, capsys, monkeypatch):
     p = cli.build_parser()
     assert p.parse_args(["pipeline", "--allow-unfrozen"]).allow_unfrozen is True
     assert p.parse_args(["run"]).allow_unfrozen is False
+
+
+def _pin(root, **hashes):
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "matrix.json").write_text(json.dumps({"tasks": sorted(hashes),
+                                                  "task_hashes": hashes}))
+
+
+def test_grade_capture_judge_refuse_tasks_changed_since_their_runs(tmp_path, monkeypatch):
+    from bruhsbench import freeze
+
+    t = make_task(tmp_path, "t-ui", "ui", pages=["/"])
+    root = tmp_path / "res"
+    for arm in ("bare", "bruhs"):
+        make_run(root, t, "codex", arm, 1)
+    monkeypatch.setattr(cli, "_task_index", lambda heldout: {t.id: t})
+    monkeypatch.setattr(cli, "_grade_run", lambda d, task: pytest.fail("graded"))
+    monkeypatch.setattr(cli, "_capture_run", lambda d, task, ws: pytest.fail("captured"))
+    monkeypatch.setattr("bruhsbench.capture.capture_before", lambda *a, **k: pytest.fail("x"))
+    monkeypatch.setattr("bruhsbench.judge.pairwise", lambda *a: pytest.fail("judged"))
+    _pin(root, **{"t-ui": freeze.task_hash(t)})
+    (t.dir / "prompt.md").write_text("a different task now\n")
+    for cmd in (cli.cmd_grade, cli.cmd_capture, cli.cmd_judge):
+        with pytest.raises(cli.CliError, match="t-ui: changed since its runs ran"):
+            cmd(_args(root))
+
+
+def test_pipeline_post_run_skips_a_changed_task(tmp_path, monkeypatch, caplog):
+    from bruhsbench import freeze
+    from bruhsbench.types import ModelSpec, RunSpec
+
+    t = make_task(tmp_path, "t-audit", "audit")
+    root = tmp_path / "res"
+    make_run(root, t, "claude", "bare", 1)
+    _pin(root, **{"t-audit": freeze.task_hash(t)})
+    (t.dir / "prompt.md").write_text("changed\n")
+    monkeypatch.setattr(cli, "_grade_run", lambda d, task: pytest.fail("graded"))
+    post = cli._post_processor(root, cli._disk_guard(root), cleanup=True)
+    post(RunSpec(t, ModelSpec("claude", "m", "high"), "bare", 1), None)
+    assert "not capturing or grading, workspace kept" in caplog.text
+
+
+def test_freeze_refuses_tasks_existing_results_ran_differently(tmp_path, frozen_env,
+                                                               monkeypatch, capsys):
+    from bruhsbench import freeze
+
+    tasks, _ = frozen_env
+    results = tmp_path / "results"
+    monkeypatch.setattr(cli, "RESULTS_DIR", results)
+    _pin(results / "full", **{"t-a": freeze.task_hash(tasks[0])})
+    assert cli.main(["freeze", "--tasks", "t-a"]) == 0  # same definition: fine
+    (tasks[0].dir / "prompt.md").write_text("changed\n")
+    assert cli.main(["freeze", "--tasks", "t-a"]) == 2
+    err = capsys.readouterr().err
+    assert "t-a: " + str(results / "full") in err and "--force" in err
+    assert cli.main(["freeze", "--tasks", "t-a", "--force"]) == 0
+    assert "warning" in capsys.readouterr().err
+    assert freeze.check([tasks[0]]).unfrozen == {}
+
+
+def test_malformed_frozen_file_is_a_cli_error(tmp_path, frozen_env, capsys):
+    from bruhsbench import freeze
+
+    freeze.FROZEN_PUBLIC.write_text("garbage\n")
+    with pytest.raises(cli.CliError, match="frozen.sha256:1: malformed"):
+        cli.cmd_run(_run_args(tmp_path / "res"))
+    assert cli.main(["freeze"]) == 2
+    assert "frozen.sha256:1: malformed" in capsys.readouterr().err
+
+
+def test_resume_with_a_changed_task_is_a_cli_error(tmp_path, frozen_env, monkeypatch):
+    from bruhsbench import runner
+
+    def mismatch(*a, **k):
+        raise runner.MatrixMismatch("refusing to resume x: task(s) ['t-a'] changed")
+
+    monkeypatch.setattr(runner, "run_matrix", mismatch)
+    with pytest.raises(cli.CliError, match="changed"):
+        cli.cmd_run(_run_args(tmp_path / "res", allow_unfrozen=True))

@@ -785,3 +785,25 @@ def test_live_judge_cannot_read_real_home(cli, tmp_path, sentinel, monkeypatch):
     print(f"\nLEAK PROBE {cli}/judge: {out!r}")
     assert token not in json.dumps(out) and not any(token in o for o in outputs)
     assert J.validate(out, schema)
+
+
+def test_reused_tmpdir_is_made_private_again(tmp_path):
+    env = sandbox.private_tmp({}, tmp_path)
+    os.chmod(env["TMPDIR"], 0o777)
+    assert sandbox.private_tmp({}, tmp_path) == env
+    assert stat.S_IMODE(os.stat(env["TMPDIR"]).st_mode) == 0o700
+
+
+def test_tmp_base_must_be_absolute_and_is_measured_resolved(monkeypatch, tmp_path):
+    monkeypatch.setenv("BRUHSBENCH_TMP", "rel/tmp")
+    with pytest.raises(sandbox.TmpDirInvalid, match="absolute"):
+        sandbox.check_tmp_base()
+    with pytest.raises(sandbox.TmpDirInvalid):
+        sandbox.private_tmp({}, tmp_path)
+    # /tmp is a symlink to /private/tmp: short as given, too long resolved
+    raw = "/tmp/" + "x" * 55
+    assert len(raw) + 1 + sandbox.TMP_ID_LEN <= sandbox.MAX_TMPDIR_LEN
+    monkeypatch.setenv("BRUHSBENCH_TMP", raw)
+    assert sandbox.tmp_base() == Path("/private/tmp/" + "x" * 55)
+    with pytest.raises(sandbox.TmpDirTooLong):
+        sandbox.check_tmp_base()

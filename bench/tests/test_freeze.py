@@ -120,3 +120,29 @@ def test_partial_refreeze_keeps_other_entries_and_full_freeze_drops_stale(tmp_pa
     assert res.changed == ["seed-a"] and F.read_frozen(pub)["seed-b"] == old_b
     assert list(F.check([a, b]).unfrozen) == ["seed-b"]
     assert F.freeze([a]).dropped == ["seed-b"] and list(F.read_frozen(pub)) == ["seed-a"]
+
+
+def test_malformed_frozen_file_names_file_and_line(tmp_path, frozen_files):
+    pub, _ = frozen_files
+    pub.write_text("# header\n" + "a" * 64 + "  seed-a\nnot a hash line\n")
+    with pytest.raises(F.FreezeError, match=r"frozen.sha256:3: malformed line"):
+        F.read_frozen(pub)
+    pub.write_text("")
+    pub.with_suffix(".manifest.json").write_text("{oops")
+    with pytest.raises(F.FreezeError, match=r"frozen.manifest.json:1: malformed manifest"):
+        F.check([seeded(tmp_path)])
+
+
+def test_pinned_mismatches_and_matrices_using(tmp_path):
+    a, b = seeded(tmp_path, "seed-a"), seeded(tmp_path, "seed-b")
+    pinned = {"seed-a": F.task_hash(a)}
+    assert F.pinned_mismatches([a], pinned) == {}
+    assert "not in matrix.json" in F.pinned_mismatches([b], pinned)["seed-b"]
+    _write(a.dir / "prompt.md", "changed\n")
+    assert "changed since its runs ran" in F.pinned_mismatches([a], pinned)["seed-a"]
+    results = tmp_path / "results"
+    _write(results / "full" / "matrix.json", json.dumps(
+        {"tasks": ["seed-a", "seed-b"], "task_hashes": {"seed-a": "old", "seed-b": "hb"}}))
+    _write(results / "legacy" / "matrix.json", json.dumps({"tasks": ["seed-b"]}))
+    assert F.matrices_using({"seed-a": "new", "seed-b": "hb"}, results) == {
+        "seed-a": [str(results / "full")], "seed-b": [str(results / "legacy")]}

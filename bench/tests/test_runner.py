@@ -841,18 +841,42 @@ def test_remove_work_root_removes_run_tmpdirs(tmp_path, bruhs_src):
     assert not any(os.path.lexists(t) for t in tmps)
 
 
-def test_matrix_json_records_each_starts_task_hashes(tmp_path):
+def test_matrix_json_pins_task_hashes_and_records_each_start(tmp_path):
     task = make_task(tmp_path, "t1")
     out = tmp_path / "out"
     ov = override(fake_agent(tmp_path, EDIT_AND_REPLY))
     run_matrix([task], [CLAUDE], ["bare"], 1, out, command_override=ov,
                record={"task_hashes": {"t1": "h1"}, "unfrozen": {}, "allow_unfrozen": False})
     meta = json.loads((out / "matrix.json").read_text())
-    assert meta["starts"][0]["task_hashes"] == {"t1": "h1"} and "allow_unfrozen" not in meta
+    assert meta["task_hashes"] == {"t1": "h1"} and "allow_unfrozen" not in meta
+    assert runner.pinned_task_hashes(out) == {"t1": "h1"}
     run_matrix([task], [CLAUDE], ["bare"], 1, out, command_override=ov,
-               record={"task_hashes": {"t1": "h2"}, "unfrozen": {"t1": "changed"},
+               record={"task_hashes": {"t1": "h1"}, "unfrozen": {"t1": "not frozen"},
                        "allow_unfrozen": True})
     run_matrix([task], [CLAUDE], ["bare"], 1, out, command_override=ov)
     meta = json.loads((out / "matrix.json").read_text())
-    assert [s.get("task_hashes") for s in meta["starts"]] == [{"t1": "h1"}, {"t1": "h2"}, None]
+    assert [s.get("task_hashes") for s in meta["starts"]] == [{"t1": "h1"}, {"t1": "h1"}, None]
     assert meta["allow_unfrozen"] is True  # sticky once any start overrode the freeze
+
+
+def test_resume_refuses_a_task_that_changed_since_the_first_start(tmp_path):
+    task = make_task(tmp_path, "t1")
+    out = tmp_path / "out"
+    ov = override(fake_agent(tmp_path, EDIT_AND_REPLY))
+    run_matrix([task], [CLAUDE], ["bare"], 1, out, command_override=ov,
+               record={"task_hashes": {"t1": "h1"}})
+    with pytest.raises(runner.MatrixMismatch, match=r"\['t1'\] changed"):
+        run_matrix([task], [CLAUDE], ["bare"], 1, out, command_override=ov,
+                   record={"task_hashes": {"t1": "h2"}})
+    assert len(json.loads((out / "matrix.json").read_text())["starts"]) == 1
+
+
+def test_matrix_without_pins_is_pinned_by_its_next_start(tmp_path):
+    task = make_task(tmp_path, "t1")
+    out = tmp_path / "out"
+    ov = override(fake_agent(tmp_path, EDIT_AND_REPLY))
+    run_matrix([task], [CLAUDE], ["bare"], 1, out, command_override=ov)
+    assert runner.pinned_task_hashes(out) is None
+    run_matrix([task], [CLAUDE], ["bare"], 1, out, command_override=ov,
+               record={"task_hashes": {"t1": "h1"}})
+    assert runner.pinned_task_hashes(out) == {"t1": "h1"}

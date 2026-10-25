@@ -9,6 +9,13 @@ gitignored) into ``tasks-private/_frozen.sha256``, public seeded tasks (``tasks/
 from its frozen one or it isn't frozen; ``--allow-unfrozen`` (development only) overrides
 that and is recorded in ``matrix.json``, as are the hashes every start ran with.
 
+Beyond the start: matrix.json pins the first start's ``task_hashes`` (pilot included), a
+resume with a changed task is refused, and ``grade``, ``capture``, ``judge`` and the
+pipeline's per-run step refuse a task whose current hash isn't the pinned one, so runs are
+always graded against the definition they ran with. ``freeze`` refuses (without
+``--force``) to freeze a task at a definition other than one that an existing results dir
+under ``bench/results/`` pinned.
+
 What is hashed (the exact rule). A task's hash is the SHA-256 of its manifest: one line
 ``<sha256 of the file>  <label>`` per file, sorted by label, over
 
@@ -49,6 +56,13 @@ _SHARED_REF = re.compile(r"_shared/([A-Za-z0-9][A-Za-z0-9_.-]*)")
 _SHARED_REF_FILES = ("task.toml", "setup.sh", "after_base.sh")
 HEADER = ("# bruhsbench task freeze: SHA-256 of each task's manifest (bruhsbench/freeze.py). "
           "Regenerate with `bruhsbench freeze` after reviewing the tasks.\n")
+
+
+class FreezeError(ValueError):
+    """A frozen file or its manifest can't be parsed."""
+
+
+_LINE = re.compile(r"([0-9a-f]{64})\s+(\S+)")
 
 
 def _excluded(name: str) -> bool:
@@ -122,20 +136,33 @@ def _manifest_file(frozen: Path) -> Path:
 
 
 def read_frozen(path: Path) -> dict[str, str]:
-    """``{task_id: sha256}`` from a frozen file ({} if absent)."""
+    """``{task_id: sha256}`` from a frozen file ({} if absent); :class:`FreezeError`
+    naming the file and line for a malformed line."""
     if not Path(path).is_file():
         return {}
     out = {}
-    for line in Path(path).read_text().splitlines():
-        if line.strip() and not line.startswith("#"):
-            digest, task_id = line.split(None, 1)
-            out[task_id.strip()] = digest
+    for n, line in enumerate(Path(path).read_text().splitlines(), 1):
+        if not line.strip() or line.startswith("#"):
+            continue
+        m = _LINE.fullmatch(line.strip())
+        if m is None:
+            raise FreezeError(f"{path}:{n}: malformed line {line[:80]!r} (expected "
+                              "'<64 hex sha256>  <task id>'); rerun `bruhsbench freeze`")
+        out[m[2]] = m[1]
     return out
 
 
 def _read_manifests(path: Path) -> dict[str, dict[str, str]]:
     m = _manifest_file(path)
-    return json.loads(m.read_text()) if m.is_file() else {}
+    if not m.is_file():
+        return {}
+    try:
+        data = json.loads(m.read_text())
+    except json.JSONDecodeError as exc:
+        raise FreezeError(f"{m}:{exc.lineno}: malformed manifest: {exc.msg}") from None
+    if not isinstance(data, dict):
+        raise FreezeError(f"{m}: malformed manifest (not an object)")
+    return data
 
 
 def _write(path: Path, hashes: dict[str, str], manifests: dict[str, dict[str, str]]) -> None:
@@ -223,3 +250,33 @@ def check(tasks: Sequence[Task]) -> FreezeCheck:
             unfrozen[t.id] = "changed since the freeze: " + _diff(
                 manifests[path].get(t.id, {}), current)
     return FreezeCheck(hashes, unfrozen)
+
+
+def pinned_mismatches(tasks: Iterable[Task], pinned: dict[str, str]) -> dict[str, str]:
+    """``{task_id: why}`` for ``tasks`` whose current hash isn't the one a results dir's
+    matrix.json pinned (the hash its runs ran with)."""
+    out = {}
+    for t in tasks:
+        want = pinned.get(t.id)
+        if want is None:
+            out[t.id] = "not in matrix.json's task_hashes"
+        elif task_hash(t) != want:
+            out[t.id] = "changed since its runs ran (hash differs from matrix.json)"
+    return out
+
+
+def matrices_using(task_hashes: dict[str, str], results_dir: Path) -> dict[str, list[str]]:
+    """``{task_id: [results dirs]}``: results dirs under ``results_dir`` whose matrix.json
+    lists the task but didn't pin ``task_hashes[task_id]`` (refreezing it would make their
+    runs ungradeable)."""
+    out: dict[str, list[str]] = {}
+    for m in sorted(Path(results_dir).glob("*/matrix.json")):
+        try:
+            meta = json.loads(m.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        pinned = meta.get("task_hashes") or {}
+        for tid in meta.get("tasks", []):
+            if tid in task_hashes and pinned.get(tid) != task_hashes[tid]:
+                out.setdefault(tid, []).append(str(m.parent))
+    return out

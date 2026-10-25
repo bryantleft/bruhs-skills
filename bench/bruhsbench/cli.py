@@ -220,12 +220,37 @@ def cmd_probe(args) -> int:
     return 1 if failed else 0
 
 
+def _verify_pinned(root: Path, tasks: Iterable[Task]) -> None:
+    """Refuse to grade, capture or judge ``tasks`` whose current definition isn't the one
+    ``root``'s runs ran with (matrix.json's pinned ``task_hashes``)."""
+    from .freeze import pinned_mismatches
+    from .runner import pinned_task_hashes
+
+    tasks = list({t.id: t for t in tasks}.values())
+    if not tasks:
+        return
+    pinned = pinned_task_hashes(root)
+    if pinned is None:
+        log.warning("%s: matrix.json pins no task hashes (results from before pinning); "
+                    "can't check that the tasks are unchanged since their runs", root)
+        return
+    bad = pinned_mismatches(tasks, pinned)
+    if bad:
+        lines = "\n".join(f"  {tid}: {why}" for tid, why in sorted(bad.items()))
+        raise CliError(f"refusing: {len(bad)} task(s) aren't what the runs in {root} ran "
+                       f"with:\n{lines}\nRestore those task files (their runs must be "
+                       "graded and judged against the definition they ran with).")
+
+
 def _freeze_record(tasks: list[Task], args) -> dict:
     """The task hashes for matrix.json; refuses unfrozen tasks outside the pilot unless
     ``--allow-unfrozen``."""
-    from .freeze import check
+    from .freeze import FreezeError, check
 
-    status = check(tasks)
+    try:
+        status = check(tasks)
+    except FreezeError as exc:
+        raise CliError(str(exc)) from None
     if status.unfrozen and not args.pilot:
         if not args.allow_unfrozen:
             raise CliError(
@@ -241,8 +266,8 @@ def _freeze_record(tasks: list[Task], args) -> dict:
 
 def cmd_run(args, post_run: Callable | None = None, disk_guard=None) -> int:
     from .homes import ClaudeAuthMissing
-    from .runner import AuthAbort, DiskLow, run_matrix
-    from .sandbox import TmpDirTooLong
+    from .runner import AuthAbort, DiskLow, MatrixMismatch, run_matrix
+    from .sandbox import TmpDirInvalid
 
     if args.pilot and args.tasks:
         raise CliError("--pilot runs the tasks in bench/pilot.toml; don't combine it with --tasks")
@@ -262,7 +287,7 @@ def cmd_run(args, post_run: Callable | None = None, disk_guard=None) -> int:
                              parallel=args.parallel, timeout_s=args.timeout * 60,
                              post_run=post_run, disk_guard=disk_guard or _disk_guard(root),
                              record=record)
-    except TmpDirTooLong as exc:
+    except (TmpDirInvalid, MatrixMismatch) as exc:
         raise CliError(str(exc)) from None
     except ClaudeAuthMissing:
         print(_claude_guidance(), file=sys.stderr)
@@ -302,6 +327,11 @@ def _post_processor(root: Path, guard, *, cleanup: bool, post_parallel: int = 2)
         d, task = root / spec.run_id, spec.task
         meta = run_meta(d)
         if meta.get("workspace_deleted"):
+            return
+        try:  # the task must still be what the run ran with
+            _verify_pinned(root, [task])
+        except CliError as exc:
+            log.error("%s: not capturing or grading, workspace kept: %s", d.name, exc)
             return
         gradeable = meta.get("status") not in ("error", "setup_failed")
         ws = workspace_of(d)
@@ -558,6 +588,7 @@ def cmd_grade(args) -> int:
     if gone:
         print(f"warning: not regrading {len(gone)} runs whose workspace was deleted: {gone}",
               file=sys.stderr)
+    _verify_pinned(root, (task for _, task in todo))
     print(f"grade: {len(todo)} runs to grade in {root}")
     with hold_active(default_work_root(root)):  # `clean --all` waits for us
         return _guarded_parallel(_grade_run, todo, args.parallel, _disk_guard(root),
@@ -585,6 +616,7 @@ def cmd_capture(args) -> int:
             log.warning("%s: workspace gone, can't capture", d.name)
             continue
         todo.append((d, task, ws))
+    _verify_pinned(root, tasks.values())
     print(f"capture: {len(tasks)} ui/copy tasks, {len(todo)} runs to capture")
     guard = _disk_guard(root)
     with hold_active(work_root):  # `clean --all` waits for us
@@ -624,6 +656,7 @@ def cmd_judge(args) -> int:
                     json.loads(verdict.read_text()).get("winner") is not None:
                 continue
             todo.append((tasks[task_id], arms["bare"].dir, arms["bruhs"].dir, judge))
+    _verify_pinned(root, (item[0] for item in todo))
     print(f"judge: {len(todo)} pairwise verdicts to get")
 
     def one(task, bare_dir, bruhs_dir, judge) -> None:
@@ -643,14 +676,27 @@ def cmd_spotcheck(args) -> int:
 
 
 def cmd_freeze(args) -> int:
-    from .freeze import freeze
+    from .freeze import FreezeError, freeze, matrices_using, task_hash
 
     tasks = load_all_tasks()
     if args.tasks:
         unknown = sorted(set(args.tasks) - {t.id for t in tasks})
         if unknown:
             raise CliError(f"unknown task ids: {unknown}")
-    res = freeze(tasks, only=args.tasks)
+    chosen = [t for t in tasks if not args.tasks or t.id in args.tasks]
+    used = matrices_using({t.id: task_hash(t) for t in chosen}, RESULTS_DIR)
+    if used:
+        lines = "\n".join(f"  {tid}: {', '.join(dirs)}" for tid, dirs in sorted(used.items()))
+        msg = (f"{len(used)} task(s) would be frozen at a definition other than the one "
+               f"existing results ran with (their runs could no longer be graded or "
+               f"judged):\n{lines}")
+        if not args.force:
+            raise CliError(msg + "\nPass --force to freeze anyway.")
+        print(f"warning: {msg}", file=sys.stderr)
+    try:
+        res = freeze(tasks, only=args.tasks)
+    except FreezeError as exc:
+        raise CliError(str(exc)) from None
     for what, ids in (("new", res.added), ("changed", res.changed),
                       ("unchanged", res.unchanged), ("dropped", res.dropped)):
         if ids:
@@ -734,6 +780,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp = sub.add_parser("freeze", help="pin every task's definition and grading (hashes)")
     sp.add_argument("--tasks", nargs="+", help="refreeze only these (others are kept)")
+    sp.add_argument("--force", action="store_true",
+                    help="freeze even tasks whose existing results ran another definition")
     sp.set_defaults(fn=cmd_freeze)
 
     sp = sub.add_parser("digest", help="markdown digest of the real tasks' checklists, "

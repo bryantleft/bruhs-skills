@@ -283,13 +283,26 @@ def wrap(cmd: list[str], *, writable: Iterable[Path], extra_readable: Iterable[P
 # --------------------------------------------------------------------------- TMPDIR (R37)
 
 
-class TmpDirTooLong(ValueError):
+class TmpDirInvalid(ValueError):
+    """``$BRUHSBENCH_TMP`` can't hold the private ``TMPDIR``s."""
+
+
+class TmpDirTooLong(TmpDirInvalid):
     """A private ``TMPDIR`` would be too long for a unix socket path under it."""
 
 
 def tmp_base() -> Path:
-    """Where private ``TMPDIR``s live (``$BRUHSBENCH_TMP``, default ``/private/tmp/bb``)."""
-    return Path(os.environ.get(TMP_BASE_ENV) or DEFAULT_TMP_BASE)
+    """Where private ``TMPDIR``s live (``$BRUHSBENCH_TMP``, default ``/private/tmp/bb``),
+    with its parent resolved (``/tmp`` -> ``/private/tmp``) but not its last component, so
+    a symlink planted there is refused by :func:`private_tmp`, never followed.
+    :class:`TmpDirInvalid` for a relative ``$BRUHSBENCH_TMP``."""
+    raw = os.environ.get(TMP_BASE_ENV) or str(DEFAULT_TMP_BASE)
+    if not os.path.isabs(raw):
+        raise TmpDirInvalid(f"${TMP_BASE_ENV}={raw!r} must be an absolute path")
+    path = Path(os.path.normpath(raw))
+    if path.name in ("", ".."):
+        raise TmpDirInvalid(f"${TMP_BASE_ENV}={raw!r} must name a directory below /")
+    return path.parent.resolve() / path.name
 
 
 def tmp_dir(root: Path) -> Path:
@@ -301,7 +314,8 @@ def tmp_dir(root: Path) -> Path:
 
 def check_tmp_base() -> None:
     """Raise :class:`TmpDirTooLong` if private ``TMPDIR``s would exceed
-    :data:`MAX_TMPDIR_LEN` characters (only a long ``$BRUHSBENCH_TMP`` can do that)."""
+    :data:`MAX_TMPDIR_LEN` characters (only a long ``$BRUHSBENCH_TMP`` can do that; its
+    resolved form is what counts)."""
     length = len(str(tmp_base())) + 1 + TMP_ID_LEN
     if length > MAX_TMPDIR_LEN:
         raise TmpDirTooLong(
@@ -345,8 +359,8 @@ def private_tmp(env: Mapping[str, str], root: Path) -> dict[str, str]:
         remove_private_tmp(root)
     try:
         os.mkdir(tmp, 0o700)
-    except FileExistsError:
-        pass
+    except FileExistsError:  # reused (a real dir of ours, checked above): private again
+        os.chmod(tmp, 0o700, follow_symlinks=False)
     return {**env, "TMPDIR": str(tmp)}
 
 
