@@ -1,0 +1,50 @@
+{
+  "groups": [
+    {
+      "id": "lisbon-2026",
+      "name": "Lisbon, May 2026",
+      "members": [
+        { "id": "priya", "name": "Priya" },
+        { "id": "dan", "name": "Dan" },
+        { "id": "mei", "name": "Mei" },
+        { "id": "jonas", "name": "Jonas" }
+      ],
+      "expenses": [
+        { "id": "e1", "description": "Airbnb (4 nights)", "paidBy": "dan", "amountCents": 84800, "date": "2026-05-02", "splitAmong": ["priya", "dan", "mei", "jonas"] },
+        { "id": "e2", "description": "Pastéis + coffee", "paidBy": "priya", "amountCents": 2350, "date": "2026-05-03", "splitAmong": ["priya", "dan", "mei", "jonas"] },
+        { "id": "e3", "description": "Sintra train tickets", "paidBy": "mei", "amountCents": 1680, "date": "2026-05-03", "splitAmong": ["priya", "mei", "jonas"] },
+        { "id": "e4", "description": "Dinner at Taberna", "paidBy": "jonas", "amountCents": 13725, "date": "2026-05-04", "splitAmong": ["priya", "dan", "mei", "jonas"] },
+        { "id": "e5", "description": "Tuk-tuk tour", "paidBy": "priya", "amountCents": 6000, "date": "2026-05-05", "splitAmong": ["priya", "dan"] },
+        { "id": "e6", "description": "Groceries", "paidBy": "mei", "amountCents": 4199, "date": "2026-05-05", "splitAmong": ["priya", "dan", "mei", "jonas"] }
+      ],
+      "repayments": [
+        { "id": "r1", "from": "jonas", "to": "dan", "amountCents": 10000, "date": "2026-05-06" }
+      ]
+    },
+    {
+      "id": "apt-4b",
+      "name": "Apartment 4B",
+      "members": [
+        { "id": "sam", "name": "Sam" },
+        { "id": "alex", "name": "Alex" },
+        { "id": "rio", "name": "Rio" }
+      ],
+      "expenses": [
+        { "id": "e1", "description": "Internet (Oct)", "paidBy": "sam", "amountCents": 6500, "date": "2026-10-01", "splitAmong": ["sam", "alex", "rio"] },
+        { "id": "e2", "description": "Electricity (Sep)", "paidBy": "alex", "amountCents": 9412, "date": "2026-10-04", "splitAmong": ["sam", "alex", "rio"] },
+        { "id": "e3", "description": "Dish soap, paper towels", "paidBy": "rio", "amountCents": 1847, "date": "2026-10-09", "splitAmong": ["sam", "alex", "rio"] }
+      ],
+      "repayments": []
+    },
+    {
+      "id": "ski-weekend",
+      "name": "Ski weekend",
+      "members": [
+        { "id": "noor", "name": "Noor" },
+        { "id": "theo", "name": "Theo" }
+      ],
+      "expenses": [],
+      "repayments": []
+    }
+  ]
+}

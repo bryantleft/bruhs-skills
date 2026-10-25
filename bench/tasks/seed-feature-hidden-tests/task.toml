@@ -1,0 +1,12 @@
+id = "seed-feature-hidden-tests"
+category = "feature"
+allowed_paths = ["src/**", "tests/**", "e2e/**", "README.md"]
+
+[checks]
+build = "NEXT_TELEMETRY_DISABLED=1 ./node_modules/.bin/next build"
+typecheck = "./node_modules/.bin/tsc --noEmit"
+lint = "./node_modules/.bin/eslint ."
+test = "NODE_OPTIONS=--no-warnings ./node_modules/.bin/vitest run --reporter=json --outputFile=$BRUHSBENCH_REPORT"
+# self-contained: builds, serves the app on a free port against tests/hidden/groups.json
+# (tests/hidden/server.ts), then checks the API over HTTP and the page in headless Chromium
+hidden = "NEXT_TELEMETRY_DISABLED=1 ./node_modules/.bin/next build && NODE_OPTIONS=--no-warnings ./node_modules/.bin/vitest run --config vitest.hidden.config.ts --reporter=json --outputFile=$BRUHSBENCH_REPORT"

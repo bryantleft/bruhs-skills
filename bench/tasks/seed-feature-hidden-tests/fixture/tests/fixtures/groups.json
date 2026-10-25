@@ -1,0 +1,26 @@
+{
+  "groups": [
+    {
+      "id": "cabin",
+      "name": "Cabin trip",
+      "members": [
+        { "id": "ana", "name": "Ana" },
+        { "id": "ben", "name": "Ben" },
+        { "id": "cy", "name": "Cy" }
+      ],
+      "expenses": [
+        { "id": "e1", "description": "Cabin", "paidBy": "ana", "amountCents": 30000, "date": "2026-01-10", "splitAmong": ["ana", "ben", "cy"] },
+        { "id": "e2", "description": "Gas", "paidBy": "ben", "amountCents": 1000, "date": "2026-01-10", "splitAmong": ["ana", "ben", "cy"] }
+      ],
+      "repayments": [
+        { "id": "r1", "from": "cy", "to": "ana", "amountCents": 5000, "date": "2026-01-12" }
+      ]
+    },
+    {
+      "id": "empty",
+      "name": "Nothing yet",
+      "members": [{ "id": "zed", "name": "Zed" }],
+      "expenses": []
+    }
+  ]
+}

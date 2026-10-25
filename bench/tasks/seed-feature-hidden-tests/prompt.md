@@ -1,0 +1,1 @@
+can you add a settle up section to the group page? basically show the payments that would get everyone even, one per line like "Priya pays Dan $12.50", with as few payments as possible. i also want it as an endpoint, GET /api/groups/<id>/settle-up returning { payments: [{ from, to, amountCents }] } with member ids, so i can pull it into a shortcut on my phone

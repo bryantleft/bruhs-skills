@@ -1,0 +1,126 @@
+{
+  "groups": [
+    {
+      "id": "porto",
+      "name": "Porto weekend",
+      "members": [
+        { "id": "m-ana", "name": "Ana" },
+        { "id": "m-bo", "name": "Bo" },
+        { "id": "m-cal", "name": "Cal" },
+        { "id": "m-dee", "name": "Dee" },
+        { "id": "m-eli", "name": "Eli" }
+      ],
+      "expenses": [
+        { "id": "e1", "description": "Hotel", "paidBy": "m-ana", "amountCents": 51000, "date": "2026-03-06", "splitAmong": ["m-ana", "m-bo", "m-cal", "m-dee"] },
+        { "id": "e2", "description": "Port tasting", "paidBy": "m-bo", "amountCents": 9875, "date": "2026-03-06", "splitAmong": ["m-ana", "m-bo", "m-cal"] },
+        { "id": "e3", "description": "Dinner", "paidBy": "m-cal", "amountCents": 14333, "date": "2026-03-07", "splitAmong": ["m-ana", "m-bo", "m-cal", "m-dee", "m-eli"] },
+        { "id": "e4", "description": "Taxi", "paidBy": "m-dee", "amountCents": 2210, "date": "2026-03-07", "splitAmong": ["m-dee", "m-ana"] },
+        { "id": "e5", "description": "Eli's ticket", "paidBy": "m-eli", "amountCents": 2866, "date": "2026-03-07", "splitAmong": ["m-cal"] }
+      ],
+      "repayments": [
+        { "id": "r1", "from": "m-dee", "to": "m-ana", "amountCents": 5000, "date": "2026-03-08" }
+      ]
+    },
+    {
+      "id": "pairs",
+      "name": "Two easy pairs",
+      "members": [
+        { "id": "m-ana", "name": "Ana" },
+        { "id": "m-bo", "name": "Bo" },
+        { "id": "m-cal", "name": "Cal" },
+        { "id": "m-dee", "name": "Dee" }
+      ],
+      "expenses": [
+        { "id": "e1", "description": "Cabin deposit", "paidBy": "m-ana", "amountCents": 1300, "date": "2026-02-01", "splitAmong": ["m-cal", "m-dee"] },
+        { "id": "e2", "description": "Snacks", "paidBy": "m-cal", "amountCents": 350, "date": "2026-02-01", "splitAmong": ["m-dee"] },
+        { "id": "e3", "description": "Parking", "paidBy": "m-bo", "amountCents": 300, "date": "2026-02-02", "splitAmong": ["m-ana"] }
+      ],
+      "repayments": []
+    },
+    {
+      "id": "repaid",
+      "name": "Mostly paid back",
+      "members": [
+        { "id": "m-ana", "name": "Ana" },
+        { "id": "m-bo", "name": "Bo" },
+        { "id": "m-cal", "name": "Cal" }
+      ],
+      "expenses": [
+        { "id": "e1", "description": "Concert tickets", "paidBy": "m-ana", "amountCents": 9000, "date": "2026-04-01", "splitAmong": ["m-ana", "m-bo", "m-cal"] }
+      ],
+      "repayments": [
+        { "id": "r1", "from": "m-bo", "to": "m-ana", "amountCents": 3000, "date": "2026-04-03" }
+      ]
+    },
+    {
+      "id": "thirds",
+      "name": "Ten bucks, three ways",
+      "members": [
+        { "id": "m-ana", "name": "Ana" },
+        { "id": "m-bo", "name": "Bo" },
+        { "id": "m-cal", "name": "Cal" }
+      ],
+      "expenses": [
+        { "id": "e1", "description": "Pizza", "paidBy": "m-ana", "amountCents": 1000, "date": "2026-04-10", "splitAmong": ["m-ana", "m-bo", "m-cal"] }
+      ],
+      "repayments": []
+    },
+    {
+      "id": "square",
+      "name": "Already even",
+      "members": [
+        { "id": "m-ana", "name": "Ana" },
+        { "id": "m-bo", "name": "Bo" },
+        { "id": "m-cal", "name": "Cal" }
+      ],
+      "expenses": [
+        { "id": "e1", "description": "Lunch", "paidBy": "m-ana", "amountCents": 1500, "date": "2026-05-01", "splitAmong": ["m-ana", "m-bo", "m-cal"] },
+        { "id": "e2", "description": "Lunch again", "paidBy": "m-bo", "amountCents": 1500, "date": "2026-05-02", "splitAmong": ["m-ana", "m-bo", "m-cal"] },
+        { "id": "e3", "description": "And again", "paidBy": "m-cal", "amountCents": 1500, "date": "2026-05-03", "splitAmong": ["m-ana", "m-bo", "m-cal"] }
+      ],
+      "repayments": []
+    },
+    {
+      "id": "empty",
+      "name": "Nothing yet",
+      "members": [
+        { "id": "m-ana", "name": "Ana" },
+        { "id": "m-bo", "name": "Bo" }
+      ],
+      "expenses": []
+    },
+    {
+      "id": "solo",
+      "name": "Just me",
+      "members": [{ "id": "m-ana", "name": "Ana" }],
+      "expenses": [
+        { "id": "e1", "description": "Coffee", "paidBy": "m-ana", "amountCents": 450, "date": "2026-06-01", "splitAmong": ["m-ana"] }
+      ],
+      "repayments": []
+    },
+    {
+      "id": "coffee",
+      "name": "Coffee run",
+      "members": [
+        { "id": "u1", "name": "Priya" },
+        { "id": "u2", "name": "Dan" }
+      ],
+      "expenses": [
+        { "id": "e1", "description": "Coffee beans", "paidBy": "u1", "amountCents": 2500, "date": "2026-06-02", "splitAmong": ["u1", "u2"] }
+      ],
+      "repayments": []
+    },
+    {
+      "id": "big",
+      "name": "Flights",
+      "members": [
+        { "id": "u1", "name": "Priya" },
+        { "id": "u2", "name": "Dan" }
+      ],
+      "expenses": [
+        { "id": "e1", "description": "Flights to Tokyo", "paidBy": "u1", "amountCents": 246912, "date": "2026-06-03", "splitAmong": ["u1", "u2"] }
+      ],
+      "repayments": []
+    }
+  ]
+}
