@@ -1,0 +1,8 @@
+id = "seed-audit-ts"
+category = "audit"
+# findings go to AUDIT.md; anything else the agent edits is reported as scope creep
+allowed_paths = ["AUDIT.md"]
+
+[checks]
+typecheck = "./node_modules/.bin/tsc -p tsconfig.json --noEmit"
+test = "./node_modules/.bin/vitest run --reporter=json --outputFile=$BRUHSBENCH_REPORT"

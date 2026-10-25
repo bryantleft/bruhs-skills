@@ -1,0 +1,8 @@
+id = "seed-audit-rust"
+category = "audit"
+# findings go to AUDIT.md; anything else the agent edits is reported as scope creep
+allowed_paths = ["AUDIT.md"]
+
+[checks]
+build = "cargo build --offline --locked --all-targets"
+test = "cargo test --offline --locked"

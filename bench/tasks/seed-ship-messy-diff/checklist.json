@@ -1,0 +1,39 @@
+{
+  "items": [
+    {
+      "id": "conventional-commits",
+      "text": "Every new commit message follows Conventional Commits (type(scope)?: summary), and the commit that adds the CSV export is a feat.",
+      "check": "script",
+      "script": "set -e; commits=$(git rev-list --branches --not bench-base); [ -n \"$commits\" ]; for c in $commits; do git log -1 --format=%s \"$c\" | grep -Eq '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\\([^)]+\\))?!?: .+'; done; git log --branches --not bench-base --diff-filter=A --format=%s -- src/format/csv.ts | tail -1 | grep -Eq '^feat(\\([^)]+\\))?!?: .+'"
+    },
+    {
+      "id": "feature-committed",
+      "text": "The whole CSV feature is committed on a branch: the renderer (src/format/csv.ts), the --format flag in src/cli.ts, the README docs and the new test/csv.test.ts.",
+      "check": "script",
+      "script": "for b in $(git for-each-ref --format='%(refname:short)' refs/heads); do git cat-file -e \"$b:src/format/csv.ts\" 2>/dev/null && git cat-file -e \"$b:test/csv.test.ts\" 2>/dev/null && git show \"$b:src/cli.ts\" | grep -q renderCsv && git show \"$b:README.md\" | grep -q -- '--format csv' && exit 0; done; exit 1"
+    },
+    {
+      "id": "no-debug-log",
+      "text": "The stray console.log(\"DEBUG report opts\", ...) in src/cli.ts is not in any commit, while the CLI change itself is committed.",
+      "check": "script",
+      "script": "set -e; git log --branches --not bench-base -p --format= -- src/cli.ts | grep -q '^+.*renderCsv'; ! git log --branches --not bench-base -p --format= | grep -Eq '^\\+.*console\\.log\\(\"DEBUG'"
+    },
+    {
+      "id": "formatting-separate",
+      "text": "The unrelated reformat of src/util/dates.ts is either left out of the commits or in a commit of its own, never mixed into the feature commit(s).",
+      "check": "script",
+      "script": "set -e; [ -n \"$(git rev-list --branches --not bench-base -- src/format/csv.ts)\" ]; for c in $(git rev-list --branches --not bench-base -- src/util/dates.ts); do if git diff-tree --no-commit-id --name-only -r \"$c\" | grep -qvx 'src/util/dates.ts'; then exit 1; fi; done"
+    },
+    {
+      "id": "branch-name",
+      "text": "The work is on a descriptive branch, not main/master, whose name says what it is (e.g. feat/report-csv-export).",
+      "check": "script",
+      "script": "set -e; c=$(git rev-list --branches --not bench-base -- src/format/csv.ts | tail -1); [ -n \"$c\" ]; for b in $(git for-each-ref --format='%(refname:short)' refs/heads); do case \"$b\" in main|master) continue;; esac; git merge-base --is-ancestor \"$c\" \"$b\" || continue; if printf '%s' \"$b\" | grep -Eqi 'csv|export|format'; then exit 0; fi; done; exit 1"
+    },
+    {
+      "id": "pr-description",
+      "text": "PR.md is a PR description that accurately describes the branch: what it adds (a --format csv option for tally report), how the CSV differs from the table (header row, no total row, quoting), and how it was tested. It describes only what the branch's commits contain (no claim about the dates.ts reformat or the debug log unless they were committed) and invents nothing the diff doesn't show.",
+      "check": "judge"
+    }
+  ]
+}

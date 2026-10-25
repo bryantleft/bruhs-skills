@@ -1,0 +1,211 @@
+[
+  {
+    "id": "rs-backup-path-traversal",
+    "file": "src/persist.rs",
+    "lines": [
+      140,
+      147
+    ],
+    "severity": "critical",
+    "decoy": false,
+    "summary": "BACKUP <name> joins the client-supplied name onto the data dir unchecked: '../' or an absolute path writes the snapshot anywhere the process can write (path traversal / arbitrary file write)."
+  },
+  {
+    "id": "rs-admin-commands-skip-auth",
+    "file": "src/protocol.rs",
+    "lines": [
+      42,
+      52
+    ],
+    "severity": "critical",
+    "decoy": false,
+    "summary": "requires_auth() leaves out FLUSH, SAVE, BACKUP and STATS, so an unauthenticated client can wipe every key, write backups (with the traversal) and read stats; README says everything except PING/AUTH/QUIT needs AUTH."
+  },
+  {
+    "id": "rs-unbounded-value-alloc",
+    "file": "src/server.rs",
+    "lines": [
+      84,
+      85
+    ],
+    "severity": "high",
+    "decoy": false,
+    "summary": "The value length from SET/SETNX is trusted: vec![0u8; len] allocates whatever the client claims (e.g. 2^40) before reading, so one request can abort the process with OOM; cap it."
+  },
+  {
+    "id": "rs-incr-panic-poisons-lock",
+    "file": "src/server.rs",
+    "lines": [
+      235,
+      239
+    ],
+    "severity": "high",
+    "decoy": false,
+    "summary": "INCR on a non-integer value hits .expect() while holding the store mutex: the connection thread panics, the mutex is poisoned and every later lock().unwrap() panics, taking the whole server down (and the connection count is never decremented). Return an error reply."
+  },
+  {
+    "id": "rs-get-clones-store",
+    "file": "src/server.rs",
+    "lines": [
+      210,
+      211
+    ],
+    "severity": "medium",
+    "decoy": false,
+    "summary": "GET clones the entire Store (every key and value) under the lock to read one key: O(n) time and memory per read; read through the guard and copy only the value."
+  },
+  {
+    "id": "rs-setnx-race",
+    "file": "src/server.rs",
+    "lines": [
+      223,
+      228
+    ],
+    "severity": "medium",
+    "decoy": false,
+    "summary": "SETNX checks contains() and sets under two separate lock acquisitions, so two clients can both see the key absent and both 'win' (TOCTOU); do the check and set under one guard."
+  },
+  {
+    "id": "rs-expiry-inverted",
+    "file": "src/store.rs",
+    "lines": [
+      12,
+      14
+    ],
+    "severity": "high",
+    "decoy": false,
+    "summary": "Entry::is_expired is inverted (deadline > now): keys with a TTL read as expired immediately and then never expire; should be deadline <= now."
+  },
+  {
+    "id": "rs-incr-overflow",
+    "file": "src/store.rs",
+    "lines": [
+      111,
+      121
+    ],
+    "severity": "medium",
+    "decoy": false,
+    "summary": "INCR adds with plain +: overflow panics in debug builds and silently wraps in release; use checked_add and return an error."
+  },
+  {
+    "id": "rs-byte-at-a-time-reads",
+    "file": "src/server.rs",
+    "lines": [
+      60,
+      80
+    ],
+    "severity": "medium",
+    "decoy": false,
+    "summary": "read_line reads the raw TcpStream one byte per read() call (one syscall per byte); wrap the stream in a BufReader."
+  },
+  {
+    "id": "rs-stats-unbounded-latencies",
+    "file": "src/stats.rs",
+    "lines": [
+      12,
+      30
+    ],
+    "severity": "medium",
+    "decoy": false,
+    "summary": "Stats keeps every command's latency forever (Vec grows without bound) and STATS clones and sorts the whole Vec under the stats lock; use a bounded window or a histogram."
+  },
+  {
+    "id": "rs-snapshot-flush-error-ignored",
+    "file": "src/persist.rs",
+    "lines": [
+      153,
+      156
+    ],
+    "severity": "medium",
+    "decoy": false,
+    "summary": "write_file discards the BufWriter flush error (let _ = out.flush()), where buffered write failures surface, so SAVE/BACKUP report OK for a truncated snapshot; it also truncates the live snapshot in place instead of writing a temp file and renaming."
+  },
+  {
+    "id": "rs-load-corrupt-snapshot-silently-empty",
+    "file": "src/persist.rs",
+    "lines": [
+      125,
+      128
+    ],
+    "severity": "high",
+    "decoy": false,
+    "summary": "Snapshots::load turns a corrupt snapshot (unwrap_or_default) and any read error other than not-found into an empty store with no message; the next SAVE then overwrites the real data. Fail startup or at least log and keep the file."
+  },
+  {
+    "id": "rs-from-utf8-unchecked-client-input",
+    "file": "src/protocol.rs",
+    "lines": [
+      138,
+      139
+    ],
+    "severity": "high",
+    "decoy": false,
+    "summary": "parse_line calls from_utf8_unchecked on raw bytes from the network: invalid UTF-8 from any client is undefined behaviour; use std::str::from_utf8 and return a protocol error."
+  },
+  {
+    "id": "rs-lock-held-during-socket-writes",
+    "file": "src/server.rs",
+    "lines": [
+      250,
+      257
+    ],
+    "severity": "medium",
+    "decoy": false,
+    "summary": "KEYS keeps the global store lock while writing each key to the client socket; a slow or stalled reader blocks every other connection. Collect the keys, drop the guard, then write."
+  },
+  {
+    "id": "rs-port-truncating-cast",
+    "file": "src/config.rs",
+    "lines": [
+      64,
+      65
+    ],
+    "severity": "low",
+    "decoy": false,
+    "summary": "--port is parsed as u32 and cast with 'as u16', so out-of-range values silently wrap (70000 -> 4464); parse as u16 and reject."
+  },
+  {
+    "id": "rs-decoy-hex-from-utf8-unchecked",
+    "file": "src/persist.rs",
+    "lines": [
+      25,
+      31
+    ],
+    "severity": "low",
+    "decoy": true,
+    "summary": "DECOY: from_utf8_unchecked in to_hex is sound; every byte pushed comes from the ASCII HEX table."
+  },
+  {
+    "id": "rs-decoy-string-write-unwrap",
+    "file": "src/stats.rs",
+    "lines": [
+      36,
+      44
+    ],
+    "severity": "low",
+    "decoy": true,
+    "summary": "DECOY: unwrap() on writeln! into a String is fine; fmt::Write for String never returns an error."
+  },
+  {
+    "id": "rs-decoy-box-leak-config",
+    "file": "src/main.rs",
+    "lines": [
+      14,
+      14
+    ],
+    "severity": "low",
+    "decoy": true,
+    "summary": "DECOY: Box::leak of the config is a deliberate one-time 'static allocation that lives for the whole process; not a leak in practice."
+  },
+  {
+    "id": "rs-decoy-relaxed-connection-counter",
+    "file": "src/server.rs",
+    "lines": [
+      140,
+      142
+    ],
+    "severity": "low",
+    "decoy": true,
+    "summary": "DECOY: Relaxed ordering is enough for the connection counter; fetch_add is an atomic read-modify-write, so the limit check isn't racy, and no other memory is published through it."
+  }
+]

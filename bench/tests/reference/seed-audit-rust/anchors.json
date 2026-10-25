@@ -1,0 +1,21 @@
+{
+  "rs-backup-path-traversal": "pub fn backup(&self, snapshot: &str, name: &str)",
+  "rs-admin-commands-skip-auth": "pub fn requires_auth(&self) -> bool",
+  "rs-unbounded-value-alloc": "fn read_value(stream: &mut TcpStream, len: usize)",
+  "rs-incr-panic-poisons-lock": "Command::Incr { key, delta } => {",
+  "rs-get-clones-store": "Command::Get(key) => {",
+  "rs-setnx-race": "Command::SetNx { key, value } => {",
+  "rs-expiry-inverted": "fn is_expired(&self, now: Instant) -> bool",
+  "rs-incr-overflow": "pub fn incr(&mut self, key: &str, delta: i64)",
+  "rs-byte-at-a-time-reads": "fn read_line(stream: &mut TcpStream)",
+  "rs-stats-unbounded-latencies": "pub fn record(&mut self, elapsed: Duration, ok: bool)",
+  "rs-snapshot-flush-error-ignored": "fn write_file(path: &Path, contents: &str)",
+  "rs-load-corrupt-snapshot-silently-empty": "pub fn load(&self, max_keys: usize) -> Store",
+  "rs-from-utf8-unchecked-client-input": "pub fn parse_line(raw: &[u8])",
+  "rs-lock-held-during-socket-writes": "Command::Keys(prefix) => {",
+  "rs-port-truncating-cast": "let port: u32 = number(&flag, &value)?;",
+  "rs-decoy-hex-from-utf8-unchecked": "pub fn to_hex(bytes: &[u8]) -> String",
+  "rs-decoy-string-write-unwrap": "let mut out = String::new();",
+  "rs-decoy-box-leak-config": "let config: &'static Config = Box::leak(Box::new(config));",
+  "rs-decoy-relaxed-connection-counter": "let active = self.shared.connections.fetch_add(1, Ordering::Relaxed);"
+}

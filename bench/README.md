@@ -96,6 +96,11 @@ Run the stages in order: `probe`, `run`, `capture`, `grade`, `judge`, `spotcheck
 - **Tasks.** Public seeded fixtures (`tasks/`) and real tasks from past sessions in private
   repos (`tasks-private/`, gitignored). Each task has one category and a frozen hidden
   checklist, hidden tests or known issues.
+  A task's `setup.sh` (installing deps) runs before the `bench-base` commit; an optional
+  `after_base.sh` runs after it, for tasks that start from uncommitted work. Reference
+  solutions live in `tests/reference/<task>/`, outside every workspace, and
+  `tests/test_seeded_tasks.py` checks that each seeded task scores low untouched and full
+  with its reference solution.
 - **Win rule (frozen).** Each category has one primary metric. For audit and ship, a task is
   a bruhs win or loss when the bruhs mean minus the bare mean is more than the margin. For
   the 1/0 categories, one arm needs at least two more passing repeats than the other, however

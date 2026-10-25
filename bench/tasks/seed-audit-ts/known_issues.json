@@ -1,0 +1,222 @@
+[
+  {
+    "id": "ts-sqli-order-search",
+    "file": "src/routes/orders.ts",
+    "lines": [
+      42,
+      52
+    ],
+    "severity": "critical",
+    "decoy": false,
+    "summary": "GET /orders/search interpolates the user's query string (and user id) straight into the SQL text: SQL injection; use bound parameters (LIKE ? with the value escaped)."
+  },
+  {
+    "id": "ts-password-unsalted-sha256",
+    "file": "src/auth.ts",
+    "lines": [
+      7,
+      12
+    ],
+    "severity": "high",
+    "decoy": false,
+    "summary": "Passwords are stored as a single unsalted SHA-256: fast to brute-force and identical passwords share hashes; use scrypt/argon2/bcrypt with a per-user salt."
+  },
+  {
+    "id": "ts-session-token-math-random",
+    "file": "src/auth.ts",
+    "lines": [
+      24,
+      28
+    ],
+    "severity": "high",
+    "decoy": false,
+    "summary": "Session tokens come from Math.random() plus a timestamp: not cryptographically random, guessable; use crypto.randomBytes."
+  },
+  {
+    "id": "ts-order-idor",
+    "file": "src/routes/orders.ts",
+    "lines": [
+      56,
+      63
+    ],
+    "severity": "high",
+    "decoy": false,
+    "summary": "GET /orders/:id loads any order by id without checking it belongs to req.user: any logged-in user can read every order (IDOR)."
+  },
+  {
+    "id": "ts-signup-returns-password-hash",
+    "file": "src/routes/users.ts",
+    "lines": [
+      25,
+      28
+    ],
+    "severity": "medium",
+    "decoy": false,
+    "summary": "POST /signup responds with SELECT * of the user row, leaking password_hash to the client."
+  },
+  {
+    "id": "ts-admin-stats-unauthenticated",
+    "file": "src/routes/admin.ts",
+    "lines": [
+      14,
+      32
+    ],
+    "severity": "high",
+    "decoy": false,
+    "summary": "/admin/stats is registered before router.use(requireAdmin(...)), so it is served without the admin key and exposes revenue and top customers' emails."
+  },
+  {
+    "id": "ts-stats-cache-shared-across-users",
+    "file": "src/routes/users.ts",
+    "lines": [
+      51,
+      60
+    ],
+    "severity": "high",
+    "decoy": false,
+    "summary": "/me/stats caches by req.originalUrl only, not by user: every user gets whichever user's stats were cached first (cross-user data leak)."
+  },
+  {
+    "id": "ts-pagination-offset-off-by-one",
+    "file": "src/lib/pagination.ts",
+    "lines": [
+      20,
+      23
+    ],
+    "severity": "medium",
+    "decoy": false,
+    "summary": "Pages are 1-based but offset = page * pageSize, so page 1 skips the first pageSize rows; should be (page - 1) * pageSize."
+  },
+  {
+    "id": "ts-median-lexicographic-sort",
+    "file": "src/lib/stats.ts",
+    "lines": [
+      21,
+      27
+    ],
+    "severity": "medium",
+    "decoy": false,
+    "summary": "median() sorts numbers with the default sort(), which compares as strings (1000 < 200), so the median is wrong; needs (a, b) => a - b."
+  },
+  {
+    "id": "ts-export-n-plus-one",
+    "file": "src/routes/admin.ts",
+    "lines": [
+      55,
+      62
+    ],
+    "severity": "medium",
+    "decoy": false,
+    "summary": "/admin/orders/export runs one order_items query per order (N+1) over the whole table; fetch items in one query (WHERE order_id IN / join) and group."
+  },
+  {
+    "id": "ts-cache-unbounded",
+    "file": "src/lib/cache.ts",
+    "lines": [
+      6,
+      23
+    ],
+    "severity": "medium",
+    "decoy": false,
+    "summary": "TtlCache never enforces maxEntries and never deletes expired entries, so it grows without bound (keys come from request URLs, so clients can grow it at will)."
+  },
+  {
+    "id": "ts-order-items-unvalidated",
+    "file": "src/lib/validate.ts",
+    "lines": [
+      26,
+      37
+    ],
+    "severity": "high",
+    "decoy": false,
+    "summary": "parseOrderInput casts the body to OrderInput and never validates each item: negative or fractional quantities (or non-numeric productId) pass, so a negative quantity adds stock and makes a negative total."
+  },
+  {
+    "id": "ts-strict-mode-disabled",
+    "file": "tsconfig.json",
+    "lines": [
+      8,
+      8
+    ],
+    "severity": "medium",
+    "decoy": false,
+    "summary": "tsconfig turns strict off, so null/undefined checks are skipped (e.g. req.user is optional but used unchecked) and implicit any is allowed."
+  },
+  {
+    "id": "ts-import-swallows-errors",
+    "file": "src/routes/admin.ts",
+    "lines": [
+      44,
+      52
+    ],
+    "severity": "medium",
+    "decoy": false,
+    "summary": "Product CSV import swallows every row error with an empty catch and still reports all rows as imported; failed rows are silently dropped."
+  },
+  {
+    "id": "ts-refund-async-unhandled",
+    "file": "src/routes/admin.ts",
+    "lines": [
+      66,
+      78
+    ],
+    "severity": "high",
+    "decoy": false,
+    "summary": "Async refund handler on Express 4: thrown HttpErrors and a failed refundPayment reject a promise Express 4 doesn't catch, so the request hangs and the unhandled rejection can crash the process; wrap with try/catch -> next(err)."
+  },
+  {
+    "id": "ts-error-handler-leaks-stack",
+    "file": "src/app.ts",
+    "lines": [
+      15,
+      16
+    ],
+    "severity": "low",
+    "decoy": false,
+    "summary": "The 500 error handler sends err.stack (and the raw internal message) to clients."
+  },
+  {
+    "id": "ts-decoy-order-by-whitelist",
+    "file": "src/routes/orders.ts",
+    "lines": [
+      23,
+      29
+    ],
+    "severity": "low",
+    "decoy": true,
+    "summary": "DECOY: ORDER BY interpolation is safe; column comes from a fixed Map whitelist with a default and direction is one of two literals."
+  },
+  {
+    "id": "ts-decoy-safe-equal-length",
+    "file": "src/auth.ts",
+    "lines": [
+      15,
+      21
+    ],
+    "severity": "low",
+    "decoy": true,
+    "summary": "DECOY: the length check before timingSafeEqual is required (it throws on unequal lengths) and only reveals length; this is the standard constant-time compare."
+  },
+  {
+    "id": "ts-decoy-sequential-retry",
+    "file": "src/lib/webhooks.ts",
+    "lines": [
+      33,
+      52
+    ],
+    "severity": "low",
+    "decoy": true,
+    "summary": "DECOY: awaiting inside the retry loop is intentional; attempts must be sequential with backoff between them."
+  },
+  {
+    "id": "ts-decoy-jitter-math-random",
+    "file": "src/lib/webhooks.ts",
+    "lines": [
+      12,
+      14
+    ],
+    "severity": "low",
+    "decoy": true,
+    "summary": "DECOY: Math.random() for retry jitter is fine; nothing security-sensitive depends on it."
+  }
+]
