@@ -175,6 +175,40 @@ def _libc_fchflags():
 _FCHFLAGS = _libc_fchflags()
 
 
+def _libc_setattrlistat():
+    """macOS ``setattrlistat(dirfd, name, ...)``: sets ATTR_CMN_FLAGS on one entry relative
+    to a dir fd, ``FSOPT_NOFOLLOW`` on the entry itself. Needed for a file we can't open
+    (mode 000 + uchg: chmod is refused on an immutable file)."""
+    try:
+        import ctypes
+        import ctypes.util
+
+        class AttrList(ctypes.Structure):
+            _fields_ = [("bitmapcount", ctypes.c_ushort), ("reserved", ctypes.c_uint16),
+                        ("commonattr", ctypes.c_uint32), ("volattr", ctypes.c_uint32),
+                        ("dirattr", ctypes.c_uint32), ("fileattr", ctypes.c_uint32),
+                        ("forkattr", ctypes.c_uint32)]
+
+        libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
+        fn = libc.setattrlistat
+        fn.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_void_p, ctypes.c_void_p,
+                       ctypes.c_size_t, ctypes.c_uint32]
+        fn.restype = ctypes.c_int
+        attrs = AttrList(5, 0, 0x00040000, 0, 0, 0, 0)  # ATTR_BIT_MAP_COUNT, ATTR_CMN_FLAGS
+
+        def clear(dfd: int, name: str) -> None:
+            zero = ctypes.c_uint32(0)
+            fn(dfd, os.fsencode(name), ctypes.byref(attrs), ctypes.byref(zero),
+               ctypes.sizeof(zero), 0x1)  # FSOPT_NOFOLLOW
+
+        return clear
+    except (OSError, AttributeError):
+        return None
+
+
+_SETATTRLISTAT_CLEAR = _libc_setattrlistat()
+
+
 def _fchflags_clear(fd: int) -> None:
     """Clear the BSD flags (uchg, uappnd, ...) of the open file ``fd``; no path involved."""
     if _FCHFLAGS is not None:
@@ -185,7 +219,8 @@ def _unflag(dfd: int, name: str) -> None:
     """Clear the flags on entry ``name`` of the directory ``dfd`` and on ``dfd`` itself,
     by fds only (``fchflags``): the entry is opened relative to ``dfd`` with
     ``O_NOFOLLOW`` (a symlink itself via ``O_SYMLINK``), so a swapped-in symlink anywhere
-    can't redirect it. A path-based chflags is never used."""
+    can't redirect it; an entry that can't be opened goes through ``setattrlistat`` on
+    ``dfd`` with ``FSOPT_NOFOLLOW``. A path-based chflags is never used."""
     _fchflags_clear(dfd)
     try:
         st = os.stat(name, dir_fd=dfd, follow_symlinks=False)
@@ -203,6 +238,10 @@ def _unflag(dfd: int, name: str) -> None:
     try:
         fd = os.open(name, flags, dir_fd=dfd)
     except OSError:
+        # unreadable (e.g. mode 000 + uchg, where chmod is refused too): set the flags by
+        # name relative to ``dfd``, one component, the entry itself never followed
+        if _SETATTRLISTAT_CLEAR is not None and "/" not in name:
+            _SETATTRLISTAT_CLEAR(dfd, name)
         return
     try:
         if stat.S_ISLNK(st.st_mode) or (os.fstat(fd).st_dev, os.fstat(fd).st_ino) == (

@@ -749,3 +749,19 @@ def test_unflag_never_goes_through_a_swapped_symlink(tmp_path, monkeypatch):
         assert not os.stat(tmp_path / "tree" / "a-old" / "f").st_flags & stat.UF_IMMUTABLE
     finally:
         real_chflags(outside / "f", 0)
+
+
+def test_unflag_handles_an_unreadable_immutable_file(tmp_path):
+    from bruhsbench import untrusted
+
+    d = tmp_path / "d"
+    d.mkdir()
+    (d / "f").write_text("x")
+    os.chmod(d / "f", 0)
+    os.chflags(d / "f", stat.UF_IMMUTABLE)
+    try:
+        untrusted.remove(tmp_path, "d")
+        assert not d.exists()
+    finally:
+        if (d / "f").exists():
+            os.chflags(d / "f", 0)

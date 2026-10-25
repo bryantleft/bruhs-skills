@@ -610,30 +610,45 @@ def test_capture_and_grade_hold_the_active_lock(tmp_path, monkeypatch):
     assert not work_root_active(default_work_root(root))
 
 
-def test_hold_active_relocks_after_clean_all_removed_the_root(tmp_path):
+def test_hold_active_blocks_for_the_whole_clean_all(tmp_path, monkeypatch):
     import threading
     import time
 
-    from bruhsbench import runner
+    from bruhsbench import runner, untrusted
 
     wr = tmp_path / "work" / "w"
-    wr.mkdir(parents=True)
+    (wr / "run" / "workspace").mkdir(parents=True)
+    assert not runner.active_lock_path(wr).is_relative_to(wr)  # outside the deleted tree
+    deleted, resume = threading.Event(), threading.Event()
+    real_remove = untrusted.remove
+
+    def paused_remove(root, name):
+        real_remove(root, name)  # everything under the work root is gone...
+        deleted.set()
+        resume.wait(10)          # ...but the removal hasn't returned yet
+
+    monkeypatch.setattr(untrusted, "remove", paused_remove)
     entered = threading.Event()
+
+    def clean_all():
+        with runner.exclusive_work_root(wr):
+            runner.remove_work_root(wr)
 
     def later_run():
         with runner.hold_active(wr):
             entered.set()
-            time.sleep(0.3)
 
-    with runner.exclusive_work_root(wr):
-        th = threading.Thread(target=later_run)
-        th.start()
-        time.sleep(0.2)
-        assert not entered.is_set()  # blocked behind the clean
-        runner.remove_work_root(wr)
+    cleaner = threading.Thread(target=clean_all)
+    cleaner.start()
+    assert deleted.wait(10)
+    run = threading.Thread(target=later_run)
+    run.start()
+    time.sleep(0.3)
+    assert not entered.is_set()  # blocked mid-removal
+    resume.set()
+    cleaner.join()
     assert entered.wait(10)
-    assert runner.work_root_active(wr)  # it holds the lock at the live path
-    th.join()
+    run.join()
 
 
 def test_recapture_regrades_checklist_and_honesty(tmp_path, monkeypatch):
@@ -671,3 +686,53 @@ def test_recapture_regrades_checklist_and_honesty(tmp_path, monkeypatch):
     calls.clear()
     cli._capture_and_refresh(d, t, tmp_path)  # graded with screenshots: nothing to redo
     assert calls == []
+
+
+def test_recapture_with_page_errors_regrades_before_cleanup(tmp_path, monkeypatch,
+                                                           fake_agents):
+    from results_fixture import PNG
+    from test_runner import CLAUDE, EDIT_AND_REPLY, fake_agent, override
+
+    from bruhsbench.runner import default_work_root, run_matrix
+
+    ui = make_task(tmp_path, "t-ui", "ui", pages=["/"])
+    (ui.dir / "fixture").mkdir()
+    (ui.dir / "fixture" / "app.txt").write_text("hello\n")
+    root = tmp_path / "res"
+    rid = "t-ui__claude__bare__r1"
+    outcome = {"capture": {"applicable": True, "error": "dev server never became ready"}}
+    events = []
+
+    def capture(d, task, ws):
+        (d / "grades").mkdir(exist_ok=True)
+        rec = outcome["capture"]
+        if "page_errors" in rec:  # a finished capture still writes PNGs
+            (d / "screens").mkdir(exist_ok=True)
+            (d / "screens" / "root__desktop__light.png").write_bytes(PNG)
+        (d / "grades" / "capture.json").write_text(json.dumps(rec))
+
+    def grade(d, task):
+        _all_graded(d)
+        n = len(list((d / "screens").glob("*.png")))
+        (d / "grades" / "checklist.json").write_text(json.dumps(
+            {"applicable": True, "score": 0.5, "items": [], "screens": n}))
+
+    def regrade(d, task):
+        events.append(("regrade", (default_work_root(root) / rid / "workspace").is_dir()))
+        (d / "grades" / "checklist.json").write_text(json.dumps(
+            {"applicable": True, "score": 1.0, "items": [], "screens": 1}))
+
+    monkeypatch.setattr(cli, "_capture_run", capture)
+    monkeypatch.setattr(cli, "_grade_run", grade)
+    monkeypatch.setattr(cli, "_regrade_after_capture", regrade)
+    monkeypatch.setattr("bruhsbench.capture.capture_before", lambda *a, **k: [])
+    post = cli._post_processor(root, cli._disk_guard(root), cleanup=True)
+    ov = override(fake_agent(tmp_path, EDIT_AND_REPLY))
+    run_matrix([ui], [CLAUDE], ["bare"], 1, root, command_override=ov, post_run=post)
+    assert (default_work_root(root) / rid / "workspace").is_dir()  # harness error: kept
+    assert events == []
+
+    outcome["capture"] = {"applicable": True, "page_errors": {"/": "500"}}
+    run_matrix([ui], [CLAUDE], ["bare"], 1, root, command_override=ov, post_run=post)
+    assert events == [("regrade", True)]  # regraded while the workspace still existed
+    assert not (default_work_root(root) / rid).exists()  # then cleaned

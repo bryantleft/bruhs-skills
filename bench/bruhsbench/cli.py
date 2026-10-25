@@ -303,11 +303,11 @@ def _post_processor(root: Path, guard, *, cleanup: bool, post_parallel: int = 2)
 
 
 def _checklist_stale(d: Path, task: Task) -> bool:
-    """A ui/copy run's checklist was graded without the screenshots a later successful
-    capture now provides."""
+    """A ui/copy run's checklist was graded without the screenshots a later finished
+    capture now provides (page errors included: those captures still write PNGs)."""
     from .graders import read_grade
 
-    if task.category not in PAIRWISE or not _captured(d):
+    if task.category not in PAIRWISE or not _capture_finished(d):
         return False
     g = read_grade(d, "checklist")
     if not g or not g.get("applicable") or not any((d / "screens").glob("*.png")):
