@@ -150,18 +150,94 @@ def _rmtree_at(dfd: int, name: str) -> None:
         pass
 
 
+class RemoveIncomplete(OSError):
+    """:func:`remove` deleted what it could; ``leftovers`` are the paths it couldn't."""
+
+    def __init__(self, leftovers: list[str]):
+        super().__init__(f"could not delete {len(leftovers)} path(s): {leftovers[:5]}")
+        self.leftovers = leftovers
+
+
+def _unflag(dfd: int, name: str, path: str) -> None:
+    """Clear BSD file flags (uchg, schg-free ones) on ``name`` under ``dfd``. chflags has
+    no fd form, so it goes by ``path`` with ``follow_symlinks=False``, and only when
+    ``path`` is still the very inode reached through the fds (no swapped-in symlink)."""
+    try:
+        st = os.stat(name, dir_fd=dfd, follow_symlinks=False)
+        pst = os.stat(path, follow_symlinks=False)
+        if (st.st_dev, st.st_ino) == (pst.st_dev, pst.st_ino) and st.st_flags:
+            os.chflags(path, 0, follow_symlinks=False)
+    except (OSError, AttributeError):
+        pass
+
+
+def _purge_at(dfd: int, name: str, path: str, parent_path: str, pfd: int | None,
+              parent_name: str | None, errors: list[str]) -> None:
+    """Best-effort, symlink-safe removal of ``name`` under ``dfd`` (path ``path``); what
+    can't be removed is appended to ``errors``. On EPERM (an immutable flag on the entry
+    or its directory) the flags are cleared and the delete retried once."""
+
+    def retry(op) -> None:
+        try:
+            op()
+        except PermissionError:
+            _unflag(dfd, name, path)
+            if pfd is not None and parent_name is not None:
+                _unflag(pfd, parent_name, parent_path)
+            try:
+                op()
+            except OSError:
+                errors.append(path)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            errors.append(path)
+
+    try:
+        st = os.stat(name, dir_fd=dfd, follow_symlinks=False)
+    except FileNotFoundError:
+        return
+    except OSError:
+        errors.append(path)
+        return
+    if not stat.S_ISDIR(st.st_mode):
+        retry(lambda: os.unlink(name, dir_fd=dfd))
+        return
+    try:
+        sub = os.open(name, _DIR_FLAGS, dir_fd=dfd)
+    except FileNotFoundError:
+        return
+    except OSError:
+        errors.append(path)
+        return
+    try:
+        try:
+            os.fchmod(sub, 0o700)  # a read-only dir can't have its entries unlinked
+        except OSError:
+            pass
+        for entry in os.listdir(sub):
+            _purge_at(sub, entry, f"{path}/{entry}", path, dfd, name, errors)
+    finally:
+        os.close(sub)
+    retry(lambda: os.rmdir(name, dir_fd=dfd))
+
+
 def remove(root: Path, name: str) -> None:
     """Delete ``root/name`` (file, symlink or whole tree) without following any symlink:
     ``root`` is opened ``O_NOFOLLOW`` and the tree is walked by dir fds, so a link an
     agent planted is removed as a link, never traversed. ``name`` must be one plain path
-    component."""
+    component. Deletes everything it can, clearing immutable flags where needed; raises
+    :class:`RemoveIncomplete` listing what is left."""
     if _parts(name) != (name,):
         raise UnsafePath(f"not a single path component: {name!r}")
     fd = os.open(root, _DIR_FLAGS)
+    errors: list[str] = []
     try:
-        _clear_at(fd, name)
+        _purge_at(fd, name, str(Path(root) / name), str(root), None, None, errors)
     finally:
         os.close(fd)
+    if errors:
+        raise RemoveIncomplete(errors)
 
 
 def _child_dir(dfd: int, name: str) -> int:

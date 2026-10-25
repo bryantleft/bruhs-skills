@@ -35,6 +35,7 @@ interrupt (Ctrl-C) stops it; both kill every live agent process group first.
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import logging
@@ -166,7 +167,7 @@ def ensure_bruhs_export(work_root: Path, commit: str) -> Path:
 # --------------------------------------------------------------------------- disk
 
 MIN_FREE_ENV = "BRUHSBENCH_MIN_FREE_GB"
-DEFAULT_MIN_FREE_GB = 40.0
+DEFAULT_MIN_FREE_GB = 10.0  # ruling R36
 DISK_WAIT_S = 20 * 60  # how long a starved run waits for other runs' cleanup
 DISK_POLL_S = 30.0
 FreeSpace = Callable[[Path], float]
@@ -193,7 +194,7 @@ def min_free_gb() -> float:
 
 class DiskGuard:
     """Refuses to start work while the filesystems holding ``paths`` have less than
-    ``min_gb`` free (``$BRUHSBENCH_MIN_FREE_GB``, default 40). While other jobs are live
+    ``min_gb`` free (``$BRUHSBENCH_MIN_FREE_GB``, default 10). While other jobs are live
     (:meth:`job`), :meth:`wait` polls for up to ``wait_s`` for their cleanup to free
     space; then (or at once, with nothing else running) it raises :class:`DiskLow`."""
 
@@ -294,17 +295,51 @@ def mark_workspace_deleted(out_dir: Path) -> None:
         _write_result(Path(out_dir), replace(load_result(path), workspace_deleted=True))
 
 
-def cleanup_run(out_root: Path, work_root: Path, run_id: str) -> bool:
+def cleanup_run(out_root: Path, work_root: Path, run_id: str) -> list[str]:
     """Delete run ``run_id``'s work dir (workspace, home, tmp) and record
-    ``workspace_deleted`` in its result.json. Never raises for a failed delete (logged,
-    returns False): a cleanup problem must not stop the matrix."""
+    ``workspace_deleted`` in its result.json. Returns the paths it couldn't delete ([] on
+    success). Never raises for a failed delete (logged): a cleanup problem must not stop
+    the matrix."""
     try:
         remove_work_dir(work_root, run_id, protect=[out_root])
+    except untrusted.RemoveIncomplete as exc:
+        log.warning("%s: cleanup left %d path(s): %s", run_id, len(exc.leftovers), exc)
+        return exc.leftovers
     except (OSError, ValueError) as exc:
         log.warning("%s: cleanup failed: %s", run_id, exc)
-        return False
+        return [str(Path(work_root) / run_id)]
     mark_workspace_deleted(Path(out_root) / run_id)
-    return True
+    return []
+
+
+ACTIVE_LOCK = ".active.lock"
+
+
+@contextmanager
+def hold_active(work_root: Path):
+    """Shared lock on ``<work_root>/.active.lock`` while a matrix uses the work root;
+    ``clean --all`` (:func:`work_root_active`) refuses while any holder is live."""
+    Path(work_root).mkdir(parents=True, exist_ok=True)
+    with open(Path(work_root) / ACTIVE_LOCK, "a") as f:
+        fcntl.flock(f, fcntl.LOCK_SH)
+        try:
+            yield
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
+
+
+def work_root_active(work_root: Path) -> bool:
+    """A ``run``/``pipeline`` currently holds the work root's active lock."""
+    path = Path(work_root) / ACTIVE_LOCK
+    if not path.is_file():
+        return False
+    with open(path, "a") as f:
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return True
+        fcntl.flock(f, fcntl.LOCK_UN)
+        return False
 
 
 # --------------------------------------------------------------------------- contamination
@@ -688,6 +723,17 @@ def run_matrix(
     out_root = Path(out_root)
     out_root.mkdir(parents=True, exist_ok=True)
     work_root = _check_outside_home(work_root) if work_root else default_work_root(out_root)
+    with hold_active(work_root):  # `clean --all` refuses while this is held
+        return _run_matrix(tasks, models, arms, repeats, out_root, work_root,
+                           parallel=parallel, claude_parallel=claude_parallel,
+                           bruhs_commit=bruhs_commit, seed=seed, timeout_s=timeout_s,
+                           command_override=command_override, disk_guard=disk_guard,
+                           post_run=post_run)
+
+
+def _run_matrix(tasks, models, arms, repeats, out_root: Path, work_root: Path, *,
+                parallel, claude_parallel, bruhs_commit, seed, timeout_s,
+                command_override, disk_guard, post_run) -> list[RunResult]:
     guard = disk_guard or DiskGuard([work_root, out_root])
     guard.wait("starting the matrix")  # nothing runs yet: raises DiskLow at once if low
     commit = git_head(BRUHS_REPO, bruhs_commit)

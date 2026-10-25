@@ -78,10 +78,10 @@ picks any other dir.
 |---|---|
 | `uv run bruhsbench probe [--models claude codex grok]` | Isolation probe for every CLI x arm: each sees exactly its arm's skills and MCPs, and the two arms differ only by bruhs. Prints setup steps when the claude token is missing. |
 | `uv run bruhsbench run [--pilot] [--tasks ID…] [--models …] [--repeats N] [--heldout] [--parallel N] [--timeout MIN]` | Runs the matrix. Defaults: all non-held-out tasks, 3 models, 2 arms, 3 repeats, 45-minute timeout. `--pilot` runs the tasks in `bench/pilot.toml` with 1 repeat and can't be combined with `--tasks`. Runs that already have `result.json` are skipped. |
-| `uv run bruhsbench pipeline [same options as run] [--no-cleanup]` | `run`, plus capture (ui/copy), grade and cleanup for each run as soon as it finishes, still in parallel across runs. Once a run is captured and fully graded, its work dir (workspace and home) is deleted and `result.json` records `workspace_deleted: true`. Runs whose grading fails partway keep their workspace, and the next `pipeline` call retries them. Use this for the full matrix. |
+| `uv run bruhsbench pipeline [same options as run] [--no-cleanup] [--post-parallel 2]` | `run`, plus capture (ui/copy), grade and cleanup for each run as soon as it finishes, still in parallel across runs. Once a run is captured and fully graded, its work dir (workspace and home) is deleted and `result.json` records `workspace_deleted: true`. Runs whose grading fails partway, or whose capture hit a harness error (the dev server didn't start, say; page errors alone don't count), keep their workspace, and the next `pipeline` or `capture` call retries them. Use this for the full matrix. |
 | `uv run bruhsbench capture` | Screenshots ui/copy runs and each task's starting state at desktop and mobile sizes, in light and dark. |
 | `uv run bruhsbench grade` | Grades every finished run in this order: commands, scope, checklist, audit, honesty. The checklist judges see the screenshots, so run `capture` first (`grade` warns about ui/copy runs without screenshots). Runs with a grader error or an invalid checklist are retried on the next call. |
-| `uv run bruhsbench clean [--all]` | Deletes the work dirs of runs that are already captured and graded, after you ran the stages one by one. `--all` deletes this results dir's whole work root. It never touches `bench/results` or `bench/tasks*`, and it removes symlinks without following them. |
+| `uv run bruhsbench clean [--all] [--force]` | Deletes the work dirs of runs that are already captured and graded, after you ran the stages one by one. It lists runs kept because their capture failed, and any files it couldn't delete. `--all` deletes this results dir's whole work root. It refuses while a `run` or `pipeline` is using that work root (they hold `<work root>/.active.lock`); `--force` overrides. It never touches `bench/results` or `bench/tasks*`. It removes symlinks without following them and clears immutable flags it finds. |
 | `uv run bruhsbench judge` | Blind pairwise verdicts for ui/copy: each (task, model, repeat) is judged by both other model families. Judge errors are retried on the next call. |
 | `uv run bruhsbench spotcheck [-n 20] [--seed 0] [--port 8765] [--force]` | A local page (127.0.0.1 only) where you blind-pick ~20 ui/copy pairs. Picks are saved to `spotcheck.json`, and it prints how often the judges agreed with you. The first sample drawn is reused on later runs; `--force` draws a new one and clears the picks (the old file is kept as `spotcheck.json.bak`). |
 | `uv run bruhsbench report [--public] [--out DIR]` | Writes an HTML report and its markdown twin. The private report goes to `<results>/report/`; `--public` writes to `bench/results/published/<date>/`. |
@@ -104,10 +104,14 @@ would add up to tens of GB, so use `pipeline`, or `clean` after `grade`.
 
 - **Free-space guard.** `run`, `pipeline`, `capture` and `grade` check free space on the
   work and results filesystems before each run, capture or grade. The threshold is
-  `BRUHSBENCH_MIN_FREE_GB`, 40 by default. When space is short and other runs are live, the
+  `BRUHSBENCH_MIN_FREE_GB`, 10 by default (a non-number is an error). When space is short and other runs are live, the
   guard waits up to 20 minutes for their cleanup. If space still doesn't free up, no new
   work starts, live runs finish normally, and the command exits with code 4. Rerun the same
   command to resume. Each `result.json` records `free_gb_at_start`.
+- **Contention.** Under `pipeline`, capture and grading run next to the agent runs and
+  compete with them for CPU (builds, test suites, the capture browser) and local ports (dev
+  servers on free ports, so they don't collide). `--post-parallel` (default 2) caps how
+  many runs capture or grade at once. A slow grade holds its agent slot until it finishes.
 - **Clones, not copies.** Grading and capture work in APFS clones (`cp -c`) of the
   workspace. Real-repo checkouts fetch only the base commit's history. A task's `setup.sh`
   should copy large seed data with `cp -c` (see `tasks-private/_shared/mints/install.sh`).

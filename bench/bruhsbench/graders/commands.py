@@ -11,9 +11,9 @@ never in the agent's workspace:
 * base copy (reset to ``bench-base``): ``checks["test"]`` again; a test passing at base
   and present-and-failing after is a regression (R31). A base-passing test missing after
   (renamed, deleted) goes to ``removed_tests`` instead, reported but not a regression --
-  unless a test file failed to load after (a jest/vitest suite with no results, a pytest
-  collection error), when missing tests can't be told from tests that never ran and
-  all count as regressions.
+  unless the reporter flagged a test file that failed to load after (a jest/vitest suite
+  with no results, a pytest collection error) or no test ran at all, when missing tests
+  can't be told from tests that never ran and all count as regressions.
 
 Per-test results come from a report file or stdout. Each command gets
 ``$BRUHSBENCH_REPORT`` (a path in a scratch dir) to point its reporter at, e.g.
@@ -63,6 +63,8 @@ class SuiteResult:
     passed: int
     total: int
     tests: dict[str, bool] | None  # per-test outcome, when the output names tests
+    # the reporter said a test file failed to load/collect (so its tests never ran)
+    load_failed: bool = False
 
 
 @dataclass(frozen=True)
@@ -87,14 +89,15 @@ def _rel(path: str, root: Path | None) -> str:
     return path
 
 
-def _from_tests(tests: dict[str, bool]) -> SuiteResult:
-    return SuiteResult(sum(tests.values()), len(tests), tests)
+def _from_tests(tests: dict[str, bool], load_failed: bool = False) -> SuiteResult:
+    return SuiteResult(sum(tests.values()), len(tests), tests, load_failed)
 
 
 def _parse_jest(data: object, root: Path | None = None) -> SuiteResult | None:
     if not isinstance(data, dict) or not isinstance(data.get("testResults"), list):
         return None
     tests: dict[str, bool] = {}
+    load_failed = False
     for suite in data["testResults"]:
         if not isinstance(suite, dict):
             continue
@@ -109,7 +112,8 @@ def _parse_jest(data: object, root: Path | None = None) -> SuiteResult | None:
             counted = True
         if not counted and suite.get("status") == "failed":
             tests[name] = False  # the file failed to load or run: one failing entry
-    return _from_tests(tests)
+            load_failed = True
+    return _from_tests(tests, load_failed)
 
 
 def _parse_junit(text: str, cwd: Path | None = None) -> SuiteResult | None:
@@ -120,13 +124,17 @@ def _parse_junit(text: str, cwd: Path | None = None) -> SuiteResult | None:
     if root.tag not in ("testsuites", "testsuite"):
         return None
     tests: dict[str, bool] = {}
+    load_failed = False
     for case in root.iter("testcase"):
         if case.find("skipped") is not None:
             continue
         cls = _rel(case.get("classname") or case.get("file") or "", cwd)
         name = f"{cls}::{case.get('name', '')}" if cls else case.get("name", "")
-        tests[name] = case.find("failure") is None and case.find("error") is None
-    return _from_tests(tests)
+        error = case.find("error")
+        tests[name] = case.find("failure") is None and error is None
+        if error is not None and error.get("message") == "collection failure":  # pytest
+            load_failed = True
+    return _from_tests(tests, load_failed)
 
 
 def _json_in(text: str) -> object | None:
@@ -307,19 +315,21 @@ def _regressions(name: str, base: CheckResult, after: CheckResult
                  ) -> tuple[list[str], list[str]]:
     """(regressions, removed tests) (R31). A regression passed at base and is present and
     failing after; a base-passing test missing after (e.g. renamed) is only *removed*.
-    Except when a test file failed to load after (a new failing entry naming a file, not
-    a test: a jest/vitest suite with no results, a pytest collection error, which also
-    aborts the whole session): then a missing test can't be told from one that never
-    ran, so every missing base-passing test counts as a regression."""
+    Except when the after run's reporter flagged a test file that failed to load
+    (``SuiteResult.load_failed``: a jest/vitest suite that failed with no results, a
+    pytest collection error, which also aborts the whole session), or ran no tests at
+    all: then a missing test can't be told from one that never ran, so every missing
+    base-passing test counts as a regression."""
     base_tests = base.tests.tests if base.tests else None
     after_tests = after.tests.tests if after.tests else None
     if base_tests is not None:
         passed = sorted(t for t, ok in base_tests.items() if ok)
-        if after_tests is None or (not after_tests and not after.ok):
+        if after_tests is None:
             # the suite crashed or timed out: nothing that passed is known to still pass
             return (passed, []) if not after.ok else ([], [])
-        load_failed = any(not ok and "::" not in t and t not in base_tests
-                          for t, ok in after_tests.items())
+        if not after_tests:  # ran no tests at all (even if it exited 0: passWithNoTests)
+            return passed, []
+        load_failed = after.tests.load_failed
         regressions = [t for t in passed if t in after_tests and not after_tests[t]]
         missing = [t for t in passed if t not in after_tests]
         if load_failed:

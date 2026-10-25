@@ -501,7 +501,7 @@ def test_disk_guard_waits_for_other_jobs_then_proceeds_or_gives_up():
 
 def test_min_free_gb_from_env(monkeypatch):
     monkeypatch.delenv("BRUHSBENCH_MIN_FREE_GB")
-    assert runner.min_free_gb() == 40
+    assert runner.min_free_gb() == 10  # ruling R36
     monkeypatch.setenv("BRUHSBENCH_MIN_FREE_GB", "12.5")
     assert runner.min_free_gb() == 12.5
     monkeypatch.setenv("BRUHSBENCH_MIN_FREE_GB", "lots")
@@ -627,7 +627,7 @@ def _planted_run(tmp_path, bruhs_src):
 def test_cleanup_run_never_follows_planted_symlinks(tmp_path, bruhs_src):
     out, spec, res, precious = _planted_run(tmp_path, bruhs_src)
     work_root = res.workspace.parent.parent
-    assert runner.cleanup_run(out, work_root, spec.run_id)
+    assert runner.cleanup_run(out, work_root, spec.run_id) == []
     assert not os.path.lexists(work_root / spec.run_id)
     assert (precious / "keep.txt").read_text() == "keep"
     assert (precious / "sub" / "deep.txt").read_text() == "keep"
@@ -636,7 +636,7 @@ def test_cleanup_run_never_follows_planted_symlinks(tmp_path, bruhs_src):
     # the artifacts the judges need stay
     assert {"result.json", "diff.patch", "final.txt", "transcript.jsonl"} <= {
         p.name for p in (out / spec.run_id).iterdir()}
-    assert runner.cleanup_run(out, work_root, spec.run_id)  # idempotent
+    assert runner.cleanup_run(out, work_root, spec.run_id) == []  # idempotent
 
 
 def test_cleanup_refuses_paths_outside_the_work_root(tmp_path, bruhs_src, monkeypatch):
@@ -671,3 +671,46 @@ def test_remove_work_root_removes_everything_inside_only(tmp_path, bruhs_src):
     assert (precious / "keep.txt").exists() and (precious / "sub" / "deep.txt").exists()
     assert (out / spec.run_id / "result.json").is_file()
     assert not runner.remove_work_root(work_root)
+
+
+def test_cleanup_clears_immutable_flags(tmp_path, bruhs_src):
+    body = f"mkdir -p locked && echo x > locked/f && chflags uchg locked/f locked\n" \
+           f"{EDIT_AND_REPLY}"
+    out = tmp_path / "out"
+    spec = RunSpec(make_task(tmp_path, "t1"), CLAUDE, "bare", 1)
+    res = run_one(spec, out, bruhs_src=bruhs_src,
+                  command_override=override(fake_agent(tmp_path, body)))
+    assert os.stat(res.workspace / "locked" / "f").st_flags & stat.UF_IMMUTABLE
+    work_root = res.workspace.parent.parent
+    assert runner.cleanup_run(out, work_root, spec.run_id) == []
+    assert not os.path.lexists(work_root / spec.run_id)
+
+
+def test_cleanup_reports_leftovers(tmp_path, monkeypatch):
+    work = tmp_path / "work" / "w"
+    (work / "r1" / "sub").mkdir(parents=True)
+    (work / "r1" / "sub" / "f").write_text("x")
+    real_unlink = os.unlink
+
+    def stuck(name, *a, **k):
+        if name == "f":
+            raise PermissionError(1, "Operation not permitted")
+        return real_unlink(name, *a, **k)
+
+    monkeypatch.setattr(os, "unlink", stuck)
+    left = runner.cleanup_run(tmp_path / "out", work, "r1")
+    assert str(work.resolve() / "r1" / "sub" / "f") in left
+
+
+def test_active_lock_held_during_matrix(tmp_path):
+    task = make_task(tmp_path, "t1")
+    out = tmp_path / "out"
+    seen = []
+
+    def post(spec, res):
+        seen.append(runner.work_root_active(runner.default_work_root(out)))
+
+    run_matrix([task], [CLAUDE], ["bare"], 1, out, post_run=post,
+               command_override=override(fake_agent(tmp_path, EDIT_AND_REPLY)))
+    assert seen == [True]
+    assert not runner.work_root_active(runner.default_work_root(out))

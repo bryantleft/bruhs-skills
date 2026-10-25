@@ -272,21 +272,40 @@ def test_missing_tests_are_removed_not_regressions():
     assert commands._regressions("test", base, failing) == (["f::a"], ["f::b"])
 
 
-def test_missing_tests_after_a_file_failed_to_load_are_regressions():
+def test_missing_tests_after_a_load_failure_are_regressions():
     base = commands.CheckResult(True, False, _suite({
         "tests.test_calc::test_add": True, "tests.test_calc.TestX::test_m": True,
         "tests.test_other::test_o": False}))
-    # pytest junit: a collection error is one testcase named after the module, and the
-    # session stops, so no test ran -- missing doesn't mean renamed
-    after = commands.CheckResult(False, False, _suite({"tests.test_calc": False}))
+    # the reporter flagged a collection error; pytest stops the session, so no test ran --
+    # missing doesn't mean renamed
+    flagged = SuiteResult(0, 1, {"tests.test_calc": False}, load_failed=True)
+    after = commands.CheckResult(False, False, flagged)
     assert commands._regressions("test", base, after) == (
         ["tests.test_calc.TestX::test_m", "tests.test_calc::test_add"], [])
+    # a failing test named without "::" is not by itself a load failure
+    plain = commands.CheckResult(False, False, _suite({"tests.test_calc": False}))
+    assert commands._regressions("test", base, plain) == (
+        [], ["tests.test_calc.TestX::test_m", "tests.test_calc::test_add"])
 
 
-def test_empty_failing_after_suite_regresses_everything():
+def test_pytest_collection_error_sets_load_failed(tmp_path):
+    report = tmp_path / "r.xml"
+    report.write_text('<testsuites><testsuite><testcase classname="" name="tests.test_bad">'
+                      '<error message="collection failure">SyntaxError</error></testcase>'
+                      '</testsuite></testsuites>')
+    assert parse_test_output(report, "").load_failed is True
+    report.write_text('<testsuite><testcase classname="t" name="x"><error message="boom"/>'
+                      '</testcase></testsuite>')
+    assert parse_test_output(report, "").load_failed is False
+
+
+def test_empty_after_suite_regresses_everything():
     base = commands.CheckResult(True, False, _suite({"a": True, "b": False}))
     after = commands.CheckResult(False, False, _suite({}))
     assert commands._regressions("test", base, after) == (["a"], [])
+    # passWithNoTests: exit 0, but no test ran
+    passed_empty = commands.CheckResult(True, False, _suite({}))
+    assert commands._regressions("test", base, passed_empty) == (["a"], [])
 
 
 def test_jest_suite_that_failed_to_run_is_a_failing_entry(tmp_path):
@@ -297,8 +316,9 @@ def test_jest_suite_that_failed_to_run_is_a_failing_entry(tmp_path):
          "assertionResults": []},
         {"name": f"{root}/src/b.test.ts", "status": "passed",
          "assertionResults": [{"fullName": "ok", "status": "passed"}]}]}))
-    assert parse_test_output(report, "", root).tests == {"src/a.test.ts": False,
-                                                         "src/b.test.ts::ok": True}
+    parsed = parse_test_output(report, "", root)
+    assert parsed.tests == {"src/a.test.ts": False, "src/b.test.ts::ok": True}
+    assert parsed.load_failed is True
 
 
 def test_renamed_test_is_removed_not_regressed_end_to_end(tmp_path, make_run):

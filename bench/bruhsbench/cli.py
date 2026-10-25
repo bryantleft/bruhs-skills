@@ -133,7 +133,10 @@ DISK_LOW_EXIT = 4
 def _disk_guard(root: Path):
     from .runner import DiskGuard, default_work_root
 
-    return DiskGuard([default_work_root(root), root])
+    try:
+        return DiskGuard([default_work_root(root), root])
+    except ValueError as exc:  # e.g. a non-numeric BRUHSBENCH_MIN_FREE_GB
+        raise CliError(str(exc)) from None
 
 
 def _guarded_parallel(fn: Callable, items: Iterable, workers: int, guard, what: str) -> int:
@@ -232,7 +235,7 @@ def cmd_run(args, post_run: Callable | None = None, disk_guard=None) -> int:
     try:
         results = run_matrix(tasks, models, ("bare", "bruhs"), repeats, root,
                              parallel=args.parallel, timeout_s=args.timeout * 60,
-                             post_run=post_run, disk_guard=disk_guard)
+                             post_run=post_run, disk_guard=disk_guard or _disk_guard(root))
     except ClaudeAuthMissing:
         print(_claude_guidance(), file=sys.stderr)
         return 2
@@ -249,16 +252,20 @@ def cmd_run(args, post_run: Callable | None = None, disk_guard=None) -> int:
     return 0
 
 
-def _post_processor(root: Path, guard, *, cleanup: bool) -> Callable:
+def _post_processor(root: Path, guard, *, cleanup: bool, post_parallel: int = 2) -> Callable:
     """The pipeline's per-run step after the agent finishes: capture (ui/copy) ->
     grade -> delete the run's work dir once nothing needs it. Disk is checked before
     capture and before grade with the matrix's own ``guard`` (so it waits while other
-    runs are live; :class:`~bruhsbench.runner.DiskLow` stops the matrix)."""
+    runs are live; :class:`~bruhsbench.runner.DiskLow` stops the matrix). At most
+    ``post_parallel`` runs capture or grade at once, next to the live agent runs."""
+    import threading
+
     from .capture import capture_before
     from .graders import run_meta, workspace_of
     from .runner import cleanup_run, default_work_root
 
     work_root = default_work_root(root)
+    slots = threading.BoundedSemaphore(max(1, post_parallel))
 
     def post_run(spec, result) -> None:
         d, task = root / spec.run_id, spec.task
@@ -266,63 +273,103 @@ def _post_processor(root: Path, guard, *, cleanup: bool) -> Callable:
         if meta.get("workspace_deleted"):
             return
         gradeable = meta.get("status") not in ("error", "setup_failed")
-        if (gradeable and task.category in PAIRWISE and _own_exclusion(d) is None
-                and not (d / "grades" / "capture.json").is_file()):
-            ws = workspace_of(d)
-            if ws is not None:
-                guard.wait(f"capturing {d.name}")
-                capture_before(task, root, work_root)  # once per task, file-locked
-                for _attempt in range(2):  # one retry for a flaky dev server
-                    _capture_run(d, task, ws)
-                    if _captured(d):
-                        break
-        if gradeable and not _graded(d):
-            guard.wait(f"grading {d.name}")
-            _grade_run(d, task)
+        with slots:
+            if (gradeable and task.category in PAIRWISE and _own_exclusion(d) is None
+                    and not _capture_finished(d)):
+                ws = workspace_of(d)
+                if ws is not None:
+                    guard.wait(f"capturing {d.name}")
+                    capture_before(task, root, work_root)  # once per task, file-locked
+                    for _attempt in range(2):  # one retry for a flaky dev server
+                        _capture_run(d, task, ws)
+                        if _captured(d):
+                            break
+            if gradeable and not _graded(d):
+                guard.wait(f"grading {d.name}")
+                _grade_run(d, task)
         if cleanup:
             if _done_with_workspace(d, task):
                 cleanup_run(root, work_root, d.name)
+            elif _capture_error(d):
+                log.warning("%s: capture failed (harness error), workspace kept; rerun "
+                            "`pipeline` or `capture` to retry", d.name)
             else:
                 log.warning("%s: grading incomplete, workspace kept (rerun to retry)", d.name)
 
     return post_run
 
 
+def _capture_finished(d: Path) -> bool:
+    """A capture was recorded and needs no retry (page errors are final here)."""
+    return (d / "grades" / "capture.json").is_file() and not _capture_error(d)
+
+
 def cmd_pipeline(args) -> int:
     """run, with capture -> grade -> cleanup per run as each finishes."""
     root = results_root(args)
     guard = _disk_guard(root)
-    return cmd_run(args, post_run=_post_processor(root, guard, cleanup=args.cleanup),
-                   disk_guard=guard)
+    post = _post_processor(root, guard, cleanup=args.cleanup,
+                           post_parallel=args.post_parallel)
+    return cmd_run(args, post_run=post, disk_guard=guard)
 
 
-def _clean_done(root: Path, args) -> int:
+def _clean_done(root: Path, args) -> tuple[int, list[str], dict[str, list[str]]]:
+    """(run dirs removed, runs kept for a capture error, leftovers per run)."""
     from .runner import cleanup_run, default_work_root
 
     work_root = default_work_root(root)
-    n = 0
+    n, capture_kept, leftovers = 0, [], {}
     for d, task in _runs_with_tasks(root, args):
-        if (work_root / d.name).exists() or (work_root / d.name).is_symlink():
-            if _done_with_workspace(d, task) and cleanup_run(root, work_root, d.name):
-                n += 1
-    return n
+        if not ((work_root / d.name).exists() or (work_root / d.name).is_symlink()):
+            continue
+        if not _done_with_workspace(d, task):
+            if _capture_error(d):
+                capture_kept.append(d.name)
+            continue
+        left = cleanup_run(root, work_root, d.name)
+        if left:
+            leftovers[d.name] = left
+        else:
+            n += 1
+    return n, capture_kept, leftovers
 
 
 def cmd_clean(args) -> int:
     """Delete work-root dirs of runs that are captured + graded (``--all``: the whole
-    work root of this results dir). Never touches the results dir itself."""
-    from .runner import default_work_root, mark_workspace_deleted, remove_work_root
+    work root of this results dir, refused while a run/pipeline holds it unless
+    ``--force``). Never touches the results dir itself."""
+    from .runner import (default_work_root, mark_workspace_deleted, remove_work_root,
+                         work_root_active)
+    from .untrusted import RemoveIncomplete
 
     root = results_root(args)
     work_root = default_work_root(root)
     if args.all:
-        removed = remove_work_root(work_root, protect=[root])
+        if work_root_active(work_root) and not args.force:
+            raise CliError(f"a `run` or `pipeline` is using {work_root}; wait for it to "
+                           "finish (or pass --force to delete it anyway)")
+        try:
+            removed = remove_work_root(work_root, protect=[root])
+        except RemoveIncomplete as exc:
+            print(f"clean: could not delete {len(exc.leftovers)} path(s) under {work_root}:",
+                  file=sys.stderr)
+            for p in exc.leftovers:
+                print(f"  {p}", file=sys.stderr)
+            return 1
         for d in run_dirs(root):
             mark_workspace_deleted(d)
         print(f"clean: {'removed' if removed else 'nothing at'} {work_root}")
         return 0
-    n = _clean_done(root, args)
+    n, capture_kept, leftovers = _clean_done(root, args)
     print(f"clean: removed {n} run dirs under {work_root}")
+    if capture_kept:
+        print(f"clean: kept {len(capture_kept)} workspaces whose capture failed (rerun "
+              f"`bruhsbench capture`): {capture_kept}", file=sys.stderr)
+    if leftovers:
+        print(f"clean: could not fully delete {len(leftovers)} run dirs:", file=sys.stderr)
+        for rid, paths in leftovers.items():
+            print(f"  {rid}: {paths}", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -358,9 +405,20 @@ def _own_exclusion(d: Path) -> str | None:
     return Run(d.name, task_id, cli_, arm, rep, d, run_meta(d), {}).exclusion
 
 
+def _capture_error(d: Path) -> bool:
+    """capture.json records a harness error (dev server didn't start, browser crashed):
+    the capture must be retried, so the workspace is kept. Page errors alone (often the
+    agent's own broken page) are a finished capture."""
+    import json
+
+    rec = d / "grades" / "capture.json"
+    return rec.is_file() and bool(json.loads(rec.read_text()).get("error"))
+
+
 def _done_with_workspace(d: Path, task: Task) -> bool:
     """Nothing left needs the run's workspace: it is graded (or ungradeable) and, for a
-    ui/copy run that isn't excluded, captured (any outcome recorded)."""
+    ui/copy run that isn't excluded, captured without a harness error (page errors are
+    fine)."""
     from .graders import run_meta
 
     if run_meta(d).get("status") in ("error", "setup_failed"):
@@ -368,7 +426,7 @@ def _done_with_workspace(d: Path, task: Task) -> bool:
     if not _graded(d):
         return False
     return (task.category not in PAIRWISE or _own_exclusion(d) is not None
-            or (d / "grades" / "capture.json").is_file())
+            or ((d / "grades" / "capture.json").is_file() and not _capture_error(d)))
 
 
 def _grade_run(d: Path, task: Task) -> None:
@@ -549,6 +607,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--timeout", type=int, default=45, help="per-run timeout, minutes")
     sp.add_argument("--cleanup", action=argparse.BooleanOptionalAction, default=True,
                     help="delete each run's workspace + home once captured and graded")
+    sp.add_argument("--post-parallel", type=int, default=2,
+                    help="max runs capturing/grading at once next to the agent runs")
     sp.set_defaults(fn=cmd_pipeline)
 
     for name, fn, par, help_ in (("capture", cmd_capture, 3, "screenshot ui/copy runs"),
@@ -561,7 +621,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("clean", help="delete work dirs of captured + graded runs")
     common(sp)
     sp.add_argument("--all", action="store_true",
-                    help="delete everything under this results dir's work root")
+                    help="delete everything under this results dir's work root (refused "
+                         "while a run/pipeline is active unless --force)")
     sp.set_defaults(fn=cmd_clean)
 
     sp = sub.add_parser("spotcheck", help="blind-pick ui/copy pairs in a local page")

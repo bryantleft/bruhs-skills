@@ -204,7 +204,13 @@ def _clean_fixture(tmp_path):
         "errored": make_run(root, audit, "codex", "bare", 1, status="error"),
         "ui_uncaptured": make_run(root, ui, "claude", "bare", 1),
         "ui_done": make_run(root, ui, "claude", "bruhs", 1, screens=True),
+        "ui_capture_error": make_run(root, ui, "codex", "bare", 1),
+        "ui_page_errors": make_run(root, ui, "codex", "bruhs", 1),
     }
+    for k, rec in (("ui_capture_error", {"applicable": True, "error": "server never ready"}),
+                   ("ui_page_errors", {"applicable": True, "page_errors": {"/": "500"}})):
+        _all_graded(runs[k])
+        (runs[k] / "grades" / "capture.json").write_text(json.dumps(rec))
     _all_graded(runs["graded"])
     _all_graded(runs["ui_uncaptured"])
     _all_graded(runs["ui_done"])
@@ -213,13 +219,16 @@ def _clean_fixture(tmp_path):
     return root, runs, work, precious, {audit.id: audit, ui.id: ui}
 
 
-def test_clean_removes_only_finished_runs_and_never_follows_links(tmp_path, monkeypatch):
+def test_clean_removes_only_finished_runs_and_never_follows_links(tmp_path, monkeypatch,
+                                                                   capsys):
     root, runs, work, precious, tasks = _clean_fixture(tmp_path)
     monkeypatch.setattr(cli, "_task_index", lambda heldout: tasks)
     before = sorted(p.relative_to(root) for p in root.rglob("*"))
     assert cli.cmd_clean(_args(root, all=False)) == 0
+    err = capsys.readouterr().err
+    assert "capture failed" in err and runs["ui_capture_error"].name in err
 
-    gone = {"graded", "errored", "ui_done"}
+    gone = {"graded", "errored", "ui_done", "ui_page_errors"}
     for k, ws in work.items():
         assert ws.parent.exists() == (k not in gone), k
         meta = json.loads((runs[k] / "result.json").read_text())
@@ -253,6 +262,8 @@ def test_parser_has_pipeline_and_clean():
     assert p.parse_args(["pipeline", "--no-cleanup"]).cleanup is False
     a = p.parse_args(["clean", "--all"])
     assert a.fn is cli.cmd_clean and a.all is True
+    assert p.parse_args(["pipeline"]).post_parallel == 2
+    assert p.parse_args(["pipeline", "--post-parallel", "1"]).post_parallel == 1
 
 
 @pytest.fixture
@@ -369,3 +380,97 @@ def test_pipeline_post_run_waits_on_the_matrix_guard(tmp_path, monkeypatch):
         release.set()
         th.join()
     assert slept  # it waited for the other run before giving up
+
+
+def test_clean_reports_leftovers(tmp_path, monkeypatch, capsys):
+    root, runs, work, precious, tasks = _clean_fixture(tmp_path)
+    monkeypatch.setattr(cli, "_task_index", lambda heldout: tasks)
+    monkeypatch.setattr("bruhsbench.runner.cleanup_run",
+                        lambda out, wr, rid: [f"{wr}/{rid}/workspace/stuck"])
+    assert cli.cmd_clean(_args(root, all=False)) == 1
+    assert "could not fully delete" in capsys.readouterr().err
+
+
+def test_clean_all_refuses_while_a_run_is_active(tmp_path, monkeypatch):
+    from bruhsbench.runner import default_work_root, hold_active
+
+    root, runs, work, precious, tasks = _clean_fixture(tmp_path)
+    monkeypatch.setattr(cli, "_task_index", lambda heldout: tasks)
+    with hold_active(default_work_root(root)):
+        with pytest.raises(cli.CliError, match="--force"):
+            cli.cmd_clean(_args(root, all=True))
+        assert default_work_root(root).is_dir()
+        assert cli.cmd_clean(_args(root, all=True, force=True)) == 0
+    assert not default_work_root(root).exists()
+
+
+def test_bad_min_free_gb_is_a_cli_error(tmp_path, monkeypatch, capsys):
+    t = make_task(tmp_path, "t-audit", "audit")
+    root = tmp_path / "res"
+    make_run(root, t, "claude", "bare", 1)
+    monkeypatch.setattr(cli, "_task_index", lambda heldout: {t.id: t})
+    monkeypatch.setenv("BRUHSBENCH_MIN_FREE_GB", "lots")
+    assert cli.main(["grade", "--results", str(root)]) == 2
+    assert "BRUHSBENCH_MIN_FREE_GB" in capsys.readouterr().err
+
+
+def test_pipeline_keeps_workspace_after_capture_harness_error(tmp_path, monkeypatch,
+                                                             fake_agents, caplog):
+    from test_runner import CLAUDE, EDIT_AND_REPLY, fake_agent, override
+
+    from bruhsbench.runner import default_work_root, run_matrix
+
+    ui = make_task(tmp_path, "t-ui", "ui", pages=["/"])
+    (ui.dir / "fixture").mkdir()
+    (ui.dir / "fixture" / "app.txt").write_text("hello\n")
+    root = tmp_path / "res"
+    attempts = []
+
+    def failing_capture(d, task, ws):
+        attempts.append(d.name)
+        (d / "grades").mkdir(exist_ok=True)
+        (d / "grades" / "capture.json").write_text(json.dumps(
+            {"applicable": True, "error": "dev server never became ready"}))
+
+    monkeypatch.setattr(cli, "_capture_run", failing_capture)
+    monkeypatch.setattr(cli, "_grade_run", lambda d, task: _all_graded(d))
+    monkeypatch.setattr("bruhsbench.capture.capture_before", lambda *a, **k: [])
+    post = cli._post_processor(root, cli._disk_guard(root), cleanup=True)
+    ov = override(fake_agent(tmp_path, EDIT_AND_REPLY))
+    run_matrix([ui], [CLAUDE], ["bare"], 1, root, command_override=ov, post_run=post)
+    rid = "t-ui__claude__bare__r1"
+    assert attempts == [rid, rid]  # retried once
+    assert (default_work_root(root) / rid / "workspace").is_dir()
+    assert "capture failed" in caplog.text
+    run_matrix([ui], [CLAUDE], ["bare"], 1, root, command_override=ov, post_run=post)
+    assert len(attempts) == 4  # a later pipeline call retries it
+
+
+def test_pipeline_caps_concurrent_post_processing(tmp_path, monkeypatch, fake_agents):
+    import threading
+    import time
+
+    from test_runner import CLAUDE, EDIT_AND_REPLY, fake_agent, override
+
+    from bruhsbench.runner import run_matrix
+
+    feat = make_task(tmp_path, "t-feat", "feature")
+    (feat.dir / "fixture").mkdir()
+    (feat.dir / "fixture" / "app.txt").write_text("hello\n")
+    root = tmp_path / "res"
+    lock, live, peak = threading.Lock(), [0], [0]
+
+    def slow_grade(d, task):
+        with lock:
+            live[0] += 1
+            peak[0] = max(peak[0], live[0])
+        time.sleep(0.3)
+        with lock:
+            live[0] -= 1
+        _all_graded(d)
+
+    monkeypatch.setattr(cli, "_grade_run", slow_grade)
+    post = cli._post_processor(root, cli._disk_guard(root), cleanup=True, post_parallel=1)
+    run_matrix([feat], [CLAUDE], ["bare", "bruhs"], 2, root, parallel=4,
+               command_override=override(fake_agent(tmp_path, EDIT_AND_REPLY)), post_run=post)
+    assert peak[0] == 1
