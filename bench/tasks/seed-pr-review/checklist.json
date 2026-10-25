@@ -1,0 +1,44 @@
+{
+  "items": [
+    {
+      "id": "fix-backoff-cap",
+      "text": "Comment 1 is fixed: a maxDelayMs delivery option (default 30s) caps the backoff delay.",
+      "check": "script",
+      "script": "set -e; mkdir -p tests/__checklist__\ncat > tests/__checklist__/cap.test.ts <<'CHECK'\nimport { expect, it } from \"vitest\";\nimport { deliver } from \"../../src/deliver\";\nconst event = { id: \"evt_c\", type: \"t\", createdAt: \"2026-10-22T09:00:00.000Z\", data: {} };\nfunction run(steps: [number, Record<string, string>?][], extra: Record<string, unknown> = {}) {\n  const calls: RequestInit[] = [];\n  const waits: number[] = [];\n  const fetch = (async (_u: unknown, init?: RequestInit) => {\n    calls.push(init ?? {});\n    const [status, headers] = steps[Math.min(calls.length - 1, steps.length - 1)];\n    return new Response(null, { status, headers });\n  }) as unknown as typeof globalThis.fetch;\n  const sleep = async (ms: number) => void waits.push(ms);\n  const opts = { secret: \"s\", fetch, sleep, random: () => 0.999999, now: () => new Date(\"2026-10-22T09:00:00Z\"), ...extra };\n  return deliver(\"https://x.test/hooks\", event, opts).then((result) => ({ result, calls, waits }));\n}\nit(\"caps\", async () => {\n  const a = await run([[503]], { maxAttempts: 12 });\n  expect(a.waits.length).toBeGreaterThanOrEqual(10);\n  expect(Math.max(...a.waits)).toBeLessThanOrEqual(30000);\n  const b = await run([[503]], { maxAttempts: 8, maxDelayMs: 2000 });\n  expect(Math.max(...b.waits)).toBeLessThanOrEqual(2000);\n});\nCHECK\nNODE_OPTIONS=--no-warnings ./node_modules/.bin/vitest run tests/__checklist__/cap.test.ts"
+    },
+    {
+      "id": "fix-no-retry-4xx",
+      "text": "Comment 2 is fixed: other 4xx responses (e.g. 400, 404) fail after one request; 408, 429 and 5xx are still retried.",
+      "check": "script",
+      "script": "set -e; mkdir -p tests/__checklist__\ncat > tests/__checklist__/fourxx.test.ts <<'CHECK'\nimport { expect, it } from \"vitest\";\nimport { deliver } from \"../../src/deliver\";\nconst event = { id: \"evt_c\", type: \"t\", createdAt: \"2026-10-22T09:00:00.000Z\", data: {} };\nfunction run(steps: [number, Record<string, string>?][], extra: Record<string, unknown> = {}) {\n  const calls: RequestInit[] = [];\n  const waits: number[] = [];\n  const fetch = (async (_u: unknown, init?: RequestInit) => {\n    calls.push(init ?? {});\n    const [status, headers] = steps[Math.min(calls.length - 1, steps.length - 1)];\n    return new Response(null, { status, headers });\n  }) as unknown as typeof globalThis.fetch;\n  const sleep = async (ms: number) => void waits.push(ms);\n  const opts = { secret: \"s\", fetch, sleep, random: () => 0.999999, now: () => new Date(\"2026-10-22T09:00:00Z\"), ...extra };\n  return deliver(\"https://x.test/hooks\", event, opts).then((result) => ({ result, calls, waits }));\n}\nit(\"4xx\", async () => {\n  for (const s of [400, 404]) expect((await run([[s], [200]])).calls).toHaveLength(1);\n  for (const s of [408, 429, 503]) expect((await run([[s], [200]])).result.delivered).toBe(true);\n});\nCHECK\nNODE_OPTIONS=--no-warnings ./node_modules/.bin/vitest run tests/__checklist__/fourxx.test.ts"
+    },
+    {
+      "id": "fix-retry-after",
+      "text": "Comment 3 is fixed: after a response with Retry-After (seconds or an HTTP date) the next attempt waits at least that long.",
+      "check": "script",
+      "script": "set -e; mkdir -p tests/__checklist__\ncat > tests/__checklist__/retryafter.test.ts <<'CHECK'\nimport { expect, it } from \"vitest\";\nimport { deliver } from \"../../src/deliver\";\nconst event = { id: \"evt_c\", type: \"t\", createdAt: \"2026-10-22T09:00:00.000Z\", data: {} };\nfunction run(steps: [number, Record<string, string>?][], extra: Record<string, unknown> = {}) {\n  const calls: RequestInit[] = [];\n  const waits: number[] = [];\n  const fetch = (async (_u: unknown, init?: RequestInit) => {\n    calls.push(init ?? {});\n    const [status, headers] = steps[Math.min(calls.length - 1, steps.length - 1)];\n    return new Response(null, { status, headers });\n  }) as unknown as typeof globalThis.fetch;\n  const sleep = async (ms: number) => void waits.push(ms);\n  const opts = { secret: \"s\", fetch, sleep, random: () => 0.999999, now: () => new Date(\"2026-10-22T09:00:00Z\"), ...extra };\n  return deliver(\"https://x.test/hooks\", event, opts).then((result) => ({ result, calls, waits }));\n}\nit(\"retry-after\", async () => {\n  expect((await run([[429, { \"retry-after\": \"7\" }], [200]])).waits[0]).toBeGreaterThanOrEqual(7000);\n  const at = new Date(Date.parse(\"2026-10-22T09:00:00Z\") + 12000).toUTCString();\n  expect((await run([[503, { \"retry-after\": at }], [200]])).waits[0]).toBeGreaterThanOrEqual(11000);\n});\nCHECK\nNODE_OPTIONS=--no-warnings ./node_modules/.bin/vitest run tests/__checklist__/retryafter.test.ts"
+    },
+    {
+      "id": "fix-max-attempts",
+      "text": "Comment 4 is fixed: maxAttempts is the total number of requests (maxAttempts: 3 makes 3 and reports attempts: 3).",
+      "check": "script",
+      "script": "set -e; mkdir -p tests/__checklist__\ncat > tests/__checklist__/attempts.test.ts <<'CHECK'\nimport { expect, it } from \"vitest\";\nimport { deliver } from \"../../src/deliver\";\nconst event = { id: \"evt_c\", type: \"t\", createdAt: \"2026-10-22T09:00:00.000Z\", data: {} };\nfunction run(steps: [number, Record<string, string>?][], extra: Record<string, unknown> = {}) {\n  const calls: RequestInit[] = [];\n  const waits: number[] = [];\n  const fetch = (async (_u: unknown, init?: RequestInit) => {\n    calls.push(init ?? {});\n    const [status, headers] = steps[Math.min(calls.length - 1, steps.length - 1)];\n    return new Response(null, { status, headers });\n  }) as unknown as typeof globalThis.fetch;\n  const sleep = async (ms: number) => void waits.push(ms);\n  const opts = { secret: \"s\", fetch, sleep, random: () => 0.999999, now: () => new Date(\"2026-10-22T09:00:00Z\"), ...extra };\n  return deliver(\"https://x.test/hooks\", event, opts).then((result) => ({ result, calls, waits }));\n}\nit(\"attempts\", async () => {\n  const { result, calls } = await run([[503]], { maxAttempts: 3 });\n  expect(calls).toHaveLength(3);\n  expect(result.attempts).toBe(3);\n});\nCHECK\nNODE_OPTIONS=--no-warnings ./node_modules/.bin/vitest run tests/__checklist__/attempts.test.ts"
+    },
+    {
+      "id": "kept-idempotency-key",
+      "text": "Comment 5's suggestion is not applied: every retry of one delivery still sends the same Idempotency-Key.",
+      "check": "script",
+      "script": "set -e; mkdir -p tests/__checklist__\ncat > tests/__checklist__/key.test.ts <<'CHECK'\nimport { expect, it } from \"vitest\";\nimport { deliver } from \"../../src/deliver\";\nconst event = { id: \"evt_c\", type: \"t\", createdAt: \"2026-10-22T09:00:00.000Z\", data: {} };\nfunction run(steps: [number, Record<string, string>?][], extra: Record<string, unknown> = {}) {\n  const calls: RequestInit[] = [];\n  const waits: number[] = [];\n  const fetch = (async (_u: unknown, init?: RequestInit) => {\n    calls.push(init ?? {});\n    const [status, headers] = steps[Math.min(calls.length - 1, steps.length - 1)];\n    return new Response(null, { status, headers });\n  }) as unknown as typeof globalThis.fetch;\n  const sleep = async (ms: number) => void waits.push(ms);\n  const opts = { secret: \"s\", fetch, sleep, random: () => 0.999999, now: () => new Date(\"2026-10-22T09:00:00Z\"), ...extra };\n  return deliver(\"https://x.test/hooks\", event, opts).then((result) => ({ result, calls, waits }));\n}\nit(\"key\", async () => {\n  const { calls } = await run([[503], [500], [200]]);\n  const keys = calls.map((c) => new Headers(c.headers).get(\"idempotency-key\"));\n  expect(keys).toHaveLength(3);\n  expect(keys[0]).toBeTruthy();\n  expect(new Set(keys).size).toBe(1);\n});\nCHECK\nNODE_OPTIONS=--no-warnings ./node_modules/.bin/vitest run tests/__checklist__/key.test.ts"
+    },
+    {
+      "id": "declined-fresh-key",
+      "text": "The reply to comment 5 (a new Idempotency-Key per request) declines the suggestion and gives the right reason: retries of one delivery must share the key so the receiver can recognise a retry as the same delivery and not process it twice.",
+      "check": "judge"
+    },
+    {
+      "id": "replies",
+      "text": "REVIEW.md has a reply under each of the five comments, and each reply matches what the code change actually does (no reply claims a fix the diff doesn't make).",
+      "check": "judge"
+    }
+  ]
+}

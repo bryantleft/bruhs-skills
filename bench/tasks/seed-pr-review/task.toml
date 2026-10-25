@@ -1,0 +1,9 @@
+id = "seed-pr-review"
+category = "pr-review"
+allowed_paths = ["src/**", "tests/**", "README.md", "REVIEW.md"]
+
+[checks]
+typecheck = "./node_modules/.bin/tsc --noEmit"
+test = "NODE_OPTIONS=--no-warnings ./node_modules/.bin/vitest run --reporter=json --outputFile=$BRUHSBENCH_REPORT"
+# one describe block per review comment (tests/hidden/review.test.ts)
+hidden = "NODE_OPTIONS=--no-warnings ./node_modules/.bin/vitest run tests/hidden --reporter=json --outputFile=$BRUHSBENCH_REPORT"

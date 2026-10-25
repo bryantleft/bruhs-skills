@@ -1,0 +1,7 @@
+[
+  "Done: added a `maxDelayMs` option (default 30s); the exponential part is capped before jitter, so the 10th retry waits at most 30s.",
+  "Done: only 408, 429 and 5xx (and network errors) are retried now; any other 4xx returns right away with `attempts: 1`.",
+  "Done: on a retryable response we read `Retry-After` (delta-seconds or an HTTP date) and wait at least that long; the normal backoff still applies when it's longer.",
+  "Good catch, fixed: the loop now makes exactly `maxAttempts` requests and `attempts` reports the real count.",
+  "I'd rather not change this one. The key identifies the delivery, not the HTTP request: reusing it on every retry is what lets a receiver see that a retry is the same event it may already have processed (e.g. when our request timed out after they handled it) and skip it. A fresh key per attempt would make every retry look like a new event and cause double-processing. Receivers that log every request will see the key repeated, but that's intended; I've added a test that pins it."
+]
