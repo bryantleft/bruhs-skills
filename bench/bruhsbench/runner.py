@@ -58,7 +58,8 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePath
 
 from . import untrusted
-from .agents import build_command, is_auth_failure, parse_output, tool_event_count
+from .agents import (agent_finished, build_command, is_auth_failure, parse_output,
+                     tool_event_count)
 from .homes import ClaudeAuthMissing, build_home, claude_auth, export_bruhs
 from .sandbox import (READ_ALLOW, check_tmp_base, private_tmp, real_home, remove_private_tmp,
                       work_base, wrap)
@@ -647,7 +648,8 @@ def run_one(
         final = _read_untrusted(run_dir, "final.txt", unsafe) or final
     (out_dir / "final.txt").write_text(final)
 
-    status = "timeout" if timed_out else ("ok" if code == 0 and diff_ok else "error")
+    finished = agent_finished(cli, stdout, code)
+    status = "timeout" if timed_out else ("ok" if finished and diff_ok else "error")
     contaminated, contamination = _contamination(spec, stdout, stderr, run_dir, work_root,
                                                  env, unsafe)
     result = replace(

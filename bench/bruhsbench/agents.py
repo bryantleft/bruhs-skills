@@ -178,6 +178,8 @@ def _parse_grok(stdout: str) -> ParsedRun:
             chunks.append(event["data"])
     final = "".join(chunks).strip()
     end = _last(events, "end")
+    if end is None and _grok_background_wait_ran_out(events):
+        end = _last(events, "error")  # carries the run's usage like "end" does
     if end is None:
         return ParsedRun(final, None, None, None, None)
     usage = end.get("usage") or {}
@@ -197,6 +199,25 @@ def _codex_cost(input_tokens: int, cached: int, output_tokens: int) -> float | N
         return None
     return ((input_tokens - cached) * price.input + cached * price.cached_input
             + output_tokens * price.output) / 1_000_000
+
+
+# grok -p waits (10 min by default) for background work the agent left running after its
+# turn ended (e.g. a dev server), then stops it and exits 1 with this error event.
+_GROK_BACKGROUND_WAIT_RE = re.compile(r"^the wait for background work ran out\b")
+
+
+def _grok_background_wait_ran_out(events: list[dict]) -> bool:
+    last = events[-1] if events else None
+    return (last is not None and last.get("type") == "error"
+            and bool(_GROK_BACKGROUND_WAIT_RE.match(str(last.get("message", "")))))
+
+
+def agent_finished(cli: Cli, stdout: str, code: int) -> bool:
+    """The CLI exited because the agent finished: exit 0, or grok's exit 1 after its
+    wait for leftover background work ran out (the agent's turn had already ended)."""
+    if code == 0:
+        return True
+    return cli == "grok" and _grok_background_wait_ran_out(_json_lines(stdout))
 
 
 def _parse_codex(stdout: str) -> ParsedRun:

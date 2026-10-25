@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -5,6 +6,7 @@ import pytest
 from bruhsbench.agents import (
     PREAMBLE,
     ParsedRun,
+    agent_finished,
     build_command,
     full_prompt,
     is_auth_failure,
@@ -211,3 +213,34 @@ def test_is_auth_failure_grok():
     assert is_auth_failure("grok", "", fixture("grok_auth_error.stderr"), 1)
     assert not is_auth_failure("grok", fixture("grok.jsonl"), "", 0)
     assert not is_auth_failure("grok", '{"type":"error","message":"rate limited"}', "", 1)
+
+
+GROK_BG_TIMEOUT = "\n".join([
+    '{"type":"text","data":"All "}',
+    '{"type":"text","data":"done."}',
+    '{"type":"usage","usage":{"input_tokens":4,"output_tokens":2}}',
+    json.dumps({"type": "error", "message": (
+        "the wait for background work ran out after 600 s and exit stopped 1 background "
+        "task (5d85e3f1). Pass --background-wait-timeout <secs> to wait longer, or "
+        "--no-wait-for-background to exit as soon as the turn ends"),
+        "usage": {"input_tokens": 100, "cache_read_input_tokens": 900,
+                  "cache_creation_input_tokens": 0, "output_tokens": 50},
+        "num_turns": 103, "total_cost_usd": 7.25}),
+])
+
+
+def test_grok_background_wait_timeout_is_a_finished_run():
+    """grok -p waits up to 600 s for background work the agent left running (a dev
+    server) after its turn ended, then stops it and exits 1 with an error event. The
+    agent had finished: the run counts as finished and its usage is kept."""
+    assert agent_finished("grok", GROK_BG_TIMEOUT, 1)
+    assert parse_output("grok", GROK_BG_TIMEOUT) == ParsedRun(
+        "All done.", 103, 1000, 50, pytest.approx(7.25))
+
+
+def test_other_failures_are_not_finished_runs():
+    other = '{"type":"error","message":"model overloaded"}'
+    assert not agent_finished("grok", other, 1)
+    assert not agent_finished("grok", "", 1)
+    assert not agent_finished("codex", GROK_BG_TIMEOUT, 1)  # grok's message only
+    assert agent_finished("claude", "", 0)

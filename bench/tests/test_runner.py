@@ -142,6 +142,17 @@ def test_run_one_codex_final_from_output_file(tmp_path, bruhs_src):
     assert res.transcript_path.name == "transcript.jsonl"
 
 
+def test_grok_exit_after_background_wait_timeout_is_ok(tmp_path, bruhs_src):
+    from test_agents import GROK_BG_TIMEOUT
+
+    task = make_task(tmp_path, "t1")
+    grok = ModelSpec("grok", "grok-4.7", "high")
+    body = f"echo changed > app.txt\ncat <<'EOF'\n{GROK_BG_TIMEOUT}\nEOF\nexit 1\n"
+    res = run_one(RunSpec(task, grok, "bare", 1), tmp_path / "out", bruhs_src=bruhs_src,
+                  command_override=override(fake_agent(tmp_path, body)))
+    assert res.status == "ok" and res.final_message == "All done." and res.turns == 103
+
+
 def test_nonzero_exit_is_error(tmp_path, bruhs_src):
     task = make_task(tmp_path, "t1")
     res = run_one(RunSpec(task, CLAUDE, "bare", 1), tmp_path / "out", bruhs_src=bruhs_src,
