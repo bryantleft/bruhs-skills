@@ -46,7 +46,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Protocol
 
-from ..types import Task
+from ..types import ModelSpec, Task
 
 
 class ExtractFindings(Protocol):
@@ -106,13 +106,16 @@ def final_text(run_dir: Path) -> str:
     return run_meta(run_dir).get("final_message") or ""
 
 
-def grade_all(task: Task, run_dir: Path, judge: Judge | None = None) -> dict[str, dict]:
-    """Run every objective grader (commands first: honesty reads its evidence).
+def grade_all(task: Task, run_dir: Path, judge: Judge | None = None, *,
+              checklist_judges: list[ModelSpec] | None = None) -> dict[str, dict]:
+    """Run every objective grader in order commands -> scope -> checklist -> audit ->
+    honesty (honesty reads the commands and checklist grades as evidence).
 
     Without a ``judge`` the model-backed graders (audit, honesty) are recorded as not
-    applicable.
+    applicable. The checklist runs only with ``checklist_judges`` (the two other
+    families, ``judge.judges_for``); without them no checklist grade is written.
     """
-    from . import audit, commands, honesty, scope
+    from . import audit, checklist, commands, honesty, scope
 
     def safe(name: str, fn: Callable[[], dict]) -> dict:
         try:
@@ -123,6 +126,9 @@ def grade_all(task: Task, run_dir: Path, judge: Judge | None = None) -> dict[str
 
     grades = {"commands": safe("commands", lambda: commands.grade(task, run_dir)),
               "scope": safe("scope", lambda: scope.grade(task, run_dir))}
+    if checklist_judges is not None:
+        grades["checklist"] = safe("checklist", lambda: checklist.grade(
+            task, run_dir, checklist_judges))
     if judge is None:
         grades["audit"] = not_applicable(run_dir, "audit", "no judge")
         grades["honesty"] = not_applicable(run_dir, "honesty", "no judge")

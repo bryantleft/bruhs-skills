@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>bruhs benchmark: does it help?</title>
+<style>
+.viz-root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface-1: #fcfcfb;
+  --text-primary: #0b0b0b; --text-secondary: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10);
+  --win: #2a78d6; --loss: #e34948; --tie: #c3c2b7;
+  --series-1: #2a78d6; --series-2: #eb6834;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) .viz-root {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface-1: #1a1a19;
+    --text-primary: #f0efec; --text-secondary: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+    --win: #3987e5; --loss: #e66767; --tie: #6b6a65;
+    --series-1: #3987e5; --series-2: #d95926;
+  }
+}
+:root[data-theme="dark"] .viz-root {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface-1: #1a1a19;
+  --text-primary: #f0efec; --text-secondary: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+  --win: #3987e5; --loss: #e66767; --tie: #6b6a65;
+  --series-1: #3987e5; --series-2: #d95926;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+.viz-root { background: var(--page); color: var(--text-primary); min-height: 100vh;
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; padding: 32px 24px 64px; }
+main { max-width: 1040px; margin: 0 auto; }
+h1 { font-size: 28px; margin: 0 0 4px; font-weight: 650; }
+h2 { font-size: 18px; margin: 40px 0 8px; font-weight: 600; }
+h3 { font-size: 15px; margin: 20px 0 6px; font-weight: 600; }
+p, li { color: var(--text-secondary); max-width: 72ch; }
+.meta { color: var(--muted); font-size: 13px; }
+.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
+  padding: 16px 20px; margin: 12px 0; }
+.chart { width: 100%; max-width: 660px; height: auto; display: block; }
+.chart text { font: 12px system-ui, -apple-system, "Segoe UI", sans-serif; }
+.chart .label { fill: var(--text-primary); font-size: 13px; }
+.chart .legend, .chart .tick, .chart .muted { fill: var(--muted); }
+.chart .value { fill: var(--text-primary); font-weight: 600; }
+.chart .ink-on-fill { fill: #fff; font-weight: 600; }
+.chart .ink-on-tie { fill: var(--text-primary); font-weight: 600; }
+.chart .win { fill: var(--win); } .chart .loss { fill: var(--loss); } .chart .tie { fill: var(--tie); }
+.chart .grid { stroke: var(--grid); stroke-width: 1; }
+.chart .ref { stroke: var(--muted); stroke-width: 1; }
+.chart .whisker { stroke-width: 2; stroke-linecap: round; }
+.chart .whisker.s1 { stroke: var(--series-1); } .chart .whisker.s2 { stroke: var(--series-2); }
+.chart .dot { stroke: var(--surface-1); stroke-width: 2; }
+.chart .dot.s1 { fill: var(--series-1); } .chart .dot.s2 { fill: var(--series-2); }
+.chart .hit { fill: transparent; }
+.chart .mark:hover, .chart .mark:focus, .chart g:focus .dot, .chart g:hover .dot { opacity: .8; outline: none; }
+#tip { position: fixed; pointer-events: none; background: var(--surface-1); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; font-size: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.12); display: none; max-width: 280px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+th { color: var(--muted); font-weight: 500; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.scroll { overflow-x: auto; }
+.badge { display: inline-block; padding: 0 8px; border-radius: 999px; font-size: 12px;
+  border: 1px solid var(--border); }
+.shots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.shots figure { margin: 0; } .shots img { width: 100%; border: 1px solid var(--border); border-radius: 6px; }
+figcaption { color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="viz-root">
+<main>
+<h1>Does bruhs help?</h1>
+<p class="meta">Generated {{ date }} &middot; bruhs commit <code>{{ matrix.bruhs_commit[:12] }}</code>
+ &middot; {{ matrix.repeats or "?" }} repeats per task, model and arm{% if not private %} &middot; public report{% endif %}</p>
+
+<p>Each task ran with the same prompt, model, effort, tools and sandbox in two arms:
+<strong>bare</strong> (no skill) and <strong>bruhs</strong> (bruhs plus its companions, as a user
+installs it). A task is a bruhs win or loss when its primary metric differs by more than a
+frozen margin; otherwise it is a tie. Win rate counts ties as half, so 50% means no difference.
+Cost, time and scope creep are reported beside the result and never decide it.</p>
+
+<h2>Headline</h2>
+<div class="card">
+<h3>Tasks won, tied and lost by the bruhs arm</h3>
+{{ wtl_chart }}
+</div>
+<div class="card">
+<h3>bruhs win rate per model, with 95% bootstrap CI over tasks</h3>
+{{ rate_chart }}
+</div>
+<p>{{ ui_note }}</p>
+
+<div class="scroll"><table>
+<tr><th>Model</th><th class="num">Won</th><th class="num">Tied</th><th class="num">Lost</th>
+<th class="num">Win rate</th><th>95% CI</th><th class="num">Seeded W/T/L</th><th class="num">Seeded win rate</th><th>Seeded CI</th></tr>
+{% for m in models %}
+<tr><td>{{ m.model }}</td><td class="num">{{ m.all.w }}</td><td class="num">{{ m.all.t }}</td>
+<td class="num">{{ m.all.l }}</td><td class="num">{{ m.all.rate }}</td><td>{{ m.all.ci }}</td>
+<td class="num">{{ m.seeded.w }}/{{ m.seeded.t }}/{{ m.seeded.l }}</td><td class="num">{{ m.seeded.rate }}</td><td>{{ m.seeded.ci }}</td></tr>
+{% endfor %}
+</table></div>
+
+<h2>By category</h2>
+<p>Mean delta is bruhs minus bare on the category's primary metric (for UI/copy: preference minus 0.5).</p>
+<div class="scroll"><table>
+<tr><th>Model</th><th>Category</th><th>Primary metric</th><th class="num">Tasks</th>
+<th class="num">W/T/L</th><th class="num">Mean delta</th></tr>
+{% for c in categories %}
+<tr><td>{{ c.model }}</td><td>{{ c.category }}</td><td>{{ c.metric }}</td><td class="num">{{ c.tasks }}</td>
+<td class="num">{{ c.w }}/{{ c.t }}/{{ c.l }}</td><td class="num">{{ c.delta }}</td></tr>
+{% endfor %}
+</table></div>
+
+<h2>Cost, time and scope</h2>
+<p>Means per run, over runs in scored pairs. Cost is n/a where the CLI reports tokens but no price; compare tokens there.</p>
+<div class="scroll"><table>
+<tr><th>Model</th><th>Arm</th><th class="num">Runs</th><th class="num">Cost</th><th class="num">Minutes</th>
+<th class="num">Turns</th><th class="num">Input tokens</th><th class="num">Output tokens</th>
+<th class="num">Lines out of scope</th><th class="num">Files out of scope</th></tr>
+{% for c in costs %}
+<tr><td>{{ c.model }}</td><td>{{ c.arm }}</td><td class="num">{{ c.runs }}</td><td class="num">{{ c.cost }}</td>
+<td class="num">{{ c.wall }}</td><td class="num">{{ c.turns }}</td><td class="num">{{ c.tok_in }}</td>
+<td class="num">{{ c.tok_out }}</td><td class="num">{{ c.scope_lines }}</td><td class="num">{{ c.scope_files }}</td></tr>
+{% endfor %}
+</table></div>
+
+<h2>Every task</h2>
+<p>Every task and model is listed, losses included. n is surviving repeats (for UI/copy: valid
+judge verdicts). Dropped repeats were excluded from both arms (contaminated, harness error,
+timeout without a diff, or a missing grade).</p>
+<div class="scroll"><table>
+<tr><th>Task</th><th>Category</th><th>Model</th><th>Bare</th><th>bruhs</th><th class="num">Delta</th>
+<th>Result</th><th class="num">n</th><th>Dropped</th><th class="num">Judge errors</th></tr>
+{% for t in tasks %}
+<tr><td>{{ t.task }}{% if t.seeded %} <span class="badge">seeded</span>{% endif %}</td><td>{{ t.category }}</td>
+<td>{{ t.cli }}</td><td>{{ t.bare }}</td><td>{{ t.bruhs }}</td><td class="num">{{ t.delta }}</td>
+<td>{{ t.decision }}</td><td class="num">{{ t.n }}</td><td>{{ t.excluded }}</td><td class="num">{{ t.judge_errors }}</td></tr>
+{% endfor %}
+</table></div>
+
+{% if examples %}
+<h2>Side by side</h2>
+{% for e in examples %}
+<div class="card">
+<h3>{{ e.task }} &middot; {{ e.cli }} &middot; repeat {{ e.repeat }} &middot; task result: {{ e.decision }}</h3>
+<div class="shots">
+<figure>{% if e.before %}<img alt="before" src="{{ e.before }}">{% endif %}<figcaption>Before</figcaption></figure>
+<figure><img alt="bare arm" src="{{ e.bare }}"><figcaption>bare</figcaption></figure>
+<figure><img alt="bruhs arm" src="{{ e.bruhs }}"><figcaption>bruhs</figcaption></figure>
+</div>
+</div>
+{% endfor %}
+{% endif %}
+
+<h2>Run health</h2>
+<div class="scroll"><table>
+<tr><th>Arm</th><th class="num">Runs</th><th class="num">OK</th><th class="num">Error</th><th class="num">Setup failed</th>
+<th class="num">Timeout</th><th class="num">Timeout, no diff</th><th class="num">Contaminated</th>
+<th class="num">Contamination unknown</th><th class="num">Orphaned output</th><th class="num">Checklist invalid</th><th class="num">Grader errors</th></tr>
+{% for arm, c in counts.items() %}
+<tr><td>{{ arm }}</td><td class="num">{{ c.runs }}</td><td class="num">{{ c.ok }}</td><td class="num">{{ c.error }}</td>
+<td class="num">{{ c.setup_failed }}</td><td class="num">{{ c.timeout }}</td><td class="num">{{ c.timeout_no_diff }}</td>
+<td class="num">{{ c.contaminated }}</td><td class="num">{{ c.contaminated_unknown }}</td><td class="num">{{ c.orphaned_output }}</td>
+<td class="num">{{ c.checklist_invalid }}</td><td class="num">{{ c.grader_errors }}</td></tr>
+{% endfor %}
+</table></div>
+<p>Pairwise judge errors per model:
+{% for m in models %}{{ m.model }} {{ m.judge_errors }}{% if not loop.last %}, {% endif %}{% endfor %}.
+"Contamination unknown" means the transcript had no tool-level events to check; those runs are scored.</p>
+
+<h3>Did bruhs actually load?</h3>
+<div class="scroll"><table>
+<tr><th>CLI</th><th class="num">bruhs-arm runs</th><th class="num">Read or invoked bruhs</th><th class="num">Rate</th><th>Bare runs mentioning bruhs</th></tr>
+{% for cli, a in activation.items() %}
+<tr><td>{{ cli }}</td><td class="num">{{ a.runs }}</td><td class="num">{{ a.activated }}</td><td class="num">{{ pct(a.rate) }}</td>
+<td>{% if bare_leaks[cli] %}{{ bare_leaks[cli] | length }}: {{ bare_leaks[cli] | join(", ") }}{% else %}none{% endif %}</td></tr>
+{% endfor %}
+</table></div>
+
+<h2>Method and limits</h2>
+<ul>
+<li>Models: {% for m in matrix.models %}{{ m.model }} via {{ m.cli }} (effort {{ m.effort }}){% if not loop.last %}, {% endif %}{% endfor %}.
+CLI versions: {% for cli, v in matrix.cli_versions.items() %}{{ cli }} {{ v }}{% if not loop.last %}, {% endif %}{% endfor %}.</li>
+<li>Every run gets a fresh isolated home and runs under a macOS sandbox with no access to the user's real home or other runs. Accepted limitation: localhost TCP between sandboxed processes is open.</li>
+<li>The bruhs arm includes the chrome-devtools MCP, which can reach the web; native web tools are off in both arms, and the bare arm has Playwright in each fixture.</li>
+<li>UI/copy are judged blind and pairwise by the two model families other than the run's own; each verdict counts separately.</li>
+<li>Win rate CI: 95% percentile bootstrap, 10,000 resamples over tasks.</li>
+{% if not private %}<li>Tasks from private repositories are shown only by category and score.</li>{% endif %}
+</ul>
+</main>
+<div id="tip" role="tooltip"></div>
+</div>
+<script>
+(() => {
+  const tip = document.getElementById('tip');
+  const show = (el, x, y) => { tip.textContent = el.dataset.tip; tip.style.display = 'block';
+    tip.style.left = (x + 12) + 'px'; tip.style.top = (y + 12) + 'px'; };
+  const hide = () => { tip.style.display = 'none'; };
+  document.querySelectorAll('[data-tip]').forEach(el => {
+    el.addEventListener('pointermove', e => show(el, e.clientX, e.clientY));
+    el.addEventListener('pointerleave', hide);
+    el.addEventListener('focus', () => { const r = el.getBoundingClientRect(); show(el, r.right, r.top); });
+    el.addEventListener('blur', hide);
+  });
+})();
+</script>
+</body>
+</html>

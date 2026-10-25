@@ -6,6 +6,10 @@ from pathlib import Path
 from .types import CATEGORIES, Task
 
 HELDOUT_DIR = "tasks-heldout"
+PRIVATE_DIR = "tasks-private"
+BENCH_DIR = Path(__file__).resolve().parents[1]
+# public seeded tasks, gitignored real tasks from private repos, sealed held-out tasks
+TASK_ROOTS = (BENCH_DIR / "tasks", BENCH_DIR / PRIVATE_DIR, BENCH_DIR / HELDOUT_DIR)
 
 
 class TaskError(Exception):
@@ -64,3 +68,14 @@ def load_task(dir: Path) -> Task:
 def load_tasks(root: Path, *, include_heldout: bool = False) -> list[Task]:
     tasks = [load_task(p.parent) for p in sorted(Path(root).rglob("task.toml"))]
     return [t for t in tasks if include_heldout or not t.heldout]
+
+
+def load_all_tasks(roots=TASK_ROOTS) -> list[Task]:
+    """Every task (held-out included) under the existing ``roots``."""
+    return [t for r in roots if Path(r).is_dir() for t in load_tasks(r, include_heldout=True)]
+
+
+def is_private(task: Task) -> bool:
+    """Real tasks (a source repo, or under tasks-private/): never published beyond
+    category and scores."""
+    return task.repo is not None or PRIVATE_DIR in Path(task.dir).resolve().parts

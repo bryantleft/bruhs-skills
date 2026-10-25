@@ -1,0 +1,69 @@
+# Does bruhs help?
+
+Generated {{ date }} · bruhs commit `{{ matrix.bruhs_commit[:12] }}` · {{ matrix.repeats or "?" }} repeats per task, model and arm{% if not private %} · public report{% endif %}
+
+
+Same prompt, model, effort, tools and sandbox in two arms: **bare** (no skill) and **bruhs** (bruhs plus its companions). A task is a bruhs win or loss when its primary metric differs by more than a frozen margin, otherwise a tie. Win rate counts ties as half (50% = no difference). Cost, time and scope creep never decide a task.
+
+{{ ui_note }}
+
+## Headline
+
+| Model | Won | Tied | Lost | Win rate | 95% CI | Seeded W/T/L | Seeded win rate | Seeded CI |
+|---|---:|---:|---:|---:|---|---:|---:|---|
+{% for m in models %}
+| {{ m.model }} | {{ m.all.w }} | {{ m.all.t }} | {{ m.all.l }} | {{ m.all.rate }} | {{ m.all.ci }} | {{ m.seeded.w }}/{{ m.seeded.t }}/{{ m.seeded.l }} | {{ m.seeded.rate }} | {{ m.seeded.ci }} |
+{% endfor %}
+
+## By category
+
+| Model | Category | Primary metric | Tasks | W/T/L | Mean delta |
+|---|---|---|---:|---:|---:|
+{% for c in categories %}
+| {{ c.model }} | {{ c.category }} | {{ c.metric }} | {{ c.tasks }} | {{ c.w }}/{{ c.t }}/{{ c.l }} | {{ c.delta }} |
+{% endfor %}
+
+## Cost, time and scope (means per run; cost n/a where the CLI reports no price)
+
+| Model | Arm | Runs | Cost | Minutes | Turns | Input tokens | Output tokens | Lines out of scope | Files out of scope |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+{% for c in costs %}
+| {{ c.model }} | {{ c.arm }} | {{ c.runs }} | {{ c.cost }} | {{ c.wall }} | {{ c.turns }} | {{ c.tok_in }} | {{ c.tok_out }} | {{ c.scope_lines }} | {{ c.scope_files }} |
+{% endfor %}
+
+## Every task
+
+| Task | Category | Model | Bare | bruhs | Delta | Result | n | Dropped | Judge errors |
+|---|---|---|---|---|---:|---|---:|---|---:|
+{% for t in tasks %}
+| {{ t.task }}{% if t.seeded %} (seeded){% endif %} | {{ t.category }} | {{ t.cli }} | {{ t.bare }} | {{ t.bruhs }} | {{ t.delta }} | {{ t.decision }} | {{ t.n }} | {{ t.excluded }} | {{ t.judge_errors }} |
+{% endfor %}
+
+## Run health
+
+| Arm | Runs | OK | Error | Setup failed | Timeout | Timeout, no diff | Contaminated | Contamination unknown | Orphaned output | Checklist invalid | Grader errors |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+{% for arm, c in counts.items() %}
+| {{ arm }} | {{ c.runs }} | {{ c.ok }} | {{ c.error }} | {{ c.setup_failed }} | {{ c.timeout }} | {{ c.timeout_no_diff }} | {{ c.contaminated }} | {{ c.contaminated_unknown }} | {{ c.orphaned_output }} | {{ c.checklist_invalid }} | {{ c.grader_errors }} |
+{% endfor %}
+
+Pairwise judge errors per model: {% for m in models %}{{ m.model }} {{ m.judge_errors }}{% if not loop.last %}, {% endif %}{% endfor %}.
+
+### Did bruhs actually load?
+
+| CLI | bruhs-arm runs | Read or invoked bruhs | Rate | Bare runs mentioning bruhs |
+|---|---:|---:|---:|---|
+{% for cli, a in activation.items() %}
+| {{ cli }} | {{ a.runs }} | {{ a.activated }} | {{ pct(a.rate) }} | {% if bare_leaks[cli] %}{{ bare_leaks[cli] | length }}: {{ bare_leaks[cli] | join(", ") }}{% else %}none{% endif %} |
+{% endfor %}
+
+## Method and limits
+
+- Models: {% for m in matrix.models %}{{ m.model }} via {{ m.cli }} (effort {{ m.effort }}){% if not loop.last %}, {% endif %}{% endfor %}.
+- Fresh isolated home per run, under a macOS sandbox with no access to the real home or other runs. Accepted limitation: localhost TCP between sandboxed processes is open.
+- The bruhs arm includes the chrome-devtools MCP, which can reach the web; native web tools are off in both arms.
+- UI/copy judged blind and pairwise by the two other model families; each verdict counts separately.
+- Win rate CI: 95% percentile bootstrap, 10,000 resamples over tasks.
+{% if not private %}
+- Tasks from private repositories are shown only by category and score.
+{% endif %}
