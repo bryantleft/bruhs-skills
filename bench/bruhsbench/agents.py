@@ -49,6 +49,13 @@ PREAMBLE = (
 )
 
 
+# grok -p waits for background work the agent left running (a dev server) after its
+# turn ends, 600 s by default, then stops it and exits 1 (see agent_finished). Bounded
+# in both arms so it doesn't inflate wall_s or push a run into the timeout; a background
+# job that finishes within it still wakes the agent for a follow-up turn.
+GROK_BACKGROUND_WAIT_S = 30
+
+
 @dataclass(frozen=True)
 class Price:
     """USD per million tokens."""
@@ -97,7 +104,8 @@ def build_command(spec: ModelSpec, arm: Arm, prompt: str, workdir: Path, home: P
     if spec.cli == "grok":
         return ["grok", "-p", text, "-m", spec.model, "--reasoning-effort", spec.effort,
                 "--output-format", "streaming-json", "--always-approve", "--cwd", str(workdir),
-                "--disable-web-search"]
+                "--disable-web-search",
+                "--background-wait-timeout", str(GROK_BACKGROUND_WAIT_S)]
     raise ValueError(f"unknown cli {spec.cli!r}")
 
 

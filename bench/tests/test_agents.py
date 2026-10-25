@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from bruhsbench.agents import (
+    GROK_BACKGROUND_WAIT_S,
     PREAMBLE,
     ParsedRun,
     agent_finished,
@@ -102,6 +103,11 @@ def test_grok_command():
         _remove_once(argv, pair)
     assert "--always-approve" in argv
     assert "--disable-web-search" in argv
+    # leftover background work (a dev server) may hold the exit for at most this long,
+    # the same in both arms, instead of grok's 600 s default
+    i = argv.index("--background-wait-timeout")
+    assert argv[i + 1] == str(GROK_BACKGROUND_WAIT_S) and 0 < GROK_BACKGROUND_WAIT_S <= 60
+    assert argv == cmd("grok", "bruhs")
 
 
 # --------------------------------------------------------------------- parsing
