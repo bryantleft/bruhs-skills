@@ -576,3 +576,38 @@ def test_live_judge_has_no_tools(cli, monkeypatch):
         assert seen["tool_defs"] and all(d == [] for d in seen["tool_defs"]), seen["tool_defs"]
     if cli == "codex":
         assert seen["codex_tools"] == [], seen["codex_tools"]
+
+
+# --------------------------------------------------------------------------- unavailable judge
+
+
+def _no_claude_token(monkeypatch):
+    from bruhsbench.homes import ClaudeAuthMissing
+
+    def build_home(cli, *a, **k):
+        if cli == "claude":
+            raise ClaudeAuthMissing("no claude token")
+        return {"HOME": "/nonexistent"}
+
+    monkeypatch.setattr(J, "build_home", build_home)
+
+
+def test_unavailable_claude_judge_is_a_judge_error_without_retry(tmp_path, monkeypatch):
+    calls = _stub_cli(monkeypatch, tmp_path, [])
+    _no_claude_token(monkeypatch)
+    with pytest.raises(J.JudgeError, match="claude judge unavailable"):
+        J.judge_call(SPEC["claude"], "p", [], J.PAIRWISE_SCHEMA)
+    assert calls == []  # no process started, no retry
+
+
+def test_pairwise_records_unavailable_judge_as_error(pair, monkeypatch):
+    task, bare, bruhs = pair
+    _no_claude_token(monkeypatch)
+    # a grok run's pair, judged by claude
+    results = bare.parent
+    g_bare = make_run(results, "ui-pricing__grok__bare__r1", "Done.", BARE_DIFF)
+    g_bruhs = make_run(results, "ui-pricing__grok__bruhs__r1", BRUHS_FINAL, BRUHS_DIFF)
+    out = J.pairwise(task, g_bare, g_bruhs, SPEC["claude"])
+    assert out["winner"] is None and "claude judge unavailable" in out["error"]
+    verdict = json.loads((results / "_pairs" / "ui-pricing__grok__r1__claude.json").read_text())
+    assert verdict["winner"] is None and "claude judge unavailable" in verdict["error"]

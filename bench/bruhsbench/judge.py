@@ -55,7 +55,7 @@ import tempfile
 from pathlib import Path
 
 from .graders.scope import parse_diff
-from .homes import BRUHS_REPO, build_home, claude_args
+from .homes import BRUHS_REPO, ClaudeAuthMissing, build_home, claude_args
 from . import untrusted
 from .sandbox import private_tmp, remove_private_tmp, wrap
 from .sandbox import work_base as sandbox_work_base
@@ -460,7 +460,8 @@ def judge_call(judge: ModelSpec, prompt: str, images: list[Path], schema: dict) 
 
     Runs in a fresh bare isolated home with an empty cwd and no tools; ``images`` are
     attached to the message. Invalid output is retried once; a second failure raises
-    :class:`JudgeError`.
+    :class:`JudgeError`. A judge that can't start at all (no claude token) raises
+    :class:`JudgeError` at once, so it is recorded as a judge error, never a crash.
     """
     names = [Path(p).name for p in images]
     if len(set(names)) != len(names):
@@ -469,7 +470,10 @@ def judge_call(judge: ModelSpec, prompt: str, images: list[Path], schema: dict) 
     for _ in range(2):
         root = Path(tempfile.mkdtemp(prefix=f"{judge.cli}-", dir=work_base()))
         try:
-            env = build_home(judge.cli, "bare", root, BRUHS_REPO)
+            try:
+                env = build_home(judge.cli, "bare", root, BRUHS_REPO)
+            except ClaudeAuthMissing as exc:
+                raise JudgeError(f"{judge.cli} judge unavailable: {exc}") from exc
             if judge.cli == "grok":
                 env.update(GROK_ENV)
             cwd, scratch = root / "cwd", root / "scratch"
