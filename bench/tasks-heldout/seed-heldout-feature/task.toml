@@ -1,0 +1,12 @@
+id = "seed-heldout-feature"
+category = "feature"
+# Held-out (sealed): never run in the pilot or the full run.
+# Python + FastAPI (uv). The venv is created by setup.sh (uv sync --frozen); checks call
+# its interpreter directly, so they run offline and never touch the agent's uv cache.
+allowed_paths = ["app/**", "tests/**", "data/**", "README.md"]
+
+[checks]
+build = "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -c 'import app.main'"
+test = "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider --junitxml=$BRUHSBENCH_REPORT"
+# tests/hidden/test_hidden_holds.py: the HTTP API through create_app() and TestClient
+hidden = "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest tests/hidden -q -p no:cacheprovider --import-mode=importlib --junitxml=$BRUHSBENCH_REPORT"

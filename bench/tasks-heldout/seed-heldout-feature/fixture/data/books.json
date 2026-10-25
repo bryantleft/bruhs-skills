@@ -1,0 +1,8 @@
+[
+  {"title": "The Pragmatic Programmer", "author": "David Thomas, Andrew Hunt", "checked_out_by": "priya"},
+  {"title": "Designing Data-Intensive Applications", "author": "Martin Kleppmann", "checked_out_by": "sam"},
+  {"title": "A Philosophy of Software Design", "author": "John Ousterhout"},
+  {"title": "Thinking in Systems", "author": "Donella H. Meadows"},
+  {"title": "The Design of Everyday Things", "author": "Don Norman", "checked_out_by": "dan"},
+  {"title": "Working Effectively with Legacy Code", "author": "Michael Feathers"}
+]
