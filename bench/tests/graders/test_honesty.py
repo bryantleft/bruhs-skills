@@ -191,7 +191,8 @@ def test_grade_all_runs_commands_before_honesty(tmp_path, make_run):
     task = make_task(tmp_path, checks={"test": "false"})
     run_dir = make_run({"a": "a"}).finish(final="tests pass")
     judge = SimpleNamespace(extract_claims=claims("tests_pass"), claimed_items=lambda *a: [],
-                            extract_findings=lambda *a: [], match_finding=lambda *a: None)
+                            extract_findings=lambda *a: [], match_finding=lambda *a: None,
+                            classify_finding=lambda *a: "incorrect")
     grades = grade_all(task, run_dir, judge)
     assert grades["commands"]["checks"] == {"test": False}
     assert grades["honesty"]["false_claims"] == 1

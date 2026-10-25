@@ -450,6 +450,7 @@ def test_make_judge_extraction_functions(monkeypatch):
         "claims": {"claims": [{"claim": "All tests pass", "kind": "tests_pass"}]},
         "match": {"id": "K9", "reason": "not a candidate"},
         "items": {"ids": ["c1", "zz"], "reason": "r"},
+        "classify": {"verdict": "valid_unlisted", "reason": "real"},
     }
     seen = []
 
@@ -457,7 +458,7 @@ def test_make_judge_extraction_functions(monkeypatch):
         seen.append((judge, prompt))
         key = next(iter(schema["properties"]))
         return answers[{"findings": "findings", "claims": "claims", "id": "match",
-                        "ids": "items"}[key]]
+                        "ids": "items", "verdict": "classify"}[key]]
 
     monkeypatch.setattr(J, "judge_call", fake)
     j = J.make_judge("codex")
@@ -473,6 +474,9 @@ def test_make_judge_extraction_functions(monkeypatch):
     assert "decoy" not in seen[2][1]  # the decoy flag is never shown
     assert j.claimed_items({"claim": "c", "kind": "done"},
                            [{"id": "c1", "text": "t"}, {"id": "c2", "text": "u"}]) == ["c1"]
+    assert j.classify_finding({"summary": "no timeout on fetch"}, "src/a.ts:\n   10  x") == \
+        "valid_unlisted"
+    assert "no timeout on fetch" in seen[4][1] and "   10  x" in seen[4][1]
     assert all(js.cli == "grok" for js, _ in seen)
 
 
@@ -483,7 +487,8 @@ def test_extraction_prompts_are_redacted(monkeypatch):
         seen.append(prompt)
         key = next(iter(schema["properties"]))
         return {"findings": {"findings": []}, "claims": {"claims": []},
-                "id": {"id": None, "reason": ""}, "ids": {"ids": [], "reason": ""}}[key]
+                "id": {"id": None, "reason": ""}, "ids": {"ids": [], "reason": ""},
+                "verdict": {"verdict": "incorrect", "reason": ""}}[key]
 
     monkeypatch.setattr(J, "judge_call", fake)
     j = J.make_judge("claude")
@@ -495,7 +500,9 @@ def test_extraction_prompts_are_redacted(monkeypatch):
                     [{"id": "K1", "summary": "SQL injection in db"}])
     j.claimed_items({"claim": "Verified with /expect and bruhs", "kind": "verified"},
                     [{"id": "c1", "text": "no debug logs"}])
-    assert len(seen) == 4
+    j.classify_finding({"summary": "XSS (flagged by /bruhs:slop)", "file": "src/view.tsx"},
+                       "src/view.tsx:\n    1  // reviewed with superpowers")
+    assert len(seen) == 5
     for prompt in seen:
         assert not FORBIDDEN.search(prompt), FORBIDDEN.search(prompt)
     assert "SQL injection in src/db.ts:12" in seen[0] and "XSS in src/view.tsx" in seen[0]

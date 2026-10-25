@@ -10,6 +10,10 @@ list of items is accepted too).
   redacted diff and final message, commit messages, screenshots). Each judge's vote is
   kept in ``votes``; an item is hit only with a strict majority, so with two judges a 1-1
   split is a miss.
+  For ship tasks the evidence is git state rather than the run's net diff: each commit
+  on any local branch that isn't in bench-base (message + patch), the branch list, and
+  the uncommitted changes against HEAD, so a judge sees exactly what was committed
+  where, even when the agent ended on another branch.
 
 Result (``grades/checklist.json``): ``{applicable, items: [{id, hit, by, votes?}], score,
 judge_errors, notes}`` with ``score`` = hits / items. A judging failure is never scored as
@@ -34,6 +38,7 @@ from . import not_applicable, run_meta, workspace_of, write_grade
 from .commands import clone_tree, run_check, scratch_root
 
 MAX_COMMITS_CHARS = 10_000
+SHIP_CATEGORY = "ship"
 
 
 def load_items(path: Path) -> list[dict]:
@@ -72,24 +77,74 @@ def _commits(workspace: Path | None, notes: dict[str, str] | None = None) -> str
     return proc.stdout.strip() if proc.returncode == 0 else ""
 
 
+def _git_out(workspace: Path, *args: str) -> str:
+    """stdout of hardened, sandboxed git in the agent's repo (R22); fails closed."""
+    proc = untrusted.git(workspace, *args, write=False, check=False, text=True)
+    if proc.returncode != 0:
+        raise untrusted.UnsafePath(f"git {args[0]} failed: {proc.stderr.strip()[:200]}")
+    return proc.stdout
+
+
+def ship_evidence(workspace: Path | None, notes: dict[str, str] | None = None) -> str:
+    """What a ship task left in git: branches, each commit not in bench-base on any
+    local branch (oldest first, message + patch), and the uncommitted changes vs HEAD.
+    Redacted, agent-config files dropped, clipped to the judge's diff budget."""
+    if workspace is None:
+        return "(no workspace)"
+    try:
+        head = _git_out(workspace, "rev-parse", "--abbrev-ref", "HEAD").strip()
+        branches = _git_out(workspace, "branch", "--format=%(refname:short)").split()
+        shas = _git_out(workspace, "rev-list", "--reverse", "--branches", "--not",
+                        BASE_TAG).split()
+        commits = []
+        for sha in shas:
+            short = _git_out(workspace, "log", "-1", "--format=%h", sha).strip()
+            message = _git_out(workspace, "log", "-1", "--format=%B", sha).strip()
+            on = _git_out(workspace, "branch", "--contains", sha,
+                          "--format=%(refname:short)").split()
+            patch = _git_out(workspace, "show", "--format=", "--binary", sha)
+            commits.append(f"### commit {short} (on: {', '.join(on)})\n{message}\n"
+                           f"```diff\n{J.diff_for_judge(patch)}```")
+        uncommitted = _git_out(workspace, "diff", "--cached", "--binary", "HEAD")
+    except untrusted.UnsafePath as exc:
+        if notes is not None:
+            notes["git"] = str(exc)
+        return "(git state unreadable)"
+    text = (f"Current branch: {head}\nLocal branches: {', '.join(branches)}\n\n"
+            f"## Commits on local branches, not in the starting state (oldest first)\n"
+            f"{chr(10).join(commits) or '(no commits)'}\n\n"
+            f"## Uncommitted changes (working tree vs {head})\n```diff\n"
+            f"{J.diff_for_judge(uncommitted)}```\n")
+    return J.clip(J.redact(text), 2 * J.MAX_DIFF_CHARS)
+
+
 def judge_prompt(task: Task, run_dir: Path, items: list[dict], screens: list[str],
-                 commits: str) -> str:
+                 commits: str, git_state: str | None = None) -> str:
+    """The judges' prompt. ``git_state`` (ship tasks, :func:`ship_evidence`) replaces the
+    net diff and HEAD-only commit messages."""
     listing = json.dumps([{"id": i["id"], "text": i["text"]} for i in items], indent=2)
     diff = (Path(run_dir) / "diff.patch")
     final = (Path(run_dir) / "final.txt")
+    if git_state is not None:
+        evidence = f"## Git state\n{git_state}\n"
+        sources = "the git state (commits, branches, uncommitted changes)"
+    else:
+        evidence = (
+            f"## Code diff (against the starting state)\n```diff\n"
+            f"{J.diff_for_judge(diff.read_text(errors='replace') if diff.is_file() else '')}```\n\n"
+            f"## Commit messages\n{J.clip(J.redact(commits), MAX_COMMITS_CHARS) or '(no commits)'}\n")
+        sources = "the code diff, the commit messages"
     return (
         "An agent worked on the task below. Decide, for each checklist item, whether the "
-        "delivered work satisfies it (hit = true) or not (hit = false). Judge from the "
-        "evidence: the code diff, the commit messages, and the screenshots. The final "
+        f"delivered work satisfies it (hit = true) or not (hit = false). Judge from the "
+        f"evidence: {sources}, and the screenshots. The final "
         "message is the agent's own account: it counts as evidence only for items about "
         "what the agent told the user, never as proof the code does something. When the "
         "evidence doesn't show an item is satisfied, it is not. Give one entry per item, "
         "with a one-sentence evidence note.\n\n"
         f"## Task given\n{J.redact(task.prompt)}\n\n"
         f"## Checklist items\n{listing}\n\n"
-        f"## Code diff (against the starting state)\n```diff\n"
-        f"{J.diff_for_judge(diff.read_text(errors='replace') if diff.is_file() else '')}```\n\n"
-        f"## Commit messages\n{J.clip(J.redact(commits), MAX_COMMITS_CHARS) or '(no commits)'}\n\n"
+        f"{evidence}\n"
         f"## Screenshots\n{', '.join(screens) or '(none)'}\n\n"
         f"## Final message\n"
         f"{J.clip(J.redact(final.read_text(errors='replace') if final.is_file() else ''), J.MAX_FINAL_CHARS)}\n"
@@ -111,8 +166,11 @@ def _votes(task: Task, run_dir: Path, items: list[dict], judges: list[ModelSpec]
             for judge in judges:
                 errors[judge.cli] = str(exc)
             return {i: {j.cli: None for j in judges} for i in ids}
+        workspace = workspace_of(run_dir)
+        git_state = (ship_evidence(workspace, notes) if task.category == SHIP_CATEGORY
+                     else None)
         prompt = judge_prompt(task, run_dir, items, [p.name for p in images],
-                              _commits(workspace_of(run_dir), notes))
+                              _commits(workspace, notes), git_state)
         for judge in judges:
             try:
                 answer = J.judge_call(judge, prompt, images, J.CHECKLIST_SCHEMA)

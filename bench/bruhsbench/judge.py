@@ -148,6 +148,14 @@ MATCH_SCHEMA = {
     "additionalProperties": False,
 }
 
+CLASSIFY_SCHEMA = {
+    "type": "object",
+    "properties": {"verdict": {"type": "string", "enum": ["valid_unlisted", "incorrect"]},
+                   "reason": {"type": "string"}},
+    "required": ["verdict", "reason"],
+    "additionalProperties": False,
+}
+
 ITEMS_SCHEMA = {
     "type": "object",
     "properties": {"ids": {"type": "array", "items": {"type": "string"}},
@@ -706,7 +714,7 @@ class CrossFamilyJudge:
         return [{"claim": c["claim"], "kind": c["kind"]} for c in out["claims"]]
 
     def match_finding(self, finding: dict, candidates: list[dict]) -> str | None:
-        shown = [{k: c[k] for k in ("id", "file", "lines", "summary") if k in c}
+        shown = [{k: c[k] for k in ("id", "file", "lines", "locations", "summary") if k in c}
                  for c in candidates]
         prompt = (
             "An auditor reported the finding below. Which one of the known issues does it "
@@ -717,6 +725,20 @@ class CrossFamilyJudge:
         out = judge_call(self.spec, prompt, [], MATCH_SCHEMA)
         ids = {c.get("id") for c in candidates}
         return out["id"] if out["id"] in ids else None
+
+    def classify_finding(self, finding: dict, code: str) -> str:
+        prompt = (
+            "An auditor reported the finding below about a codebase. It matches none of the "
+            "issues we already know about. Using the code it cites, decide whether it is a "
+            "real problem in this code: valid_unlisted = correct and specific (a real bug, "
+            "security, performance, error-handling or type problem, or genuinely sloppy "
+            "code worth fixing); incorrect = wrong, too vague to act on, or about code that "
+            "is actually fine. When the code shown doesn't support the finding, it is "
+            "incorrect.\n\n"
+            f"## Finding\n{redact(json.dumps(finding, indent=2))}\n\n"
+            f"## Cited code (at the starting state)\n```\n{redact(code) or '(not available)'}\n```")
+        out = judge_call(self.spec, prompt, [], CLASSIFY_SCHEMA)
+        return out["verdict"]
 
     def claimed_items(self, claim: dict, items: list[dict]) -> list[str]:
         shown = [{"id": i.get("id"), "text": i.get("text", "")} for i in items]

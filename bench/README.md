@@ -101,6 +101,11 @@ Run the stages in order: `probe`, `run`, `capture`, `grade`, `judge`, `spotcheck
   solutions live in `tests/reference/<task>/`, outside every workspace, and
   `tests/test_seeded_tasks.py` checks that each seeded task scores low untouched and full
   with its reference solution.
+- **Audit scoring.** Each finding is matched to a known issue by the lines it cites (an
+  issue can list several valid sites), with a judge deciding when the location is
+  ambiguous, lands only on a decoy, or hits nothing. A finding that matches no known issue
+  is judged against the code it cites: a real problem the task didn't plant
+  (`valid_unlisted`) doesn't lower precision, while a wrong one or a flagged decoy does.
 - **Win rule (frozen).** Each category has one primary metric. For audit and ship, a task is
   a bruhs win or loss when the bruhs mean minus the bare mean is more than the margin. For
   the 1/0 categories, one arm needs at least two more passing repeats than the other, however

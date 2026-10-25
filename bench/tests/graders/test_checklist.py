@@ -6,7 +6,7 @@ from bruhsbench import judge as J
 from bruhsbench.graders import checklist
 from bruhsbench.types import MODELS
 
-from conftest import make_task
+from conftest import git, make_task
 
 SPEC = {m.cli: m for m in MODELS}
 
@@ -141,3 +141,29 @@ def test_checklist_not_applicable_without_checklist(tmp_path, make_run):
     run_dir = make_run({"a": "1"}).finish()
     out = checklist.grade(make_task(tmp_path), run_dir, [SPEC["codex"], SPEC["grok"]])
     assert out["applicable"] is False
+
+
+def test_ship_evidence_shows_commits_on_every_branch(tmp_path, make_run):
+    r = make_run({"app.py": "x = 1\n"}, run_id="ship__claude__bare__r1")
+    git(r.workspace, "switch", "--quiet", "-c", "feat/thing")
+    r.write({"app.py": "x = 2\n", "CLAUDE.md": "# bruhs rules\n"})
+    git(r.workspace, "add", "-A")
+    git(r.workspace, "commit", "--quiet", "-m", "feat: bump x")
+    git(r.workspace, "switch", "--quiet", "main")
+    r.write({"notes.txt": "wip\n"})
+    git(r.workspace, "add", "-A")
+    notes = {}
+    text = checklist.ship_evidence(r.workspace, notes)
+    assert notes == {}
+    assert "Current branch: main" in text and "feat/thing" in text
+    commits, uncommitted = text.split("## Uncommitted changes", 1)
+    assert "(on: feat/thing)\nfeat: bump x" in commits and "+x = 2" in commits
+    assert "CLAUDE.md" not in text and "bruhs" not in text  # agent config dropped, redacted
+    assert "+wip" in uncommitted and "app.py" not in uncommitted
+
+
+def test_ship_evidence_unreadable_repo_is_noted(tmp_path):
+    notes = {}
+    (tmp_path / "ws").mkdir()
+    assert checklist.ship_evidence(tmp_path / "ws", notes) == "(git state unreadable)"
+    assert "git" in notes

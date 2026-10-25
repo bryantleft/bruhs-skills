@@ -56,8 +56,8 @@ def test_grade_all_order(tmp_path, monkeypatch):
                       ("audit", audit), ("honesty", honesty)):
         monkeypatch.setattr(mod, "grade", lambda *a, _n=name, **k: order.append(_n) or {})
     task = make_task(tmp_path, "t", "feature")
-    judge = SimpleNamespace(extract_findings=None, match_finding=None, extract_claims=None,
-                            claimed_items=None)
+    judge = SimpleNamespace(extract_findings=None, match_finding=None, classify_finding=None,
+                            extract_claims=None, claimed_items=None)
     grade_all(task, tmp_path, judge=judge, checklist_judges=[])
     assert order == ["commands", "scope", "checklist", "audit", "honesty"]
 
