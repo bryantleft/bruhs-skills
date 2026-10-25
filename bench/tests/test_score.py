@@ -33,15 +33,17 @@ def tasks(tmp_path):
 @pytest.mark.parametrize("category", ["feature", "debug", "pr-review"])
 def test_decide_margins_repeat_categories(tasks, category):
     t = tasks[category]
-    # at the margin: 1 of 3 repeats better -> tie (float noise must not tip it)
+    # at the margin: one more passing repeat -> tie (R26: count-based)
     assert decide(t, [1, 0, 0], [1, 1, 0], None) == "tie"
     assert decide(t, [1, 1, 0], [1, 0, 0], None) == "tie"
-    # just under: equal
+    assert decide(t, [0, 0], [1, 0], None) == "tie"  # also with 2 surviving repeats
+    assert decide(t, [0], [1], None) == "tie"
+    # below the margin: same number of passing repeats
     assert decide(t, [1, 0, 0], [0, 1, 0], None) == "tie"
-    # just over: 2 of 3 repeats, or 1 of 2 surviving repeats
-    assert decide(t, [0, 0, 0], [1, 1, 0], None) == "win"
+    # over the margin: two or more more passing repeats
+    assert decide(t, [0, 0, 0], [1, 1, 0], None) == "win"  # 3 repeats, 2 vs 0
+    assert decide(t, [0, 0], [1, 1], None) == "win"  # 2 repeats, 2 vs 0
     assert decide(t, [1, 1, 1], [1, 0, 0], None) == "loss"
-    assert decide(t, [0, 0], [1, 0], None) == "win"
 
 
 def test_decide_margins_audit(tasks):
@@ -179,6 +181,8 @@ def test_summarize_excludes_bad_pairs_from_both_arms(tmp_path, tasks):
     assert c["bruhs"]["contaminated"] == 1 and c["bruhs"]["contaminated_unknown"] == 1
     assert c["bare"]["error"] == 1 and c["bare"]["timeout"] == 2
     assert c["bare"]["timeout_no_diff"] == 1
+    assert s.counts_by_cli["claude"]["bruhs"]["contaminated"] == 1
+    assert set(s.counts_by_cli) == {"claude"}
     # arm means only over runs in valid pairs
     assert s.models["claude"].arms["bare"]["runs"] == 2
 

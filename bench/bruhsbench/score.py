@@ -15,9 +15,11 @@ pr-review          checklist all hit AND checks green AND hidden    1 of 3 repea
 ship               checklist score                                  10 points
 =================  ==============================================  ==================
 
-A task is a win/loss when the bruhs mean minus the bare mean is *more than* the margin
-(feature/debug/pr-review/audit/ship); for ui/copy when the mean preference is >= 0.55 /
-<= 0.45 (Ruling R23 b).
+feature/debug/pr-review (Ruling R26): a win/loss when one arm has *more than one* more
+passing repeat (sum(bruhs) - sum(bare) > 1, i.e. 2+), over the surviving matched repeats;
+otherwise a tie, whatever the number of surviving repeats. audit/ship: when the bruhs mean
+minus the bare mean is *more than* the margin. ui/copy: when the mean preference is
+>= 0.55 / <= 0.45 (Ruling R23 b).
 
 Aggregation (Ruling R23):
 
@@ -52,14 +54,16 @@ from .types import MODELS, Task
 Decision = Literal["win", "loss", "tie"]
 ARMS = ("bare", "bruhs")
 PAIRWISE = ("ui", "copy")
-REPEAT_MARGIN = 1 / 3  # "1 of 3 repeats"
-MARGINS = {"feature": REPEAT_MARGIN, "debug": REPEAT_MARGIN, "pr-review": REPEAT_MARGIN,
-           "audit": 0.05, "ship": 0.10}
+# R26: "1 of 3 repeats" is a count: win/loss needs 2+ more passing repeats in one arm
+# (sums over the surviving, matched repeats), whatever the number of surviving repeats
+REPEAT_CATEGORIES = ("feature", "debug", "pr-review")
+REPEAT_MARGIN = 1  # passing repeats
+MARGINS = {"audit": 0.05, "ship": 0.10}  # on the difference of means
 PREF_WIN, PREF_LOSS = 0.55, 0.45
 PREF_VALUE = {"bruhs": 1.0, "tie": 0.5, "bare": 0.0}
 OUTCOME_VALUE = {"win": 1.0, "tie": 0.5, "loss": 0.0}
 AGREEMENT_THRESHOLD = 0.75
-EPS = 1e-9  # mean differences like 2/3 - 1/3 must not tip over a margin by float noise
+EPS = 1e-9  # a difference exactly at a margin must not tip over it by float noise
 GRADES = ("commands", "scope", "checklist", "audit", "honesty")
 RESAMPLES = 10_000
 
@@ -130,8 +134,10 @@ def decide(task: Task, bare: Sequence[float], bruhs: Sequence[float],
         return "tie"
     if not bare or not bruhs:
         raise ValueError(f"{task.id}: no surviving repeats in one arm")
-    margin = MARGINS[task.category]
-    delta = mean(bruhs) - mean(bare)
+    if task.category in REPEAT_CATEGORIES:
+        margin, delta = REPEAT_MARGIN, sum(bruhs) - sum(bare)
+    else:
+        margin, delta = MARGINS[task.category], mean(bruhs) - mean(bare)
     if delta > margin + EPS:
         return "win"
     if delta < -margin - EPS:
@@ -335,7 +341,8 @@ class Summary:
     results_root: Path
     tasks: list[TaskOutcome]
     models: dict[str, ModelSummary]
-    counts: dict[str, dict[str, int]]
+    counts: dict[str, dict[str, int]]  # arm -> health counts, all CLIs
+    counts_by_cli: dict[str, dict[str, dict[str, int]]]  # cli -> arm -> health counts
     activation: dict[str, dict]
     bare_leaks: dict[str, list[str]]
     agreement: float | None
@@ -494,5 +501,8 @@ def summarize(results_root: Path, tasks: Sequence[Task] | None = None, *, seed: 
     return Summary(
         results_root, sorted(outcomes.values(), key=lambda o: (o.category, o.task_id,
                                                                order.get(o.cli, 9))),
-        models, _counts(runs), activation, leaks, agree, ui_source,
+        models, _counts(runs),
+        {m.cli: _counts([r for r in runs if r.cli == m.cli]) for m in MODELS
+         if any(r.cli == m.cli for r in runs)},
+        activation, leaks, agree, ui_source,
         {t: by_id[t] for t in sorted({o.task_id for o in outcomes.values()})}, matrix)

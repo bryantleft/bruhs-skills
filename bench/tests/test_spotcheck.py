@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import threading
+import urllib.error
 import urllib.request
 
 import pytest
@@ -73,10 +74,37 @@ def test_serve_records_picks(root):
         base = f"http://127.0.0.1:{server.server_address[1]}"
         assert b"Pair 1" in urllib.request.urlopen(base + "/").read()
         unit = json.loads((root / "spotcheck.json").read_text())["pairs"][0]["unit"]
-        req = urllib.request.Request(base + "/pick", data=json.dumps(
-            {"unit": unit, "choice": "tie"}).encode(), method="POST")
-        assert urllib.request.urlopen(req).status == 200
+        body = json.dumps({"unit": unit, "choice": "tie"}).encode()
+
+        def post(headers):
+            req = urllib.request.Request(base + "/pick", data=body, method="POST",
+                                         headers=headers)
+            try:
+                return urllib.request.urlopen(req).status
+            except urllib.error.HTTPError as exc:
+                return exc.code
+
+        json_ct = {"Content-Type": "application/json"}
+        assert post({"Content-Type": "text/plain"}) == 415  # a plain cross-site form post
+        assert post({**json_ct, "Origin": "http://evil.example"}) == 403
+        assert post({**json_ct, "Host": "evil.example"}) == 403  # DNS rebinding
+        assert not json.loads((root / "spotcheck.json").read_text()).get("picks")
+        assert post({**json_ct, "Origin": base}) == 200
     finally:
         server.shutdown()
     picks = json.loads((root / "spotcheck.json").read_text())["picks"]
     assert picks[unit]["arm"] == "tie"
+
+
+def test_existing_sample_is_reused_unless_forced(root, caplog):
+    root, t = root
+    first = spotcheck.select_pairs(root, n=2, seed=0)
+    spotcheck.record_pick(root, first[0]["unit"], "tie")
+    with caplog.at_level("INFO", logger="bruhsbench.spotcheck"):
+        assert spotcheck.select_pairs(root, n=4, seed=5) == first
+    assert "reusing the existing spot-check sample" in caplog.text
+    fresh = spotcheck.select_pairs(root, n=4, seed=5, force=True)
+    assert len(fresh) == 4
+    state = json.loads((root / "spotcheck.json").read_text())
+    assert state["picks"] == {} and state["seed"] == 5
+    assert (root / "spotcheck.json.bak").is_file()

@@ -1,4 +1,7 @@
-"""``bruhsbench``: run -> grade -> capture -> judge -> spotcheck -> report.
+"""``bruhsbench``: run -> capture -> grade -> judge -> spotcheck -> report (Ruling R24).
+
+capture comes before grade because the checklist judges see each ui/copy run's
+screenshots (``<run_dir>/screens``).
 
 Every stage reads and writes plain files under one results dir (``--results``, default
 ``bench/results/full``; ``--pilot`` -> ``bench/results/pilot``) and skips work whose
@@ -174,6 +177,8 @@ def cmd_run(args) -> int:
     from .homes import ClaudeAuthMissing
     from .runner import AuthAbort, run_matrix
 
+    if args.pilot and args.tasks:
+        raise CliError("--pilot runs the tasks in bench/pilot.toml; don't combine it with --tasks")
     all_tasks = load_all_tasks()
     ids = pilot_task_ids() if args.pilot else args.tasks
     tasks = select_tasks(all_tasks, ids, heldout=args.heldout)
@@ -217,14 +222,23 @@ def cmd_grade(args) -> int:
     from .graders import grade_all, run_meta
     from .judge import judges_for, make_judge, parse_run_id
 
+    from .score import load_runs
+
     root = results_root(args)
-    todo = []
+    excluded = {r.run_id for r in load_runs(root) if r.exclusion}
+    todo, unshot = [], []
     for d, task in _runs_with_tasks(root, args):
         status = run_meta(d).get("status")
         if status in ("error", "setup_failed"):
             continue  # excluded from scoring (R23 a); nothing to grade
         if args.force or not _graded(d):
             todo.append((d, task))
+            if (task.category in PAIRWISE and d.name not in excluded
+                    and not any((d / "screens").glob("*.png"))):
+                unshot.append(d.name)
+    if unshot:
+        print(f"warning: {len(unshot)} ui/copy runs have no screenshots, so their checklist "
+              f"judges see none (run `bruhsbench capture` first): {unshot}", file=sys.stderr)
     print(f"grade: {len(todo)} runs to grade in {root}")
 
     def one(d: Path, task: Task) -> None:
@@ -314,7 +328,7 @@ def cmd_judge(args) -> int:
 def cmd_spotcheck(args) -> int:
     from .spotcheck import serve
 
-    serve(results_root(args), n=args.n, seed=args.seed, port=args.port)
+    serve(results_root(args), n=args.n, seed=args.seed, port=args.port, force=args.force)
     return 0
 
 
@@ -364,15 +378,15 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--timeout", type=int, default=45, help="per-run timeout, minutes")
     sp.set_defaults(fn=cmd_run)
 
-    for name, fn, par, help_ in (("grade", cmd_grade, 4, "grade every finished run"),
-                                 ("capture", cmd_capture, 3, "screenshot ui/copy runs"),
+    for name, fn, par, help_ in (("capture", cmd_capture, 3, "screenshot ui/copy runs"),
+                                 ("grade", cmd_grade, 4, "grade every finished run"),
                                  ("judge", cmd_judge, 4, "blind pairwise judging, ui/copy")):
         sp = sub.add_parser(name, help=help_)
         common(sp, parallel=par)
         sp.set_defaults(fn=fn)
 
     sp = sub.add_parser("spotcheck", help="blind-pick ui/copy pairs in a local page")
-    common(sp)
+    common(sp)  # --force: draw a new sample (clears picks; old file kept as .bak)
     sp.add_argument("-n", type=int, default=20)
     sp.add_argument("--seed", type=int, default=0)
     sp.add_argument("--port", type=int, default=8765)

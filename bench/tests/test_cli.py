@@ -113,3 +113,24 @@ def test_judge_skips_done_and_excluded_pairs(tmp_path, monkeypatch):
         ("t-ui__codex__bare__r2", "t-ui__codex__bruhs__r2", "claude"),
         ("t-ui__codex__bare__r2", "t-ui__codex__bruhs__r2", "grok"),
     ]
+
+
+def test_pilot_with_tasks_is_refused(tmp_path):
+    with pytest.raises(cli.CliError, match="--pilot"):
+        cli.cmd_run(_args(tmp_path, pilot=True, tasks=["a"]))
+
+
+def test_grade_warns_on_ui_runs_without_screens(tmp_path, monkeypatch, capsys):
+    t = make_task(tmp_path, "t-ui", "ui")
+    root = tmp_path / "res"
+    make_run(root, t, "claude", "bare", 1, screens=True)
+    make_run(root, t, "claude", "bruhs", 1)  # never captured
+    make_run(root, t, "claude", "bare", 2, contaminated=True)  # excluded: not captured on purpose
+    make_run(root, t, "claude", "bruhs", 2)
+    monkeypatch.setattr(cli, "_task_index", lambda heldout: {t.id: t})
+    monkeypatch.setattr("bruhsbench.graders.grade_all", lambda *a, **k: {})
+    monkeypatch.setattr("bruhsbench.judge.make_judge", lambda c: object())
+    cli.cmd_grade(_args(root))
+    err = capsys.readouterr().err
+    assert "capture" in err and "t-ui__claude__bruhs__r1" in err
+    assert "t-ui__claude__bare__r1" not in err and "t-ui__claude__bare__r2" not in err

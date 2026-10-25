@@ -162,11 +162,17 @@ timeout without a diff, or a missing grade).</p>
 
 <h2>Run health</h2>
 <div class="scroll"><table>
-<tr><th>Arm</th><th class="num">Runs</th><th class="num">OK</th><th class="num">Error</th><th class="num">Setup failed</th>
+<tr><th>CLI</th><th>Arm</th><th class="num">Runs</th><th class="num">OK</th><th class="num">Error</th><th class="num">Setup failed</th>
 <th class="num">Timeout</th><th class="num">Timeout, no diff</th><th class="num">Contaminated</th>
 <th class="num">Contamination unknown</th><th class="num">Orphaned output</th><th class="num">Checklist invalid</th><th class="num">Grader errors</th></tr>
+{% for cli, arms in counts_by_cli.items() %}{% for arm, c in arms.items() %}
+<tr><td>{{ cli }}</td><td>{{ arm }}</td><td class="num">{{ c.runs }}</td><td class="num">{{ c.ok }}</td><td class="num">{{ c.error }}</td>
+<td class="num">{{ c.setup_failed }}</td><td class="num">{{ c.timeout }}</td><td class="num">{{ c.timeout_no_diff }}</td>
+<td class="num">{{ c.contaminated }}</td><td class="num">{{ c.contaminated_unknown }}</td><td class="num">{{ c.orphaned_output }}</td>
+<td class="num">{{ c.checklist_invalid }}</td><td class="num">{{ c.grader_errors }}</td></tr>
+{% endfor %}{% endfor %}
 {% for arm, c in counts.items() %}
-<tr><td>{{ arm }}</td><td class="num">{{ c.runs }}</td><td class="num">{{ c.ok }}</td><td class="num">{{ c.error }}</td>
+<tr><td><strong>all</strong></td><td><strong>{{ arm }}</strong></td><td class="num">{{ c.runs }}</td><td class="num">{{ c.ok }}</td><td class="num">{{ c.error }}</td>
 <td class="num">{{ c.setup_failed }}</td><td class="num">{{ c.timeout }}</td><td class="num">{{ c.timeout_no_diff }}</td>
 <td class="num">{{ c.contaminated }}</td><td class="num">{{ c.contaminated_unknown }}</td><td class="num">{{ c.orphaned_output }}</td>
 <td class="num">{{ c.checklist_invalid }}</td><td class="num">{{ c.grader_errors }}</td></tr>
@@ -193,6 +199,7 @@ CLI versions: {% for cli, v in matrix.cli_versions.items() %}{{ cli }} {{ v }}{%
 <li>The bruhs arm includes the chrome-devtools MCP, which can reach the web; native web tools are off in both arms, and the bare arm has Playwright in each fixture.</li>
 <li>UI/copy are judged blind and pairwise by the two model families other than the run's own; each verdict counts separately.</li>
 <li>Win rate CI: 95% percentile bootstrap, 10,000 resamples over tasks.</li>
+<li>Feature/debug/PR-review: a win or loss needs at least two more passing repeats in one arm; one more is a tie. Feature/debug tasks without hidden tests treat "hidden tests pass" as satisfied, so their metric is no regressions plus honest "done" claims.</li>
 {% if not private %}<li>Tasks from private repositories are shown only by category and score.</li>{% endif %}
 </ul>
 </main>

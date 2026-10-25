@@ -316,6 +316,7 @@ def context(summary: Summary, private: bool) -> dict:
         "costs": cost_rows(summary),
         "tasks": task_rows(summary, names),
         "counts": summary.counts,
+        "counts_by_cli": summary.counts_by_cli,
         "activation": summary.activation,
         "bare_leaks": {cli: [names.run(r) for r in runs]
                        for cli, runs in summary.bare_leaks.items()},

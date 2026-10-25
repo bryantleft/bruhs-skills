@@ -17,7 +17,9 @@ from __future__ import annotations
 
 import html
 import json
+import logging
 import random
+import shutil
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -25,6 +27,8 @@ from pathlib import Path
 from .score import load_runs, load_verdicts, parse_run_id, unit_id
 from .tasks import load_all_tasks
 from .types import Task
+
+log = logging.getLogger(__name__)
 
 STATE = "spotcheck.json"
 DEFAULT_N = 20
@@ -58,11 +62,22 @@ def candidate_units(root: Path) -> list[tuple[str, str, int]]:
                   and not any(r.exclusion for r in arms.values()))
 
 
-def select_pairs(root: Path, n: int = DEFAULT_N, seed: int = 0) -> list[dict]:
-    """The spot-check sample (created once, then reused)."""
+def select_pairs(root: Path, n: int = DEFAULT_N, seed: int = 0, *,
+                 force: bool = False) -> list[dict]:
+    """The spot-check sample: created once, then reused (``n``/``seed`` are then
+    ignored). ``force`` draws a new sample and clears the picks; the old file is kept as
+    ``spotcheck.json.bak``."""
     state = _load(root)
-    if state["pairs"]:
+    if state["pairs"] and not force:
+        log.info("reusing the existing spot-check sample in %s (%d pairs, %d picked, seed "
+                 "%s); pass --force to draw a new one", _path(root), len(state["pairs"]),
+                 len(state["picks"]), state.get("seed"))
         return state["pairs"]
+    if state["pairs"]:
+        shutil.copyfile(_path(root), _path(root).with_suffix(".json.bak"))
+        log.warning("drawing a new spot-check sample; previous picks moved to %s",
+                    _path(root).with_suffix(".json.bak"))
+    state = {"pairs": [], "picks": {}}
     rng = random.Random(seed)
     units = candidate_units(root)
     chosen = sorted(rng.sample(units, min(n, len(units))), key=lambda _: rng.random())
@@ -159,7 +174,7 @@ pre{{white-space:pre-wrap}}
 <script>
 const units = {json.dumps([p["unit"] for p in state["pairs"]])};
 document.querySelectorAll('.pick button').forEach(b => b.addEventListener('click', async () => {{
-  const r = await fetch('/pick', {{method: 'POST', body: JSON.stringify(
+  const r = await fetch('/pick', {{method: 'POST', headers: {{'Content-Type': 'application/json'}}, body: JSON.stringify(
     {{unit: units[+b.dataset.i], choice: b.dataset.choice}})}});
   if (!r.ok) return alert('could not save pick');
   b.parentElement.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
@@ -169,9 +184,9 @@ document.querySelectorAll('.pick button').forEach(b => b.addEventListener('click
 
 
 def make_server(root: Path, n: int = DEFAULT_N, seed: int = 0, *, port: int = 8765,
-                tasks: dict[str, Task] | None = None) -> ThreadingHTTPServer:
+                tasks: dict[str, Task] | None = None, force: bool = False) -> ThreadingHTTPServer:
     root = Path(root)
-    pairs = select_pairs(root, n, seed)
+    pairs = select_pairs(root, n, seed, force=force)
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):  # quiet
@@ -202,6 +217,16 @@ def make_server(root: Path, n: int = DEFAULT_N, seed: int = 0, *, port: int = 87
         def do_POST(self):
             if self.path != "/pick":
                 return self._send(404, b"not found", "text/plain")
+            # only this page may record picks: no cross-site form posts, no DNS rebinding
+            port = self.server.server_address[1]
+            local = {f"127.0.0.1:{port}", f"localhost:{port}"}
+            origin = self.headers.get("Origin")
+            if self.headers.get("Host") not in local or (
+                    origin is not None and origin not in {f"http://{h}" for h in local}):
+                return self._send(403, b"forbidden origin", "text/plain")
+            ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+            if ctype != "application/json":
+                return self._send(415, b"Content-Type must be application/json", "text/plain")
             try:
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
                 record_pick(root, str(body["unit"]), str(body["choice"]))
@@ -213,9 +238,10 @@ def make_server(root: Path, n: int = DEFAULT_N, seed: int = 0, *, port: int = 87
     return ThreadingHTTPServer(("127.0.0.1", port), Handler)
 
 
-def serve(results_root: Path, n: int = DEFAULT_N, seed: int = 0, *, port: int = 8765) -> None:
+def serve(results_root: Path, n: int = DEFAULT_N, seed: int = 0, *, port: int = 8765,
+          force: bool = False) -> None:
     """Serve the spot-check page until Ctrl-C; picks are saved as they are made."""
-    server = make_server(results_root, n, seed, port=port)
+    server = make_server(results_root, n, seed, port=port, force=force)
     pairs = _load(results_root)["pairs"]
     print(f"spot-check: {len(pairs)} pairs at http://127.0.0.1:{server.server_address[1]}/ "
           "(Ctrl-C to stop; picks are saved as you go)", flush=True)

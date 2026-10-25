@@ -77,18 +77,18 @@ picks any other dir.
 | Command | What it does |
 |---|---|
 | `uv run bruhsbench probe [--models claude codex grok]` | Isolation probe for every CLI x arm: each sees exactly its arm's skills and MCPs, and the two arms differ only by bruhs. Prints setup steps when the claude token is missing. |
-| `uv run bruhsbench run [--pilot] [--tasks ID…] [--models …] [--repeats N] [--heldout] [--parallel N] [--timeout MIN]` | Runs the matrix. Defaults: all non-held-out tasks, 3 models, 2 arms, 3 repeats, 45-minute timeout. `--pilot` runs the tasks in `bench/pilot.toml` with 1 repeat. Runs that already have `result.json` are skipped. |
-| `uv run bruhsbench grade` | Grades every finished run in this order: commands, scope, checklist, audit, honesty. Runs with a grader error or an invalid checklist are retried on the next call. |
+| `uv run bruhsbench run [--pilot] [--tasks ID…] [--models …] [--repeats N] [--heldout] [--parallel N] [--timeout MIN]` | Runs the matrix. Defaults: all non-held-out tasks, 3 models, 2 arms, 3 repeats, 45-minute timeout. `--pilot` runs the tasks in `bench/pilot.toml` with 1 repeat and can't be combined with `--tasks`. Runs that already have `result.json` are skipped. |
 | `uv run bruhsbench capture` | Screenshots ui/copy runs and each task's starting state at desktop and mobile sizes, in light and dark. |
+| `uv run bruhsbench grade` | Grades every finished run in this order: commands, scope, checklist, audit, honesty. The checklist judges see the screenshots, so run `capture` first (`grade` warns about ui/copy runs without screenshots). Runs with a grader error or an invalid checklist are retried on the next call. |
 | `uv run bruhsbench judge` | Blind pairwise verdicts for ui/copy: each (task, model, repeat) is judged by both other model families. Judge errors are retried on the next call. |
-| `uv run bruhsbench spotcheck [-n 20] [--seed 0] [--port 8765]` | A local page where you blind-pick ~20 ui/copy pairs. Picks are saved to `spotcheck.json`, and it prints how often the judges agreed with you. |
+| `uv run bruhsbench spotcheck [-n 20] [--seed 0] [--port 8765] [--force]` | A local page (127.0.0.1 only) where you blind-pick ~20 ui/copy pairs. Picks are saved to `spotcheck.json`, and it prints how often the judges agreed with you. The first sample drawn is reused on later runs; `--force` draws a new one and clears the picks (the old file is kept as `spotcheck.json.bak`). |
 | `uv run bruhsbench report [--public] [--out DIR]` | Writes an HTML report and its markdown twin. The private report goes to `<results>/report/`; `--public` writes to `bench/results/published/<date>/`. |
 
 Held-out tasks (anything under `tasks-heldout/`, or with `heldout = true`) are refused unless
 you pass `--heldout`. With `--heldout` and no `--tasks`, `run` runs only the held-out set.
 
-Run the stages in order: `probe`, `run`, `grade`, `capture`, `judge`, `spotcheck`, `report`.
-`grade` and `capture` need each run's workspace, which lives in the work root under
+Run the stages in order: `probe`, `run`, `capture`, `grade`, `judge`, `spotcheck`, `report`.
+`capture` and `grade` need each run's workspace, which lives in the work root under
 `/private/tmp`. Finish both before a reboot clears it.
 
 ## Method
@@ -96,15 +96,17 @@ Run the stages in order: `probe`, `run`, `grade`, `capture`, `judge`, `spotcheck
 - **Tasks.** Public seeded fixtures (`tasks/`) and real tasks from past sessions in private
   repos (`tasks-private/`, gitignored). Each task has one category and a frozen hidden
   checklist, hidden tests or known issues.
-- **Win rule (frozen).** Each category has one primary metric. A task is a bruhs win or loss
-  when the bruhs mean minus the bare mean is more than the margin; otherwise it's a tie.
+- **Win rule (frozen).** Each category has one primary metric. For audit and ship, a task is
+  a bruhs win or loss when the bruhs mean minus the bare mean is more than the margin. For
+  the 1/0 categories, one arm needs at least two more passing repeats than the other, however
+  many repeats survived. Anything else is a tie.
 
   | Category | Primary metric | Tie margin |
   |---|---|---|
-  | feature / debug | hidden tests pass, no regressions and honest "done" claims, all three (1/0 per repeat) | 1 of 3 repeats |
+  | feature / debug | hidden tests pass, no regressions and honest "done" claims, all three (1/0 per repeat). Tasks without hidden tests count "hidden tests pass" as satisfied. | 1 passing repeat: a win needs 2 or more |
   | audit | F1 vs known issues | 0.05 |
   | ui / copy | blind pairwise preference (bruhs 1, tie 0.5, bare 0, per judge verdict) | win at 55% or more, loss at 45% or less |
-  | pr-review | full checklist hit, checks green and hidden tests pass (1/0) | 1 of 3 repeats |
+  | pr-review | full checklist hit, checks green and hidden tests pass (1/0) | 1 passing repeat: a win needs 2 or more |
   | ship | checklist score | 10 points |
 
 - **Exclusions.** A run that is contaminated, errored, or timed out with no diff drops its
