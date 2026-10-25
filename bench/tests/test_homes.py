@@ -443,3 +443,25 @@ def test_codex_probe_missing_last_message_is_a_probe_error(tmp_path, monkeypatch
     home.mkdir(parents=True)
     with pytest.raises(LeakError, match="no last message"):
         probe_isolation("codex", "bare", {"HOME": str(home)})
+
+
+@pytest.mark.parametrize("arm", ("bare", "bruhs"))
+@pytest.mark.parametrize("cli", CLIS)
+def test_agents_find_the_real_playwright_browsers_and_rust_toolchains(cli, arm, tmp_path,
+                                                                     bruhs_src, real_home):
+    """With HOME moved, Playwright looks for its browsers and rustup for its toolchains
+    in the empty run home: agents couldn't launch Playwright (pilot) or cargo. Both
+    point back at the real, sandbox-read-only installs, as for grading checks; cargo's
+    own CARGO_HOME (its download cache) stays in the writable run home."""
+    _needs_grok(cli)
+    (real_home / "Library" / "Caches" / "ms-playwright").mkdir(parents=True)
+    (real_home / ".rustup").mkdir()
+    env, _ = _build(cli, arm, tmp_path, bruhs_src, real_home)
+    assert env["PLAYWRIGHT_BROWSERS_PATH"] == str(real_home / "Library/Caches/ms-playwright")
+    assert env["RUSTUP_HOME"] == str(real_home / ".rustup")
+    assert "CARGO_HOME" not in env
+
+
+def test_missing_tool_installs_are_not_pointed_at(tmp_path, bruhs_src, real_home):
+    env, _ = _build("codex", "bare", tmp_path, bruhs_src, real_home)
+    assert "PLAYWRIGHT_BROWSERS_PATH" not in env and "RUSTUP_HOME" not in env

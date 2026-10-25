@@ -48,6 +48,8 @@ the bruhs arm's home) and `npx`, which starts chrome-devtools-mcp.
 - **Fresh home per run.** Every run gets its own `HOME` (and `CODEX_HOME` for codex) holding
   only auth, so the user's own skills, plugins, MCPs and account-synced
   extensions stay out of both arms. `bruhsbench probe` proves this for each CLI and arm.
+  `PLAYWRIGHT_BROWSERS_PATH` and `RUSTUP_HOME` point back at the real (read-only) installs,
+  so agents in both arms can launch Playwright's browsers and run cargo.
 - **Work outside `~`.** Run dirs, workspaces and homes live under `$BRUHSBENCH_WORK`
   (default `/private/tmp/bruhsbench/<results-id>/`), so a CLI walking parent directories never
   picks up `~/.claude` or similar. Only artifacts are copied into `bench/results/`.

@@ -67,6 +67,11 @@ BRUHS_REPO = Path(__file__).resolve().parents[2]
 DEFAULT_ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 CLAUDE_AUTH_VARS = ("CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY")
 PASSTHROUGH_VARS = ("PATH", "LANG", "TERM", "USER", "LOGNAME", "TMPDIR")
+# Tool installs that stay at their real (sandbox read-only) place when HOME moves, so the
+# agent can launch Playwright's browsers and run rustup's toolchains like the grading
+# checks do. CARGO_HOME (cargo's download cache) stays in the writable run home.
+AGENT_TOOL_HOMES = {"PLAYWRIGHT_BROWSERS_PATH": "Library/Caches/ms-playwright",
+                    "RUSTUP_HOME": ".rustup"}
 BRUHS_EXCLUDE = ("bench", "docs", ".git", ".superpowers")
 EXPORT_EXCLUDE = ("bench", "docs")
 # Account-synced claude.ai skills/plugins download asynchronously into a fresh home, so
@@ -244,6 +249,9 @@ def build_home(
         env["PATH"] = sanitized_path(env["PATH"])
     env["HOME"] = str(home)
     env["XDG_CONFIG_HOME"] = str(home / ".config")
+    for var, rel in AGENT_TOOL_HOMES.items():
+        if (real / rel).is_dir():
+            env[var] = str(real / rel)
 
     if cli == "claude":
         env.update(auth)
