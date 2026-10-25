@@ -41,7 +41,8 @@ def make_repo(root: Path) -> tuple[Path, str]:
     return repo, base
 
 
-def make_task(root: Path, repo: Path | None, base: str | None, setup: str | None = None):
+def make_task(root: Path, repo: Path | None, base: str | None, setup: str | None = None,
+              after_base: str | None = None):
     d = root / "task-x"
     d.mkdir()
     (d / "task.toml").write_text('id = "task-x"\ncategory = "feature"\n')
@@ -49,7 +50,10 @@ def make_task(root: Path, repo: Path | None, base: str | None, setup: str | None
     t = load_task(d)
     if setup is not None:
         (d / "setup.sh").write_text(setup)
-    return replace(t, repo=repo, base=base, setup=(d / "setup.sh") if setup is not None else None)
+    if after_base is not None:
+        (d / "after_base.sh").write_text(after_base)
+    return replace(t, repo=repo, base=base, setup=(d / "setup.sh") if setup is not None else None,
+                   after_base=(d / "after_base.sh") if after_base is not None else None)
 
 
 BLOCKS = (
@@ -192,6 +196,26 @@ def test_setup_output_is_part_of_base(tmp_path):
     assert (ws / "generated.txt").exists()
     git(ws, "add", "-A")
     assert git(ws, "diff", "--cached", "bench-base") == ""
+
+
+def test_after_base_leaves_uncommitted_work(tmp_path):
+    repo, base = make_repo(tmp_path)
+    task = make_task(tmp_path, repo, base, setup="echo dep > installed.txt\n",
+                     after_base="echo wip > staged.txt && git add staged.txt\n"
+                                "echo changed > app.txt\necho new > untracked.txt\n")
+    ws = prepare_workspace(task, "bare", tmp_path / "ws")
+    # setup output is in base; after_base output is not
+    assert git(ws, "show", "bench-base:installed.txt") == "dep\n"
+    assert git(ws, "rev-parse", "HEAD") == git(ws, "rev-parse", "bench-base")
+    status = git(ws, "status", "--porcelain").splitlines()
+    assert sorted(status) == [" M app.txt", "?? untracked.txt", "A  staged.txt"]
+
+
+def test_after_base_failure_raises(tmp_path):
+    repo, base = make_repo(tmp_path)
+    task = make_task(tmp_path, repo, base, after_base="exit 3\n")
+    with pytest.raises(SetupFailed, match="after_base.sh exited 3"):
+        prepare_workspace(task, "bare", tmp_path / "ws")
 
 
 def test_future_commits_unreachable(tmp_path):

@@ -97,19 +97,20 @@ def _checkout(task: Task, dest: Path) -> None:
         _git(dest, "commit", "--quiet", "--allow-empty", "-m", "fixture")
 
 
-def _run_setup(task: Task, dest: Path) -> None:
-    if task.setup is None:
+def _run_task_script(task: Task, script: Path | None, dest: Path) -> None:
+    """Run a trusted task script (setup.sh, after_base.sh) unsandboxed in ``dest``."""
+    if script is None:
         return
     try:
         proc = subprocess.run(
-            ["bash", str(task.setup.resolve())], cwd=dest,
+            ["bash", str(script.resolve())], cwd=dest,
             capture_output=True, text=True, timeout=SETUP_TIMEOUT_S,
         )
     except subprocess.TimeoutExpired as exc:
-        raise SetupFailed(f"{task.id}: setup.sh timed out after {SETUP_TIMEOUT_S}s") from exc
+        raise SetupFailed(f"{task.id}: {script.name} timed out after {SETUP_TIMEOUT_S}s") from exc
     if proc.returncode != 0:
         tail = (proc.stderr or proc.stdout)[-2000:]
-        raise SetupFailed(f"{task.id}: setup.sh exited {proc.returncode}: {tail}")
+        raise SetupFailed(f"{task.id}: {script.name} exited {proc.returncode}: {tail}")
 
 
 def prepare_workspace(
@@ -132,11 +133,14 @@ def prepare_workspace(
         insert_bruhs_blocks(dest, scripts_dir)
 
     # Setup runs before the base commit so its output is part of base, not the agent diff.
-    _run_setup(task, dest)
+    _run_task_script(task, task.setup, dest)
 
     _git(dest, "add", "-A")
     _git(dest, "commit", "--quiet", "--allow-empty", "-m", "bench: base")
     _git(dest, "tag", "-f", BASE_TAG)
+    # after_base.sh leaves work the agent starts from uncommitted (staged, unstaged,
+    # untracked); it shows in the run's diff against bench-base like the agent's own edits.
+    _run_task_script(task, task.after_base, dest)
     return dest
 
 

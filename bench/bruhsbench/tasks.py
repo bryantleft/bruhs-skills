@@ -62,6 +62,7 @@ def load_task(dir: Path) -> Task:
         known_issues=_opt_path(dir, cfg.get("known_issues"), "known_issues.json"),
         checklist=_opt_path(dir, cfg.get("checklist"), "checklist.json"),
         heldout=heldout,
+        after_base=_opt_path(dir, cfg.get("after_base"), "after_base.sh"),
     )
 
 

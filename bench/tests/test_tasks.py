@@ -41,6 +41,13 @@ def test_seeded_task_defaults(tmp_path):
     assert t.allowed_paths == () and t.pages == ()
     assert t.dev_cmd is None and t.dev_port is None and t.checks == {}
     assert t.setup is None and t.hidden_tests is None and t.checklist is None
+    assert t.after_base is None
+
+
+def test_after_base_discovered(tmp_path):
+    d = make(tmp_path, "t")
+    (d / "after_base.sh").write_text("true\n")
+    assert load_task(d).after_base == d / "after_base.sh"
 
 
 def test_toml_overrides_paths(tmp_path):
