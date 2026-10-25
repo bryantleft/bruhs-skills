@@ -248,6 +248,20 @@ def test_allowed_paths_with_spaces_are_not_contamination():
                               allowed=[tool]) == []
 
 
+def test_dotdot_out_of_an_allowed_root_is_contamination():
+    """`..` is resolved before the allow check, for spaced and plain allowed roots."""
+    home = Path("/Users/someone")
+    spaced = home / "Library/Application Support/JetBrains/Toolbox/scripts"
+    plain = home / ".cargo/bin"
+    text = (f"cat '{spaced}/../../Slack/cookies'\n"
+            f"cat {plain}/../credentials.toml\n"
+            f"ls {plain}/sub/../cargo\n")
+    found = scan_contamination(text, forbidden=[home], allowed=[spaced, plain])
+    assert f"{home}/Library/Application Support/JetBrains/Slack/cookies" in found
+    assert f"{home}/.cargo/credentials.toml" in found
+    assert len(found) == 2  # .cargo/bin/sub/../cargo stays inside the allowed root
+
+
 def test_run_one_marks_contaminated(tmp_path, bruhs_src):
     task = make_task(tmp_path, "t1")
     leak = Path.home() / ".claude" / "CLAUDE.md"

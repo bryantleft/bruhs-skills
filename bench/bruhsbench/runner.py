@@ -41,6 +41,7 @@ import hashlib
 import json
 import logging
 import os
+import posixpath
 import random
 import re
 import select
@@ -409,17 +410,24 @@ def scan_contamination(text: str, *, forbidden: Sequence[Path],
     text = text.replace("\\/", "/")
     # an allowed root with a space in it (a PATH dir under ~/Library/Application Support)
     # is cut at the space by the match, so it is also recognised in the text itself
-    spaced = [re.compile(re.escape(form) + _PATH_END)
+    spaced = [re.compile(re.escape(form) + _PATH_END + _PATH_TAIL)
               for r in allowed for form in _forms(r) if re.search(r"\s", form)]
+
+    def allowed_path(path: str) -> bool:  # `..` resolved first: no escaping a root
+        path = posixpath.normpath(path)
+        return path in exact or _within(path, allowed)
+
     found: set[str] = set()
     for root in forbidden:
         for form in _forms(root):
             for m in re.finditer(re.escape(form) + _PATH_END + _PATH_TAIL, text):
                 path = m.group(0).rstrip(".")
-                if (path.rstrip("/") in exact or _within(path, allowed)
-                        or any(a.match(text, m.start()) for a in spaced)):
-                    continue
-                found.add(path)
+                whole = next((w.group(0).rstrip(".") for a in spaced
+                              if (w := a.match(text, m.start()))), None)
+                if whole is not None:  # the full spaced path, not its cut-off prefix
+                    path = whole
+                if not allowed_path(path):
+                    found.add(posixpath.normpath(path))
     return sorted(found)
 
 
