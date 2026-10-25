@@ -1,0 +1,17 @@
+id = "seed-heldout-ui"
+category = "ui"
+# Held-out (sealed): never run in the pilot or the full run.
+# Primary metric: blind pairwise preference over the screenshots and diffs (ui tasks).
+# checklist.json is graded alongside: script items probe the built page in headless
+# Chromium (no sideways scroll at 390px, visible focus on every Tab stop, named controls,
+# labelled fields, keyboard-operable toggles); judge items cover layout, states and that
+# nothing was dropped.
+allowed_paths = ["src/**", "tests/**", "public/**", "index.html", "README.md"]
+pages = ["/"]
+# production build served by `vite preview`; {port} is picked free per capture
+dev_cmd = "./node_modules/.bin/vite build --logLevel error && ./node_modules/.bin/vite preview --host 127.0.0.1 --port {port} --strictPort"
+
+[checks]
+build = "./node_modules/.bin/tsc --noEmit && ./node_modules/.bin/vite build"
+typecheck = "./node_modules/.bin/tsc --noEmit"
+test = "NODE_OPTIONS=--no-warnings ./node_modules/.bin/vitest run --reporter=json --outputFile=$BRUHSBENCH_REPORT"
