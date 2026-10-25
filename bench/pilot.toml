@@ -1,0 +1,3 @@
+# Pilot (Task 12): run with `bruhsbench pipeline --pilot` (1 repeat, both arms).
+# These tasks are "seen" once the pilot has run.
+tasks = ["seed-audit-ts", "seed-debug-not-really-fixed", "mints-grade-restyle"]
