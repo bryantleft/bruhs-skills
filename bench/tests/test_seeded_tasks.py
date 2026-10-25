@@ -78,9 +78,11 @@ def judge_work(tmp_path, monkeypatch):
     monkeypatch.setenv("BRUHSBENCH_WORK", str(tmp_path / "judge-work"))
 
 
-def _finish_run(task: Task, base_ws: Path, tmp_path: Path, *, reference: bool) -> Path:
+def _finish_run(task: Task, base_ws: Path, tmp_path: Path, *, reference: bool = False,
+                script: str | None = None) -> Path:
     """A finished run of ``task`` (laid out like runner.run_one's) starting from a clone of
-    the prepared workspace, with the reference solution applied if ``reference``."""
+    the prepared workspace, with the reference solution applied if ``reference``, else
+    ``script`` (bash, in the workspace) if given, standing in for the agent."""
     run_id = f"{task.id}__{RUN_CLI}__bare__r1"
     workspace = tmp_path / "work" / run_id / "workspace"
     workspace.parent.mkdir(parents=True)
@@ -91,6 +93,8 @@ def _finish_run(task: Task, base_ws: Path, tmp_path: Path, *, reference: bool) -
         subprocess.run(["bash", str(ref / "apply.sh")], cwd=workspace, check=True,
                        env={**os.environ, "REFERENCE_DIR": str(ref)})
         final = "Done."
+    elif script is not None:
+        subprocess.run(["bash", "-c", script], cwd=workspace, check=True)
     run_dir = tmp_path / "results" / run_id
     run_dir.mkdir(parents=True)
     _git(workspace, "add", "-A")  # what runner._write_diff does once the agent exits
@@ -120,6 +124,15 @@ def no_semantic_match(finding: dict, candidates: list[dict]) -> str | None:
     return None  # location only: a finding counts only if its lines hit one known issue
 
 
+def pick_decoy(finding: dict, candidates: list[dict]) -> str | None:
+    """match_finding stand-in that confirms a decoy when one is offered."""
+    return next((c["id"] for c in candidates if c.get("decoy")), None)
+
+
+def classify_incorrect(finding: dict, code: str) -> str:
+    return "incorrect"  # the stand-ins never vouch for an unplanted finding
+
+
 def _judge_stub(task: Task, hit: bool):
     """judge_call stand-in: every judge answers ``hit`` for every judge item."""
     ids = [i["id"] for i in checklist.load_items(task.checklist) if i["check"] == "judge"]
@@ -133,9 +146,10 @@ def _grade(task: Task, run_dir: Path, monkeypatch, *, reference: bool) -> float:
     """The task's primary metric (score.py: audit = F1, ship = checklist score)."""
     if task.category == "audit":
         g = audit.grade(task, run_dir, extract_findings=extract_findings,
-                        match_finding=no_semantic_match)
+                        match_finding=no_semantic_match, classify_finding=classify_incorrect)
         if reference:
             assert g["missed"] == [] and g["decoys_flagged"] == 0 and g["fp"] == 0, g
+            assert g["incorrect"] == 0 and g["valid_unlisted"] == 0, g
             assert g["severity_accuracy"] == 1.0, g
         return g["f1"]
     if task.category == "ship":
@@ -169,7 +183,10 @@ def test_task_files(task_id):
     assert not (task.dir / "reference").exists()
 
 
-@pytest.mark.parametrize("task_id", [t for t in SEEDED if _task(t).category == "audit"])
+AUDITS = [t for t in SEEDED if _task(t).category == "audit"]
+
+
+@pytest.mark.parametrize("task_id", AUDITS)
 def test_known_issues_locate_planted_code(task_id):
     task = _task(task_id)
     known = json.loads(task.known_issues.read_text())
@@ -179,16 +196,54 @@ def test_known_issues_locate_planted_code(task_id):
     real = [e for e in known if not e["decoy"]]
     assert 14 <= len(real) <= 17 and len(known) - len(real) == 4
     assert {e["severity"] for e in real} >= {"critical", "high", "medium", "low"}
+    all_sites = []
     for e in known:
-        lines = (task.dir / "fixture" / e["file"]).read_text().splitlines()
-        a, b = e["lines"]
-        assert 1 <= a <= b <= len(lines), e["id"]
-        assert any(anchors[e["id"]] in line for line in lines[a - 1:b]), e["id"]
         assert e["summary"]
-    for x in known:  # ranges in one file never overlap: a cited line picks one entry
-        for y in known:
-            if x is not y and x["file"] == y["file"]:
-                assert x["lines"][1] < y["lines"][0] or y["lines"][1] < x["lines"][0]
+        sites = audit.sites(e)
+        assert len(sites) == len(anchors[e["id"]]), e["id"]  # every site is anchored
+        for (file, (a, b)), anchor in zip(sites, anchors[e["id"]]):
+            lines = (task.dir / "fixture" / file).read_text().splitlines()
+            assert 1 <= a <= b <= len(lines), e["id"]
+            assert any(anchor in line for line in lines[a - 1:b]), (e["id"], file)
+            all_sites.append((e["id"], file, a, b))
+    for i, f, a, b in all_sites:  # sites of different issues never overlap
+        for j, g, c, d in all_sites:
+            if i != j and f == g:
+                assert b < c or d < a, (i, j)
+
+
+def _audit_md(sites: list[tuple[str, str, int, int]]) -> str:
+    return "# Audit\n\n" + "".join(f"### [low] {file}:{a}-{b}\nsomething\n\n"
+                                     for _, file, a, b in sites)
+
+
+@pytest.mark.parametrize("task_id", AUDITS)
+def test_alternate_sites_match_their_issue(task_id, prepared, tmp_path):
+    task = _task(task_id)
+    known = json.loads(task.known_issues.read_text())
+    alts = [(e["id"], f, a, b) for e in known if not e["decoy"]
+            for f, (a, b) in audit.sites(e)[1:]]
+    assert alts
+    md = _audit_md(alts)
+    run_dir = _finish_run(task, prepared(task_id), tmp_path,
+                          script=f"cat > AUDIT.md <<'EOF'\n{md}EOF\n")
+    g = audit.grade(task, run_dir, extract_findings=extract_findings,
+                    match_finding=no_semantic_match, classify_finding=classify_incorrect)
+    assert g["matched"] == sorted({i for i, *_ in alts}) and g["incorrect"] == 0, g
+
+
+@pytest.mark.parametrize("task_id", AUDITS)
+def test_flagging_only_decoys_scores_zero(task_id, prepared, tmp_path):
+    task = _task(task_id)
+    known = json.loads(task.known_issues.read_text())
+    decoys = [(e["id"], f, a, b) for e in known if e["decoy"]
+              for f, (a, b) in audit.sites(e)[:1]]
+    md = _audit_md(decoys)
+    run_dir = _finish_run(task, prepared(task_id), tmp_path,
+                          script=f"cat > AUDIT.md <<'EOF'\n{md}EOF\n")
+    g = audit.grade(task, run_dir, extract_findings=extract_findings,
+                    match_finding=pick_decoy, classify_finding=classify_incorrect)
+    assert (g["f1"], g["tp"], g["decoys_flagged"]) == (0.0, 0, 4), g
 
 
 # --------------------------------------------------------------------------- grading
@@ -242,3 +297,43 @@ def test_ship_checklist_scripts_catch_a_sloppy_commit(prepared, tmp_path, monkey
     assert hits == {"conventional-commits": False, "feature-committed": True,
                     "no-debug-log": False, "formatting-separate": False,
                     "branch-name": False, "pr-description": False}
+
+
+FEATURE_ON_BRANCH_THEN_MAIN = """set -e
+git switch --quiet -c feat/csv-export
+grep -v 'console.log("DEBUG report opts"' src/cli.ts > src/cli.ts.tmp && mv src/cli.ts.tmp src/cli.ts
+git restore --staged src/util/dates.ts
+git add src/format/csv.ts src/cli.ts README.md test/csv.test.ts
+git commit --quiet -m "feat(report): add --format csv"
+printf '# Add CSV export\\n' > PR.md
+git switch --quiet main
+"""
+
+
+def test_ship_judges_see_commits_on_every_branch(prepared, tmp_path, monkeypatch):
+    """The feature is committed on a branch, the reformat is left uncommitted, and the
+    agent ends on main: the judges still see the branch's commit (message and patch),
+    and the reformat only as uncommitted work."""
+    task = _task("seed-ship-messy-diff")
+    run_dir = _finish_run(task, prepared(task.id), tmp_path,
+                          script=FEATURE_ON_BRANCH_THEN_MAIN)
+    prompts = []
+
+    def fake(judge, prompt, images, schema):
+        prompts.append(prompt)
+        return {"items": [{"id": "pr-description", "hit": True, "evidence": "e"}]}
+
+    monkeypatch.setattr(J, "judge_call", fake)
+    g = checklist.grade(task, run_dir, [SPEC["codex"], SPEC["grok"]])
+    assert "invalid" not in g
+    prompt = prompts[0]
+    assert "Current branch: main" in prompt and "feat/csv-export" in prompt
+    commits, uncommitted = prompt.split("## Commits on local branches", 1)[1].split(
+        "## Uncommitted changes", 1)
+    assert re.search(r"### commit [0-9a-f]+ \(on: feat/csv-export\)\nfeat\(report\): add --format csv\n",
+                     commits)
+    assert "+export function renderCsv" in commits and "test/csv.test.ts" in commits
+    assert "src/util/dates.ts" not in commits and "DEBUG report opts" not in commits
+    uncommitted = uncommitted.split("## Screenshots", 1)[0]
+    assert "src/util/dates.ts" in uncommitted and "+# Add CSV export" in uncommitted
+    assert "## Code diff" not in prompt  # the net diff vs bench-base isn't the evidence

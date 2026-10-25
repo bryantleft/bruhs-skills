@@ -22,10 +22,10 @@ export function usersRouter(db: DB, config: Config): Router {
     const { lastInsertRowid } = db
       .prepare("INSERT INTO users (email, name, password_hash) VALUES (?, ?, ?)")
       .run(input.email, input.name, hashPassword(input.password));
-    const user = db
+    const created = db
       .prepare("SELECT * FROM users WHERE id = ?")
       .get(lastInsertRowid) as unknown as User;
-    res.status(201).json(user);
+    res.status(201).json(created);
   });
 
   router.post("/login", (req, res) => {

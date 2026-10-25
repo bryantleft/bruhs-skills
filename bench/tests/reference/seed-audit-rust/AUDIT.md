@@ -4,7 +4,7 @@ Each finding is `### [severity] file:lines`.
 
 ## Security
 
-### [critical] src/persist.rs:140-147
+### [critical] src/persist.rs:142-149
 `BACKUP <name>` joins the client's name onto the data dir with no validation. `../x` or an
 absolute path writes a snapshot anywhere the process can write. Accept `[A-Za-z0-9_-]+` only.
 
@@ -12,7 +12,7 @@ absolute path writes a snapshot anywhere the process can write. Accept `[A-Za-z0
 `requires_auth` omits `FLUSH`, `SAVE`, `BACKUP` and `STATS`. Without a token anyone can wipe
 the store or write backup files. Invert it: everything except `PING`/`AUTH`/`QUIT`.
 
-### [high] src/protocol.rs:139
+### [high] src/protocol.rs:144
 `from_utf8_unchecked` on bytes straight off the socket: a client sending invalid UTF-8 causes
 undefined behaviour. Use `std::str::from_utf8` and return a protocol error.
 
@@ -35,7 +35,7 @@ Return `-ERR` instead.
 `SETNX` checks and sets under two separate locks, so two clients can both acquire the "lock".
 Do both under one guard.
 
-### [medium] src/store.rs:121
+### [medium] src/store.rs:127
 `current + delta` overflows: panic in debug builds, silent wrap in release. Use `checked_add`.
 
 ### [low] src/config.rs:64-65
@@ -43,11 +43,16 @@ Do both under one guard.
 
 ## Error handling
 
-### [high] src/persist.rs:125-128
+### [high] src/server.rs:126-131
+Nothing ever snapshots on its own: no periodic `SAVE` (the README promises periodic
+snapshots) and none on shutdown. Everything since the last manual `SAVE` is lost on restart
+or crash. Add a timer thread that renders and saves, and save on SIGTERM.
+
+### [high] src/persist.rs:127-130
 A corrupt snapshot (`unwrap_or_default`) or an unreadable one starts the server empty and
 silent, and the next `SAVE` overwrites the real data. Fail loudly on anything but not-found.
 
-### [medium] src/persist.rs:153-156
+### [medium] src/persist.rs:155-158
 `let _ = out.flush()` drops the error where buffered writes actually fail, so `SAVE` replies
 `+OK` for a truncated file. It also truncates `dump.snap` in place; write a temp file and
 rename.

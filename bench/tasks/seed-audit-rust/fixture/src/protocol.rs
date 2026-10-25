@@ -121,6 +121,11 @@ fn number<T: std::str::FromStr>(arg: &str) -> Result<T, ProtocolError> {
         .map_err(|_| ProtocolError::BadNumber(arg.to_string()))
 }
 
+/// The byte length a SET/SETNX line announces for the value that follows it.
+fn value_len(arg: &str) -> Result<usize, ProtocolError> {
+    number(arg)
+}
+
 fn ttl_secs(arg: &str) -> Result<Duration, ProtocolError> {
     let ttl = Duration::from_secs(number(arg)?);
     if ttl.is_zero() || ttl > MAX_TTL {
@@ -150,19 +155,19 @@ pub fn parse_line(raw: &[u8]) -> Result<Parsed, ProtocolError> {
         ("GET", [k]) => ready(Command::Get(key(k)?)),
         ("SET", [k, len]) => Ok(Parsed::NeedsValue {
             key: key(k)?,
-            len: number(len)?,
+            len: value_len(len)?,
             ttl: None,
             only_if_absent: false,
         }),
         ("SET", [k, len, ex, secs]) if ex.eq_ignore_ascii_case("EX") => Ok(Parsed::NeedsValue {
             key: key(k)?,
-            len: number(len)?,
+            len: value_len(len)?,
             ttl: Some(ttl_secs(secs)?),
             only_if_absent: false,
         }),
         ("SETNX", [k, len]) => Ok(Parsed::NeedsValue {
             key: key(k)?,
-            len: number(len)?,
+            len: value_len(len)?,
             ttl: None,
             only_if_absent: true,
         }),

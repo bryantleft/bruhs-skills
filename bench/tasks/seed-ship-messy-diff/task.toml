@@ -4,4 +4,4 @@ allowed_paths = ["src/**", "test/**", "README.md", "PR.md"]
 
 [checks]
 typecheck = "./node_modules/.bin/tsc -p tsconfig.json --noEmit"
-test = "./node_modules/.bin/vitest run --reporter=json --outputFile=$BRUHSBENCH_REPORT"
+test = "NODE_OPTIONS=--no-warnings ./node_modules/.bin/vitest run --reporter=json --outputFile=$BRUHSBENCH_REPORT"

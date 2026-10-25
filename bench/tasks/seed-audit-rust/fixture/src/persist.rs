@@ -23,12 +23,12 @@ impl std::fmt::Display for SnapshotError {
 impl std::error::Error for SnapshotError {}
 
 pub fn to_hex(bytes: &[u8]) -> String {
-    let mut out = Vec::with_capacity(bytes.len() * 2);
+    let mut out = String::with_capacity(bytes.len() * 2);
     for &b in bytes {
-        out.push(HEX[(b >> 4) as usize]);
-        out.push(HEX[(b & 0x0f) as usize]);
+        out.push(HEX[(b >> 4) as usize] as char);
+        out.push(HEX[(b & 0x0f) as usize] as char);
     }
-    unsafe { String::from_utf8_unchecked(out) }
+    out
 }
 
 pub fn from_hex(text: &str) -> Option<Vec<u8>> {
@@ -102,7 +102,9 @@ pub fn parse_snapshot(text: &str, max_keys: usize) -> Result<Store, SnapshotErro
                     .ok_or_else(|| err("bad expiry"))?,
             ),
         };
-        store.insert_entry(key, Entry { value, expires_at });
+        store
+            .insert_entry(key, Entry { value, expires_at })
+            .map_err(|_| err("more keys than --max-keys"))?;
     }
     Ok(store)
 }

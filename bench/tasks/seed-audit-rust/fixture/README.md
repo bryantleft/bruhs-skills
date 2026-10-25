@@ -33,6 +33,7 @@ SETNX <key> <len>                  then <len> bytes, then \r\n
 DEL <key>
 INCR <key> [delta]
 EXPIRE <key> <seconds>
+TTL <key>                          seconds left; -1 no expiry, -2 no such key
 KEYS <prefix>
 STATS
 SAVE                               snapshot to <data-dir>/dump.snap

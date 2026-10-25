@@ -3,7 +3,7 @@
     "id": "ts-sqli-order-search",
     "file": "src/routes/orders.ts",
     "lines": [
-      42,
+      41,
       52
     ],
     "severity": "critical",
@@ -59,7 +59,16 @@
     "file": "src/routes/admin.ts",
     "lines": [
       14,
-      32
+      14
+    ],
+    "locations": [
+      {
+        "file": "src/routes/admin.ts",
+        "lines": [
+          32,
+          32
+        ]
+      }
     ],
     "severity": "high",
     "decoy": false,
@@ -83,6 +92,15 @@
       20,
       23
     ],
+    "locations": [
+      {
+        "file": "src/routes/orders.ts",
+        "lines": [
+          31,
+          31
+        ]
+      }
+    ],
     "severity": "medium",
     "decoy": false,
     "summary": "Pages are 1-based but offset = page * pageSize, so page 1 skips the first pageSize rows; should be (page - 1) * pageSize."
@@ -105,6 +123,15 @@
       55,
       62
     ],
+    "locations": [
+      {
+        "file": "src/db.ts",
+        "lines": [
+          96,
+          99
+        ]
+      }
+    ],
     "severity": "medium",
     "decoy": false,
     "summary": "/admin/orders/export runs one order_items query per order (N+1) over the whole table; fetch items in one query (WHERE order_id IN / join) and group."
@@ -116,6 +143,15 @@
       6,
       23
     ],
+    "locations": [
+      {
+        "file": "src/routes/users.ts",
+        "lines": [
+          11,
+          11
+        ]
+      }
+    ],
     "severity": "medium",
     "decoy": false,
     "summary": "TtlCache never enforces maxEntries and never deletes expired entries, so it grows without bound (keys come from request URLs, so clients can grow it at will)."
@@ -126,6 +162,15 @@
     "lines": [
       26,
       37
+    ],
+    "locations": [
+      {
+        "file": "src/routes/orders.ts",
+        "lines": [
+          73,
+          80
+        ]
+      }
     ],
     "severity": "high",
     "decoy": false,
@@ -158,7 +203,16 @@
     "file": "src/routes/admin.ts",
     "lines": [
       66,
-      78
+      66
+    ],
+    "locations": [
+      {
+        "file": "src/routes/admin.ts",
+        "lines": [
+          76,
+          76
+        ]
+      }
     ],
     "severity": "high",
     "decoy": false,
@@ -180,7 +234,16 @@
     "file": "src/routes/orders.ts",
     "lines": [
       23,
-      29
+      23
+    ],
+    "locations": [
+      {
+        "file": "src/routes/orders.ts",
+        "lines": [
+          28,
+          28
+        ]
+      }
     ],
     "severity": "low",
     "decoy": true,
@@ -190,8 +253,8 @@
     "id": "ts-decoy-safe-equal-length",
     "file": "src/auth.ts",
     "lines": [
-      15,
-      21
+      18,
+      19
     ],
     "severity": "low",
     "decoy": true,
@@ -202,7 +265,16 @@
     "file": "src/lib/webhooks.ts",
     "lines": [
       33,
-      52
+      33
+    ],
+    "locations": [
+      {
+        "file": "src/lib/webhooks.ts",
+        "lines": [
+          49,
+          49
+        ]
+      }
     ],
     "severity": "low",
     "decoy": true,
@@ -212,7 +284,7 @@
     "id": "ts-decoy-jitter-math-random",
     "file": "src/lib/webhooks.ts",
     "lines": [
-      12,
+      14,
       14
     ],
     "severity": "low",

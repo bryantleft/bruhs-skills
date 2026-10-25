@@ -1,22 +1,70 @@
 {
-  "ts-sqli-order-search": "const q = String(req.query.q",
-  "ts-password-unsalted-sha256": "export function hashPassword",
-  "ts-session-token-math-random": "export function newSessionToken",
-  "ts-order-idor": "router.get(\"/:id\"",
-  "ts-signup-returns-password-hash": ".prepare(\"SELECT * FROM users WHERE id = ?\")",
-  "ts-admin-stats-unauthenticated": "router.get(\"/stats\"",
-  "ts-stats-cache-shared-across-users": "const key = req.originalUrl;",
-  "ts-pagination-offset-off-by-one": "export function parsePage",
-  "ts-median-lexicographic-sort": "export function median",
-  "ts-export-n-plus-one": "router.get(\"/orders/export\"",
-  "ts-cache-unbounded": "export class TtlCache",
-  "ts-order-items-unvalidated": "export function parseOrderInput",
-  "ts-strict-mode-disabled": "\"strict\": false",
-  "ts-import-swallows-errors": "for (const line of lines.slice(1)) {",
-  "ts-refund-async-unhandled": "router.post(\"/orders/:id/refund\", async",
-  "ts-error-handler-leaks-stack": "console.error(err);",
-  "ts-decoy-order-by-whitelist": "const column = SORTABLE.get(String(req.query.sort))",
-  "ts-decoy-safe-equal-length": "export function safeEqual",
-  "ts-decoy-sequential-retry": "for (let attempt = 1; attempt <= attempts; attempt++) {",
-  "ts-decoy-jitter-math-random": "export function backoffMs"
+  "ts-sqli-order-search": [
+    "router.get(\"/search\""
+  ],
+  "ts-password-unsalted-sha256": [
+    "export function hashPassword"
+  ],
+  "ts-session-token-math-random": [
+    "export function newSessionToken"
+  ],
+  "ts-order-idor": [
+    "router.get(\"/:id\""
+  ],
+  "ts-signup-returns-password-hash": [
+    "const created = db"
+  ],
+  "ts-admin-stats-unauthenticated": [
+    "router.get(\"/stats\"",
+    "router.use(requireAdmin(config.adminKey));"
+  ],
+  "ts-stats-cache-shared-across-users": [
+    "const key = req.originalUrl;"
+  ],
+  "ts-pagination-offset-off-by-one": [
+    "export function parsePage",
+    ".all(req.user.id, page.pageSize, page.offset)"
+  ],
+  "ts-median-lexicographic-sort": [
+    "export function median"
+  ],
+  "ts-export-n-plus-one": [
+    "router.get(\"/orders/export\"",
+    "export function orderItems"
+  ],
+  "ts-cache-unbounded": [
+    "export class TtlCache",
+    "const statsCache = new TtlCache"
+  ],
+  "ts-order-items-unvalidated": [
+    "export function parseOrderInput",
+    "const product = getProduct.get(item.productId)"
+  ],
+  "ts-strict-mode-disabled": [
+    "\"strict\": false"
+  ],
+  "ts-import-swallows-errors": [
+    "for (const line of lines.slice(1)) {"
+  ],
+  "ts-refund-async-unhandled": [
+    "router.post(\"/orders/:id/refund\", async",
+    "const refund = await refundPayment("
+  ],
+  "ts-error-handler-leaks-stack": [
+    "console.error(err);"
+  ],
+  "ts-decoy-order-by-whitelist": [
+    "const column = SORTABLE.get(String(req.query.sort))",
+    "ORDER BY ${column} ${direction}"
+  ],
+  "ts-decoy-safe-equal-length": [
+    "if (left.length !== right.length) {"
+  ],
+  "ts-decoy-sequential-retry": [
+    "for (let attempt = 1; attempt <= attempts; attempt++) {",
+    "await sleep(backoffMs(attempt, baseDelayMs));"
+  ],
+  "ts-decoy-jitter-math-random": [
+    "return exponential + Math.floor(Math.random() * baseDelayMs);"
+  ]
 }

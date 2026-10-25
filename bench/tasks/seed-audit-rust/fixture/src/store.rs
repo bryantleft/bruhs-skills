@@ -100,8 +100,14 @@ impl Store {
         Ok(())
     }
 
-    pub fn insert_entry(&mut self, key: String, entry: Entry) {
+    pub fn insert_entry(&mut self, key: String, entry: Entry) -> Result<(), StoreError> {
+        if !self.map.contains_key(&key) && self.map.len() >= self.max_keys {
+            return Err(StoreError::Full {
+                max_keys: self.max_keys,
+            });
+        }
         self.map.insert(key, entry);
+        Ok(())
     }
 
     pub fn del(&mut self, key: &str) -> bool {

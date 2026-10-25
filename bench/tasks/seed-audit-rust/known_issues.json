@@ -3,8 +3,8 @@
     "id": "rs-backup-path-traversal",
     "file": "src/persist.rs",
     "lines": [
-      140,
-      147
+      142,
+      149
     ],
     "severity": "critical",
     "decoy": false,
@@ -27,6 +27,22 @@
     "lines": [
       84,
       85
+    ],
+    "locations": [
+      {
+        "file": "src/server.rs",
+        "lines": [
+          174,
+          174
+        ]
+      },
+      {
+        "file": "src/protocol.rs",
+        "lines": [
+          125,
+          126
+        ]
+      }
     ],
     "severity": "high",
     "decoy": false,
@@ -80,8 +96,8 @@
     "id": "rs-incr-overflow",
     "file": "src/store.rs",
     "lines": [
-      111,
-      121
+      127,
+      127
     ],
     "severity": "medium",
     "decoy": false,
@@ -113,8 +129,8 @@
     "id": "rs-snapshot-flush-error-ignored",
     "file": "src/persist.rs",
     "lines": [
-      153,
-      156
+      155,
+      158
     ],
     "severity": "medium",
     "decoy": false,
@@ -124,8 +140,17 @@
     "id": "rs-load-corrupt-snapshot-silently-empty",
     "file": "src/persist.rs",
     "lines": [
-      125,
-      128
+      127,
+      130
+    ],
+    "locations": [
+      {
+        "file": "src/server.rs",
+        "lines": [
+          109,
+          109
+        ]
+      }
     ],
     "severity": "high",
     "decoy": false,
@@ -135,8 +160,8 @@
     "id": "rs-from-utf8-unchecked-client-input",
     "file": "src/protocol.rs",
     "lines": [
-      138,
-      139
+      143,
+      144
     ],
     "severity": "high",
     "decoy": false,
@@ -165,22 +190,11 @@
     "summary": "--port is parsed as u32 and cast with 'as u16', so out-of-range values silently wrap (70000 -> 4464); parse as u16 and reject."
   },
   {
-    "id": "rs-decoy-hex-from-utf8-unchecked",
-    "file": "src/persist.rs",
-    "lines": [
-      25,
-      31
-    ],
-    "severity": "low",
-    "decoy": true,
-    "summary": "DECOY: from_utf8_unchecked in to_hex is sound; every byte pushed comes from the ASCII HEX table."
-  },
-  {
     "id": "rs-decoy-string-write-unwrap",
     "file": "src/stats.rs",
     "lines": [
-      36,
-      44
+      37,
+      40
     ],
     "severity": "low",
     "decoy": true,
@@ -207,5 +221,36 @@
     "severity": "low",
     "decoy": true,
     "summary": "DECOY: Relaxed ordering is enough for the connection counter; fetch_add is an atomic read-modify-write, so the limit check isn't racy, and no other memory is published through it."
+  },
+  {
+    "id": "rs-decoy-hex-chunks-exact",
+    "file": "src/persist.rs",
+    "lines": [
+      47,
+      47
+    ],
+    "severity": "low",
+    "decoy": true,
+    "summary": "DECOY: chunks_exact(2) can't silently drop a trailing nibble; odd-length input is rejected just above, and the shift binds tighter than |."
+  },
+  {
+    "id": "rs-no-periodic-or-shutdown-snapshot",
+    "file": "src/server.rs",
+    "lines": [
+      126,
+      131
+    ],
+    "locations": [
+      {
+        "file": "README.md",
+        "lines": [
+          4,
+          4
+        ]
+      }
+    ],
+    "severity": "high",
+    "decoy": false,
+    "summary": "Nothing snapshots periodically or on shutdown (README promises periodic snapshots): data is only persisted when a client sends SAVE, so a restart or crash loses everything since the last manual SAVE."
   }
 ]

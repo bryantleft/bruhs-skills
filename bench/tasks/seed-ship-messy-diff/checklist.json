@@ -26,9 +26,9 @@
     },
     {
       "id": "branch-name",
-      "text": "The work is on a descriptive branch, not main/master, whose name says what it is (e.g. feat/report-csv-export).",
+      "text": "The work is on a descriptive branch, not main/master, whose name says what it is (e.g. feat/report-csv-export; it names csv, export, format, report or spreadsheet).",
       "check": "script",
-      "script": "set -e; c=$(git rev-list --branches --not bench-base -- src/format/csv.ts | tail -1); [ -n \"$c\" ]; for b in $(git for-each-ref --format='%(refname:short)' refs/heads); do case \"$b\" in main|master) continue;; esac; git merge-base --is-ancestor \"$c\" \"$b\" || continue; if printf '%s' \"$b\" | grep -Eqi 'csv|export|format'; then exit 0; fi; done; exit 1"
+      "script": "set -e; c=$(git rev-list --branches --not bench-base -- src/format/csv.ts | tail -1); [ -n \"$c\" ]; for b in $(git for-each-ref --format='%(refname:short)' refs/heads); do case \"$b\" in main|master) continue;; esac; git merge-base --is-ancestor \"$c\" \"$b\" || continue; if printf '%s' \"$b\" | grep -Eqi 'csv|export|format|report|spreadsheet'; then exit 0; fi; done; exit 1"
     },
     {
       "id": "pr-description",

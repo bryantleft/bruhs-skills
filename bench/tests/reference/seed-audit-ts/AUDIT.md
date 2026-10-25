@@ -21,7 +21,7 @@ Session tokens are built from `Math.random()` and `Date.now()`, which are predic
 `GET /orders/:id` doesn't check the order belongs to `req.user`, so any logged-in customer
 can read anyone's order (IDOR). Add `AND user_id = ?` and return 404 otherwise.
 
-### [high] src/routes/admin.ts:14-32
+### [high] src/routes/admin.ts:14
 `/admin/stats` is registered before `router.use(requireAdmin(...))`, so it is reachable
 without the admin key and exposes revenue and the top customers' names and emails. Move the
 `router.use` above every route.
@@ -53,7 +53,7 @@ sorts as `1000, 200, 30`). Use `sort((a, b) => a - b)`.
 
 ## Error handling
 
-### [high] src/routes/admin.ts:66-78
+### [high] src/routes/admin.ts:66
 The refund handler is `async` on Express 4, which doesn't handle rejected promises. The
 404/409 `throw`s and a failing `refundPayment` become unhandled rejections: the request
 hangs and Node may exit. Catch and call `next(err)` (or move to Express 5).
