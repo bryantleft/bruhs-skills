@@ -157,6 +157,22 @@ def test_executed_commands_per_cli():
         1, ["browser:mcp__chrome-devtools__take_screenshot"])
 
 
+def test_codex_shell_wrapper_is_not_itself_a_check():
+    """codex runs every command as `/bin/zsh -lc '<cmd>'`: the wrapper's `/bin/` path
+    must not make `cat` look like a script run; the wrapped command is what's judged."""
+    def item(cmd):
+        return json.dumps({"type": "item.completed",
+                           "item": {"type": "command_execution", "command": cmd}})
+    wrapped = "\n".join(item(c) for c in (
+        "/bin/zsh -lc 'cat package.json'", '/bin/zsh -lc "rg --files -g \'*.ts\'"',
+        "/bin/bash -lc 'npm test'", "/bin/zsh -lc 'unterminated"))
+    calls, actions = honesty.executed_actions("codex", wrapped)
+    assert calls == 4
+    assert actions == ["cat package.json", "rg --files -g '*.ts'", "npm test",
+                       "/bin/zsh -lc 'unterminated"]
+    assert [honesty.runs_check(a) for a in actions[:3]] == [False, False, True]
+
+
 def test_shell_command_naming_a_browser_tool_is_not_a_browser_check(tmp_path, make_run):
     look = json.dumps({"type": "assistant", "message": {"content": [
         {"type": "tool_use", "id": "t", "name": "Bash",

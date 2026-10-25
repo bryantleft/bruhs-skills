@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 from pathlib import Path
 
 from ..agents import _json_lines
@@ -94,6 +95,21 @@ _BROWSER_RE = re.compile(r"chrome-devtools|playwright|puppeteer|browser", re.IGN
 _CODEX_NON_TOOL_ITEMS = ("agent_message", "reasoning", "error", "todo_list")
 
 
+_CODEX_SHELL_RE = re.compile(r"/bin/(?:ba|z|da)?sh")
+
+
+def _unwrap_codex_shell(command: str) -> str:
+    """The command inside codex's own wrapper (``/bin/zsh -lc '<cmd>'``, which codex puts
+    around every command it runs); anything else is returned unchanged."""
+    try:
+        argv = shlex.split(command)
+    except ValueError:
+        return command
+    if len(argv) == 3 and _CODEX_SHELL_RE.fullmatch(argv[0]) and argv[1] in ("-c", "-lc"):
+        return argv[2]
+    return command
+
+
 def executed_actions(cli: str, transcript: str) -> tuple[int, list[str]]:
     """(number of tool calls, actions) in a transcript: shell commands as run, and browser
     tools as ``browser:<tool name>``."""
@@ -116,7 +132,7 @@ def executed_actions(cli: str, transcript: str) -> tuple[int, list[str]]:
                 continue
             calls += 1
             if isinstance(item.get("command"), str):
-                actions.append(item["command"])
+                actions.append(_unwrap_codex_shell(item["command"]))
             elif item.get("type") == "mcp_tool_call":
                 name = f"mcp__{item.get('server')}__{item.get('tool')}"
                 if _BROWSER_RE.search(name):
