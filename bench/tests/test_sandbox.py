@@ -4,6 +4,7 @@ Sentinels are planted in the real home under a unique name and always removed.""
 
 import json
 import os
+import re
 import shutil
 import socket
 import stat
@@ -67,8 +68,8 @@ def test_profile_denies_home_and_allows_list(tmp_path):
     assert "(allow default)" in text
     assert f'(deny file-read* file-write* (subpath "{HOME}")' in text
     assert f'(subpath "/System/Volumes/Data{HOME}")' in text
-    for rel in sandbox.READ_ALLOW:
-        assert f'(subpath "{HOME / rel}")' in text
+    for path in sandbox.read_allow(HOME):
+        assert f'(subpath "{path}")' in text
     assert "Keychains" not in text  # R20: no keychain access at all
     assert f'(literal "{HOME}")' in text  # metadata only: traversal, not listing
     assert '(subpath "/opt/extra")' in text and f'(subpath "{tmp_path.resolve()}")' in text
@@ -127,7 +128,7 @@ def test_writes_outside_writable_roots_denied(tmp_path):
 
 
 def test_allowlisted_tool_dirs_readable(tmp_path):
-    present = [HOME / p for p in sandbox.READ_ALLOW if (HOME / p).is_dir()]
+    present = [p for p in sandbox.read_allow(HOME) if p.is_dir()]
     if not present:
         pytest.skip("no allowlisted tool dir on this machine")
     proc = run(["/bin/ls", str(present[0])], [tmp_path], tmp_path)
@@ -819,6 +820,9 @@ def test_zsh_heredocs_and_git_work_with_private_tmp(tmp_path):
     env = sandbox.private_tmp({"PATH": os.environ["PATH"], "HOME": str(root)}, root)
     tmp = env["TMPDIR"]
     assert env["TMPPREFIX"].startswith(tmp + "/") and env["xcrun_db"].startswith(tmp + "/")
+    # @playwright/mcp keeps its persistent profile under PLAYWRIGHT_BROWSERS_PATH (older
+    # releases) unless this names another dir: never the user's real Playwright cache
+    assert env["PWMCP_PROFILES_DIR_FOR_TEST"].startswith(tmp + "/")
     proc = subprocess.run(
         sandbox.wrap(["/bin/zsh", "-c", "cat <<'EOF'\nheredoc-ok\nEOF\n/usr/bin/git --version"],
                      writable=[root]),
@@ -827,3 +831,51 @@ def test_zsh_heredocs_and_git_work_with_private_tmp(tmp_path):
     assert "heredoc-ok" in proc.stdout and "git version" in proc.stdout
     assert "Operation not permitted" not in proc.stderr and "operation not permitted" not in proc.stderr
     sandbox.remove_private_tmp(root)
+
+
+# --------------------------------------------------------------------------- narrowed tool dirs
+
+
+PW_CACHE = HOME / "Library" / "Caches" / "ms-playwright"
+
+
+@pytest.fixture
+def planted_mcp_profile():
+    """A dummy persistent Playwright-MCP Chrome profile in the real Playwright cache."""
+    profile_dir = PW_CACHE / f"mcp-chrome-bbtest{uuid.uuid4().hex[:8]}"
+    cookies = profile_dir / "Default" / "Cookies"
+    token = uuid.uuid4().hex
+    cookies.parent.mkdir(parents=True)
+    try:
+        cookies.write_text(token)
+        yield cookies, token
+    finally:
+        shutil.rmtree(profile_dir, ignore_errors=True)
+
+
+def test_playwright_mcp_profiles_unreadable_browsers_readable(tmp_path, planted_mcp_profile):
+    """Only the browser installs in ms-playwright are readable: the user's logged-in
+    @playwright/mcp profiles (mcp-chrome-*) and anything else there are not."""
+    cookies, token = planted_mcp_profile
+    proc = run(["/bin/cat", str(cookies)], [tmp_path], tmp_path)
+    assert proc.returncode != 0 and token not in proc.stdout
+    proc = run(["/bin/ls", str(cookies.parent.parent)], [tmp_path], tmp_path)
+    assert proc.returncode != 0
+    browsers = [p for p in sandbox.read_allow(HOME) if p.parent == PW_CACHE]
+    assert all(re.fullmatch(r"(chromium|chromium_headless_shell|ffmpeg|firefox|webkit)-\d+",
+                            p.name) for p in browsers)
+    if browsers:
+        proc = run(["/bin/ls", str(browsers[0])], [tmp_path], tmp_path)
+        assert proc.returncode == 0, proc.stderr
+
+
+def test_cargo_and_rustup_secrets_unreadable():
+    allowed = sandbox.read_allow(HOME)
+    for rel in (".cargo/credentials.toml", ".cargo/credentials", ".cargo/config.toml",
+                ".cargo/config", ".cargo/env", ".rustup/downloads", ".rustup/tmp"):
+        assert not any((HOME / rel).is_relative_to(p) for p in allowed), rel
+    for rel in (".cargo/bin", ".cargo/registry", ".cargo/git", ".rustup/toolchains",
+                ".rustup/settings.toml", ".rustup/update-hashes"):
+        assert HOME / rel in allowed
+    assert HOME / "Library/Caches/ms-playwright" not in allowed
+    assert HOME / ".cargo" not in allowed and HOME / ".rustup" not in allowed

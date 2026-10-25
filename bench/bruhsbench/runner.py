@@ -60,8 +60,8 @@ from pathlib import Path, PurePath
 from . import untrusted
 from .agents import (agent_finished, build_command, is_auth_failure, parse_output,
                      tool_event_count)
-from .homes import ClaudeAuthMissing, build_home, claude_auth, export_bruhs
-from .sandbox import (READ_ALLOW, check_tmp_base, private_tmp, real_home, remove_private_tmp,
+from .homes import AGENT_TOOL_HOMES, ClaudeAuthMissing, build_home, claude_auth, export_bruhs
+from .sandbox import (check_tmp_base, read_allow, private_tmp, real_home, remove_private_tmp,
                       work_base, wrap)
 from .types import Arm, Cli, ModelSpec, RunResult, RunSpec, Task
 from .workspace import BASE_TAG, SetupFailed, check_task_setup, prepare_workspace
@@ -397,12 +397,15 @@ def _within(path: str, roots: Sequence[Path]) -> bool:
 
 
 def scan_contamination(text: str, *, forbidden: Sequence[Path],
-                       allowed: Sequence[Path] = ()) -> list[str]:
+                       allowed: Sequence[Path] = (),
+                       allowed_exact: Sequence[Path] = ()) -> list[str]:
     """Absolute paths under any ``forbidden`` root (and not under ``allowed``) in ``text``.
 
     JSON-escaped slashes are undone first; matches stop at quotes, whitespace and
-    other delimiters, and a trailing ``.`` is dropped.
+    other delimiters, and a trailing ``.`` is dropped. ``allowed_exact`` paths are
+    allowed only as themselves, not what is under them.
     """
+    exact = {f for r in allowed_exact for f in _forms(r)}
     text = text.replace("\\/", "/")
     # an allowed root with a space in it (a PATH dir under ~/Library/Application Support)
     # is cut at the space by the match, so it is also recognised in the text itself
@@ -413,7 +416,8 @@ def scan_contamination(text: str, *, forbidden: Sequence[Path],
         for form in _forms(root):
             for m in re.finditer(re.escape(form) + _PATH_END + _PATH_TAIL, text):
                 path = m.group(0).rstrip(".")
-                if _within(path, allowed) or any(a.match(text, m.start()) for a in spaced):
+                if (path.rstrip("/") in exact or _within(path, allowed)
+                        or any(a.match(text, m.start()) for a in spaced)):
                     continue
                 found.add(path)
     return sorted(found)
@@ -444,12 +448,15 @@ def _contamination(spec: RunSpec, stdout: str, stderr: str, run_dir: Path, work_
     # reading the user's config; everything else under ~ is.
     path_dirs = [Path(p) for p in env.get("PATH", "").split(os.pathsep)
                  if p and Path(p) != home_dir and Path(p).is_absolute()]
-    # Likewise the tool installs the sandbox lets every run read (sandbox.READ_ALLOW,
-    # e.g. Playwright's browsers, which agents point PLAYWRIGHT_BROWSERS_PATH at).
-    tool_dirs = [home_dir / p for p in READ_ALLOW]
+    # Likewise the tool installs the sandbox lets every run read (sandbox.read_allow:
+    # Playwright's browser installs, not the rest of its cache), and the tool-home roots
+    # the agent's env points at (PLAYWRIGHT_BROWSERS_PATH, RUSTUP_HOME) themselves.
+    tool_dirs = read_allow(home_dir)
+    tool_roots = [home_dir / rel for rel in AGENT_TOOL_HOMES.values()]
     logs = [_read_untrusted(run_dir, rel, skipped) for rel in session_logs(run_dir)]
     found = scan_contamination("\n".join([stdout, stderr, *logs]), forbidden=forbidden,
-                               allowed=[work_root, *path_dirs, *tool_dirs])
+                               allowed=[work_root, *path_dirs, *tool_dirs],
+                               allowed_exact=tool_roots)
     if found:
         return True, found
     tool_level = (tool_event_count(spec.model.cli, stdout) > 0

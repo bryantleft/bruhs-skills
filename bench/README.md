@@ -54,8 +54,10 @@ the bruhs arm's home) and `npx`, which starts chrome-devtools-mcp.
   (default `/private/tmp/bruhsbench/<results-id>/`), so a CLI walking parent directories never
   picks up `~/.claude` or similar. Only artifacts are copied into `bench/results/`.
 - **OS sandbox.** Agents, judges, probes, grader check commands and capture dev servers all run
-  under `sandbox-exec`. They cannot read or write the real home (except an allowlist of tool
-  install dirs and caches), other runs, or the keychain, and they get no clipboard,
+  under `sandbox-exec`. They cannot read or write the real home (except a read-only
+  allowlist of tool installs: the CLIs, node, uv's Pythons, `~/.cargo/{bin,registry,git}`,
+  rustup's toolchains and Playwright's browser dirs, never Playwright's `mcp-*` browser
+  profiles or cargo's credentials and config), other runs, or the keychain, and they get no clipboard,
   app-launching or process inspection. Each process writes only to its own run root and a
   private `TMPDIR`. Network access stays on.
 - **Short private `TMPDIR`.** The Convex local backend binds a unix socket under `TMPDIR`,

@@ -259,16 +259,25 @@ def test_run_one_marks_contaminated(tmp_path, bruhs_src):
 
 
 def test_sandbox_readable_tool_dirs_are_not_contamination(tmp_path, bruhs_src):
-    """Tool installs the sandbox lets every run read (e.g. Playwright's browser cache,
-    which agents point PLAYWRIGHT_BROWSERS_PATH at) aren't the user's material; a path
-    beside them still is."""
+    """Tool installs the sandbox lets every run read (Playwright's browser installs, which
+    agents launch through PLAYWRIGHT_BROWSERS_PATH, and that root itself) aren't the
+    user's material. The rest of Playwright's cache is: the user's logged-in
+    @playwright/mcp profiles (mcp-chrome-*), and a path beside the cache."""
+    from bruhsbench.sandbox import PLAYWRIGHT_CACHE, read_allow
+
+    browsers = [p for p in read_allow(Path.home()) if p.parent == Path.home() / PLAYWRIGHT_CACHE]
+    if not browsers:
+        pytest.skip("no Playwright browser installed")
     task = make_task(tmp_path, "t1")
-    tool = Path.home() / "Library" / "Caches" / "ms-playwright" / "chromium-1"
+    cache = Path.home() / PLAYWRIGHT_CACHE
+    tool = browsers[0] / "chrome-mac" / "Chromium"
+    cookies = cache / "mcp-chrome-abc123" / "Default" / "Cookies"
     leak = Path.home() / "Library" / "Caches" / "other-app"
-    body = f"echo 'PLAYWRIGHT_BROWSERS_PATH={tool} and {leak}' >&2\n{EDIT_AND_REPLY}"
+    body = (f"echo 'PLAYWRIGHT_BROWSERS_PATH={cache} {tool} and {cookies} {leak}' >&2\n"
+            f"{EDIT_AND_REPLY}")
     res = run_one(RunSpec(task, CLAUDE, "bare", 1), tmp_path / "out", bruhs_src=bruhs_src,
                   command_override=override(fake_agent(tmp_path, body)))
-    assert res.contaminated is True and res.contamination == [str(leak)]
+    assert res.contaminated is True and res.contamination == sorted([str(cookies), str(leak)])
 
 
 def reply_with(transcript: str) -> str:

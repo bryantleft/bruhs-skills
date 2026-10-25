@@ -16,7 +16,7 @@ SBPL rules win):
 2. ``file-read-metadata`` (stat only, no listing or contents) on the blocked roots,
    their ancestors and the dirs leading to each re-allowed path, so traversal,
    ``getcwd`` and ``realpath`` work.
-3. Read-only: the tool installs in :data:`READ_ALLOW` and ``extra_readable``.
+3. Read-only: the tool installs in :func:`read_allow` and ``extra_readable``.
 4. Writes denied everywhere, then allowed on ``/dev``, the caller's ``writable`` roots
    (each with its private ``TMPDIR``, see below), and two strictly-anchored name forms in
    the (unlistable) Darwin temp dir:
@@ -76,10 +76,12 @@ real, read-only installs:
     ``~/.grok/downloads``        the grok binary it points to
     ``~/.nvm``                   node/npx/pnpm (chrome-devtools MCP via ``npx``; JS
                                  checks and dev servers)
-    ``~/.cargo``                 cargo/rustc proxies for Rust checks
-    ``~/.rustup``                the toolchains those proxies run
+    ``~/.cargo/{bin,registry,git}``  cargo/rustc proxies and crate caches (never
+                                 ``credentials*``, ``config*``)
+    ``~/.rustup/toolchains``, ``settings.toml``  the toolchains those proxies run
     ``~/Library/pnpm``           pnpm's global bin dir (on PATH)
-    ``~/Library/Caches/ms-playwright``  Playwright's browsers (checks that run it)
+    ``~/Library/Caches/ms-playwright/{chromium,chromium_headless_shell,ffmpeg,firefox,
+    webkit}-<n>``  Playwright's browsers only; never the ``mcp-*`` persistent profiles
 
 Nothing in the home is writable. Never readable: ``~/.claude``, ``~/.codex``,
 ``~/.grok`` (other than bin/downloads), ``~/.agents``, ``~/Documents``,
@@ -122,11 +124,38 @@ READ_ALLOW: tuple[Path, ...] = (
     Path(".grok/bin"),
     Path(".grok/downloads"),
     Path(".nvm"),
-    Path(".cargo"),
-    Path(".rustup"),
+    # cargo's binaries and crate caches only: never credentials*, config* or env
+    Path(".cargo/bin"),
+    Path(".cargo/registry"),
+    Path(".cargo/git"),
+    # rustup's toolchains, its default-toolchain setting and the toolchain hashes it
+    # checks on every run; not downloads/ or tmp/
+    Path(".rustup/toolchains"),
+    Path(".rustup/settings.toml"),
+    Path(".rustup/update-hashes"),
     Path("Library/pnpm"),
-    Path("Library/Caches/ms-playwright"),
 )
+# Playwright's cache also holds the user's persistent, logged-in @playwright/mcp browser
+# profiles (mcp-chrome-*: cookies, saved logins) and other state (b/, .links): only the
+# browser installs in it are readable.
+PLAYWRIGHT_CACHE = Path("Library/Caches/ms-playwright")
+PLAYWRIGHT_BROWSER_RE = re.compile(r"(?:chromium|chromium_headless_shell|ffmpeg|firefox"
+                                   r"|webkit)-\d+")
+
+
+def read_allow(home: Path) -> list[Path]:
+    """The read-only tool installs under ``home``: :data:`READ_ALLOW` plus each browser
+    install dir in Playwright's cache (:data:`PLAYWRIGHT_BROWSER_RE`)."""
+    home = Path(home)
+    out = [home / p for p in READ_ALLOW]
+    cache = home / PLAYWRIGHT_CACHE
+    try:
+        entries = sorted(os.scandir(cache), key=lambda e: e.name)
+    except OSError:
+        return out
+    out += [cache / e.name for e in entries
+            if PLAYWRIGHT_BROWSER_RE.fullmatch(e.name) and e.is_dir(follow_symlinks=False)]
+    return out
 SYSTEM_WRITABLE: tuple[Path, ...] = (
     Path("/dev"),
 )
@@ -233,7 +262,7 @@ def profile(*, writable: Iterable[Path], extra_readable: Iterable[Path] = (),
     writes = [Path(q).resolve() for p in writable for q in (p, tmp_dir(p))]
     if inside := [p for p in extra + writes if p.is_relative_to(home)]:
         raise ValueError(f"sandbox roots resolve into the real home: {inside}")
-    reads = [home / p for p in READ_ALLOW] + extra
+    reads = read_allow(home) + extra
 
     meta: dict[Path, None] = dict.fromkeys(d for b in blocked for d in [*reversed(b.parents), b])
     for p in [*reads, *writes, *([tmp / "x"] if tmp is not None else [])]:
@@ -365,8 +394,12 @@ def private_tmp(env: Mapping[str, str], root: Path) -> dict[str, str]:
     # Temp files that ignore TMPDIR go there too: zsh here-documents use $TMPPREFIX
     # (default /tmp/zsh), and /usr/bin/git's xcrun shim caches in the Darwin temp dir
     # unless $xcrun_db names a file. Denied, they broke agents' scripts in both arms.
+    # @playwright/mcp (older releases) puts its persistent browser profile under
+    # PLAYWRIGHT_BROWSERS_PATH, i.e. the user's real Playwright cache, unless
+    # PWMCP_PROFILES_DIR_FOR_TEST names another dir.
     return {**env, "TMPDIR": str(tmp), "TMPPREFIX": str(tmp / "zsh"),
-            "xcrun_db": str(tmp / "xcrun_db")}
+            "xcrun_db": str(tmp / "xcrun_db"),
+            "PWMCP_PROFILES_DIR_FOR_TEST": str(tmp / "pw-mcp")}
 
 
 def remove_private_tmp(root: Path) -> None:
