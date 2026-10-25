@@ -63,7 +63,7 @@ Pairwise judge errors per model: {% for m in models %}{{ m.model }} {{ m.judge_e
 ## Method and limits
 
 - Models: {% for m in matrix.models %}{{ m.model }} via {{ m.cli }} (effort {{ m.effort }}){% if not loop.last %}, {% endif %}{% endfor %}.
-- Fresh isolated home per run, under a macOS sandbox with no access to the real home or other runs. Accepted limitation: localhost TCP between sandboxed processes is open.
+- Fresh isolated home per run, under a macOS sandbox with no access to the real home or other runs. Accepted limitations: localhost TCP between sandboxed processes is open; and writes to the shared /tmp are denied in both arms (each run writes scratch to its own private $TMPDIR), so agents that try /tmp retry elsewhere.
 - The bruhs arm includes the chrome-devtools MCP, which can reach the web; native web tools are off in both arms.
 - UI/copy judged blind and pairwise by the two other model families; each verdict counts separately.
 - Win rate CI: 95% percentile bootstrap, 10,000 resamples over tasks.

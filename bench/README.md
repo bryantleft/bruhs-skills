@@ -77,6 +77,12 @@ the bruhs arm's home) and `npx`, which starts chrome-devtools-mcp.
   screenshots in a seeded A/B order, and never judge their own model family's runs.
 - **Accepted limitations.** Localhost TCP between sandboxed processes is open. In the bruhs
   arm, chrome-devtools can reach the web, while native web tools are off in both arms.
+  Writes to the shared `/tmp` are denied (ruling R39): parallel runs of a task would
+  otherwise share and clobber the same scratch names. Agents in both arms reach for
+  `/tmp` (scratch scripts, screenshots, build output), get "Operation not permitted" and
+  retry in the workspace or in `$TMPDIR`, which works. The pilot showed this in both arms
+  at similar rates; it costs turns and can add out-of-scope files, which never decide a
+  task.
 
 ## Commands
 

@@ -195,7 +195,7 @@ timeout without a diff, or a missing grade).</p>
 <ul>
 <li>Models: {% for m in matrix.models %}{{ m.model }} via {{ m.cli }} (effort {{ m.effort }}){% if not loop.last %}, {% endif %}{% endfor %}.
 CLI versions: {% for cli, v in matrix.cli_versions.items() %}{{ cli }} {{ v }}{% if not loop.last %}, {% endif %}{% endfor %}.</li>
-<li>Every run gets a fresh isolated home and runs under a macOS sandbox with no access to the user's real home or other runs. Accepted limitation: localhost TCP between sandboxed processes is open.</li>
+<li>Every run gets a fresh isolated home and runs under a macOS sandbox with no access to the user's real home or other runs. Accepted limitations: localhost TCP between sandboxed processes is open; and writes to the shared <code>/tmp</code> are denied in both arms (each run writes scratch to its own private <code>$TMPDIR</code>), so agents that try <code>/tmp</code> retry elsewhere.</li>
 <li>The bruhs arm includes the chrome-devtools MCP, which can reach the web; native web tools are off in both arms, and the bare arm has Playwright in each fixture.</li>
 <li>UI/copy are judged blind and pairwise by the two model families other than the run's own; each verdict counts separately.</li>
 <li>Win rate CI: 95% percentile bootstrap, 10,000 resamples over tasks.</li>

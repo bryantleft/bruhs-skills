@@ -63,3 +63,11 @@ def test_private_report_is_self_contained(tmp_path, summary):
     assert "<link" not in html and 'src="http' not in html  # nothing fetched
     assert "<svg" in html  # per-model chart inline
     assert "Win rate" in md
+
+
+def test_method_states_the_tmp_write_limitation(tmp_path, summary):
+    """R39: the literal /tmp is not writable (only the private TMPDIR), in both arms."""
+    for private in (True, False):
+        html, md = render(summary, tmp_path / str(private), private=private)
+        for text in (html.read_text(), md.read_text()):
+            assert "/tmp" in text and "TMPDIR" in text and "both arms" in text
