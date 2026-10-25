@@ -3,17 +3,20 @@
 Layout (Ruling R10). Everything an agent touches lives in a *work root* outside the
 user's home (``$BRUHSBENCH_WORK`` or ``/private/tmp/bruhsbench``, plus a per-results
 id): the pinned bruhs export at ``<work>/_bruhs/<commit>/`` and, per run,
-``<work>/<run_id>/{home,workspace,stdout,stderr,final.txt,.tmp}``; graders' scratch
+``<work>/<run_id>/{home,workspace,final.txt,.tmp}``; graders' scratch
 copies go to ``<work>/_scratch/``, outside every run root. The results dir
 ``<out_root>/<run_id>/`` only receives copies: ``result.json``, ``transcript.jsonl`` (raw
 CLI stdout, streaming JSON for all three CLIs), ``stderr.txt``, ``diff.patch``,
 ``final.txt``.
 
 Sandbox (R19-R22): the agent runs under ``sandbox.wrap`` with only its run dir
-writable (and readable) inside the work base, ``TMPDIR`` at ``<run_dir>/.tmp``. The
-harness reads files the agent could have written only through ``untrusted`` (no
-symlinks, regular files only; anything else lands in ``unsafe_files``) and runs git on
-the workspace hardened and sandboxed. ``result.json`` records
+writable (and readable) inside the work base, ``TMPDIR`` at ``<run_dir>/.tmp``, no
+access to the rest of the work base or the real home, no unix sockets but its own, no
+``lsof``/``ps`` on other processes, and no clipboard or app-launching. Its stdout/stderr
+are drained over pipes into the results dir, so it can't forge its transcript. Other
+files it may have written (session logs, codex ``final.txt``) are read only through
+``untrusted`` (no symlinks, regular files; anything else lands in ``unsafe_files``), and
+git on the workspace runs hardened and sandboxed. ``result.json`` records
 the workspace's absolute path for the graders and is written last (atomically), so a
 run dir without it is partial and is redone on resume.
 
@@ -251,13 +254,28 @@ def _kill_group(pgid: int, sig: int) -> None:
         pass
 
 
+def _drain(src, dst) -> None:
+    for chunk in iter(lambda: src.read(65536), b""):
+        dst.write(chunk)
+    src.close()
+
+
 def _execute(run_id: str, argv: list[str], cwd: Path, env: dict[str, str], stdout: Path,
              stderr: Path, timeout_s: float, control: RunControl) -> tuple[int, bool]:
-    """Run ``argv`` in its own process group; returns (exit code, timed out)."""
+    """Run ``argv`` in its own process group; returns (exit code, timed out).
+
+    R22: the agent's stdout/stderr are read over pipes and written to ``stdout`` /
+    ``stderr`` by the harness, so the agent has no file to reopen and rewrite -- it
+    cannot forge its own transcript.
+    """
     with open(stdout, "wb") as out, open(stderr, "wb") as err:
         proc = control.spawn(run_id, lambda: subprocess.Popen(
-            argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=out, stderr=err,
-            start_new_session=True))
+            argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, start_new_session=True))
+        readers = [threading.Thread(target=_drain, args=(proc.stdout, out), daemon=True),
+                   threading.Thread(target=_drain, args=(proc.stderr, err), daemon=True)]
+        for t in readers:
+            t.start()
         timed_out = False
         try:
             proc.wait(timeout=timeout_s)
@@ -272,6 +290,8 @@ def _execute(run_id: str, argv: list[str], cwd: Path, env: dict[str, str], stdou
         finally:
             # whatever the agent left running (dev servers, watchers) goes too
             _kill_group(proc.pid, signal.SIGKILL)
+            for t in readers:
+                t.join()
             control.release(proc)
     if control.stopped.is_set():
         raise RunInterrupted(run_id)
@@ -343,18 +363,18 @@ def run_one(
     argv = wrap(argv, writable=[run_dir], denied=[work_root])
     env = private_tmp(env, run_dir)
 
+    # R22: the agent's stdout/stderr are drained over pipes straight into the results
+    # dir (outside the sandbox); there is no stdout file in the run dir for the agent to
+    # reopen and forge.
     with claude_slots if (cli == "claude" and claude_slots is not None) else nullcontext():
         start = time.monotonic()
-        code, timed_out = _execute(spec.run_id, argv, workspace, env, run_dir / "stdout",
-                                   run_dir / "stderr", timeout_s, control)
+        code, timed_out = _execute(spec.run_id, argv, workspace, env, transcript,
+                                   out_dir / "stderr.txt", timeout_s, control)
         wall_s = time.monotonic() - start
 
-    # the agent could have swapped these for symlinks: read them safely (R22)
     unsafe: list[str] = []
-    stdout = _read_untrusted(run_dir, "stdout", unsafe)
-    stderr = _read_untrusted(run_dir, "stderr", unsafe)
-    transcript.write_text(stdout)
-    (out_dir / "stderr.txt").write_text(stderr)
+    stdout = transcript.read_text(errors="replace")
+    stderr = (out_dir / "stderr.txt").read_text(errors="replace")
     if not timed_out and is_auth_failure(cli, stdout, stderr, code):
         raise AuthAbort(f"{spec.run_id}: {cli} is not authenticated (exit {code}); "
                         f"log in and rerun to resume. stderr: {stderr[-500:]}")

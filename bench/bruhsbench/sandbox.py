@@ -2,33 +2,50 @@
 agent-written code (Rulings R19-R22).
 
 An isolated ``HOME`` is not a sandbox: a model with a file tool can still open any
-absolute path. :func:`wrap` prefixes an argv with ``sandbox-exec -p <profile>``; the
-profile (:func:`profile`) allows everything by default (network, processes, mach,
-system paths) and then, in this order (later SBPL rules win):
+absolute path, connect to any unix socket, read the clipboard or launch an app outside
+the sandbox. :func:`wrap` prefixes an argv with ``sandbox-exec -p <profile>``; the
+profile (:func:`profile`) allows everything by default and then clamps it down (later
+SBPL rules win):
 
 1. *Blocked roots* get no reads, no writes and no unix-socket connects: the real home
    (from the password database, :func:`real_home`), the work base (every run, judge,
    grading and export root, :func:`work_base`), the caller's ``denied`` roots,
-   ``/private/tmp`` (other processes' temp files and the launchd ``SSH_AUTH_SOCK``
-   listener) and the per-user Darwin dir ``/private/var/folders/<x>/<y>`` (its ``T``
-   temp and ``C`` cache dirs). Every path rule is also emitted in its
-   ``/System/Volumes/Data`` firmlink form. Unix sockets matter: the ssh-agent and
-   ``~/.docker/run/docker.sock`` are reachable by path, not by file reads.
+   ``/private/tmp`` and the per-user Darwin dir ``/private/var/folders/<x>/<y>`` (its
+   ``T`` temp and ``C`` cache). Every path rule is emitted in its ``/System/Volumes/Data``
+   firmlink form too.
 2. ``file-read-metadata`` (stat only, no listing or contents) on the blocked roots,
-   their ancestors and the directories leading to each re-allowed path, so path
-   traversal, ``getcwd`` and ``realpath`` work.
+   their ancestors and the dirs leading to each re-allowed path, so traversal,
+   ``getcwd`` and ``realpath`` work.
 3. Read-only: the tool installs in :data:`READ_ALLOW` and ``extra_readable``.
-4. Writes are denied everywhere, then allowed on ``/dev``.
-5. Read-write (and socket connects) in the Darwin temp dir only for names a process
-   creates itself and nobody can guess or list (the dir is unreadable):
-   ``mktemp``'s ``<prefix>.XXXXXXXXXX`` (macOS ``mktemp`` ignores ``TMPDIR``) and
-   Chrome's ProcessSingleton dirs (``com.google.Chrome.XXXXXX``; the chrome-devtools
-   MCP's Chrome aborts without one, and it too ignores ``TMPDIR``)).
-   The shared xcrun cache (``xcrun_db``) stays unwritable, since it steers the user's
-   own ``/usr/bin`` developer tools; those shims still work but print a "couldn't
-   create cache file" warning to stderr.
-6. Read-write on the caller's ``writable`` roots. Callers point ``TMPDIR`` inside one
-   (:func:`private_tmp`), so no temp dir is shared between runs.
+4. Writes denied everywhere, then allowed on ``/dev``, the caller's ``writable`` roots,
+   and two strictly-anchored name forms in the (unlistable) Darwin temp dir:
+   ``mktemp``'s ``tmp.XXXXXXXXXX`` (macOS ``mktemp`` ignores ``TMPDIR``) and Chrome's
+   ProcessSingleton dir ``com.google.Chrome.XXXXXX`` (file part).
+5. **Unix sockets** (``network-outbound`` to a path): denied everywhere, then allowed
+   only for the system resolver (:data:`SYSTEM_SOCKETS`, mDNSResponder -- DNS uses a
+   unix socket), the caller's ``writable`` roots (a run's own dev-server / MCP sockets)
+   and the Chrome singleton socket. Nothing else: the user's ssh-agent,
+   ``~/.docker/run/docker.sock``, and other runs' or the user's real Chrome sockets are
+   all unreachable. TCP (``remote ip``) is untouched -- localhost dev servers and the
+   chrome-devtools websocket keep working (see the localhost note below).
+6. ``process-info*`` denied except ``(target self)``: ``lsof -U`` / ``ps`` can't
+   enumerate other processes' fds or sockets, so a socket whose path can't be guessed
+   can't be discovered either.
+7. ``lsopen`` denied: ``open``/LaunchServices can't launch an app (an app launches as a
+   child of launchd, outside this sandbox -- the classic escape). ``appleevent-send``
+   denied as defence in depth. Pasteboard mach services (:data:`DENIED_MACH`) denied so
+   ``pbpaste`` can't read the user's clipboard.
+
+The Chrome singleton socket is the one unix socket allowed outside a writable root.
+macOS Chrome hard-codes it under the Darwin temp dir (``confstr`` ``_CS_DARWIN_USER_TEMP_DIR``),
+ignoring ``$TMPDIR``, a short ``--user-data-dir`` and every flag (verified), so it can't
+be moved into the run root. The exposure is bounded: the dir name has random characters,
+the Darwin temp dir can't be listed (step 1-2), and ``process-info`` is denied (step 6),
+so another run's or the user's real Chrome socket path can't be discovered -- only brute
+forced over a socket with no feedback. Accepted limitation: **localhost TCP stays open**
+(``127.0.0.1`` / ``::1``), because dev servers and the chrome-devtools MCP need it; a run
+can in principle reach a port another run is listening on. Ports are picked free per
+capture and runs are short-lived, so this is tolerated.
 
 Home paths readable, and why. The CLI entries (launchers, binaries, ``~/.nvm`` for the
 ``npx`` chrome-devtools MCP) are what the live probes in ``tests/test_sandbox.py`` /
@@ -90,12 +107,22 @@ READ_ALLOW: tuple[Path, ...] = (
 SYSTEM_WRITABLE: tuple[Path, ...] = (
     Path("/dev"),
 )
-_ALNUM = "[A-Za-z0-9]"
-# Self-created, unguessable entries allowed in the (unlistable) Darwin temp dir
-DARWIN_TEMP_NAMES = (
-    r"[^/]+\." + _ALNUM * 10,  # mktemp's default <prefix>.XXXXXXXXXX
-    r"(com\.google\.Chrome|org\.chromium\.Chromium)\." + _ALNUM * 6,  # Chrome singleton
+# Unix sockets every sandboxed process may connect to: the system DNS resolver.
+SYSTEM_SOCKETS: tuple[Path, ...] = (
+    Path("/private/var/run/mDNSResponder"),
 )
+# Pasteboard mach services; denied so pbpaste can't read the user's clipboard.
+DENIED_MACH: tuple[tuple[str, str], ...] = (
+    ("global-name-prefix", "com.apple.pasteboard"),
+    ("global-name", "com.apple.pboard"),
+)
+# Strictly-anchored names in the (unlistable) Darwin temp dir. mktemp is file-only;
+# Chrome's ProcessSingleton dir also needs a socket connect (see module docstring).
+# The sandbox regex engine has no bounded-repetition ({n,}); anchor the prefix strictly
+# instead (``tmp.`` / the Chrome bundle id), which is what keeps system names like
+# ``com.apple.*`` from matching.
+_MKTEMP_RE = r"tmp\.[A-Za-z0-9]+"
+_CHROME_RE = r"(com\.google\.Chrome|org\.chromium\.Chromium)\.[A-Za-z0-9]+"
 _CS_DARWIN_USER_TEMP_DIR = 65537  # confstr name; missing from os.confstr_names
 
 
@@ -147,10 +174,13 @@ def _subpaths(paths: Iterable[Path]) -> str:
     return " ".join(f"(subpath {_q(f)})" for p in paths for f in _forms(p))
 
 
-def _temp_names(tmp: Path) -> str:
+def _literals(paths: Iterable[Path]) -> str:
+    return " ".join(f"(literal {_q(f)})" for p in paths for f in _forms(p))
+
+
+def _temp_regex(tmp: Path, name: str) -> str:
     dirs = "|".join(re.escape(str(f)) for f in _forms(tmp))
-    names = "|".join(DARWIN_TEMP_NAMES)
-    return f'(regex #"^({dirs})/({names})(/|$)")'
+    return f'(regex #"^({dirs})/{name}(/|$)")'
 
 
 def _ancestors(path: Path, stop: Path) -> list[Path]:
@@ -164,8 +194,9 @@ def profile(*, writable: Iterable[Path], extra_readable: Iterable[Path] = (),
 
     The blocked roots (real home, work base, ``denied``, shared temp dirs) are
     unreadable, unwritable and unconnectable except for :data:`READ_ALLOW`,
-    ``extra_readable`` (read-only) and ``writable`` (read-write). Raises ``ValueError``
-    for an ``extra_readable`` or ``writable`` root that resolves into the real home.
+    ``extra_readable`` (read-only) and ``writable`` (read-write, incl. its own unix
+    sockets). Raises ``ValueError`` for an ``extra_readable`` or ``writable`` root that
+    resolves into the real home.
     """
     home = real_home()
     tmp = darwin_temp_dir()
@@ -183,22 +214,30 @@ def profile(*, writable: Iterable[Path], extra_readable: Iterable[Path] = (),
         for b in blocked:
             if p.is_relative_to(b):
                 meta.update(dict.fromkeys(_ancestors(p, b)))
-    literals = " ".join(f"(literal {_q(f)})" for p in meta for f in _forms(p))
 
+    mach = " ".join(f"({f} {_q(n)})" for f, n in DENIED_MACH)
     rules = [
         "(version 1)",
         "(allow default)",
         f"(deny file-read* file-write* {_subpaths(blocked)})",
-        f"(deny network-outbound {_subpaths(blocked)})",
-        f"(allow file-read-metadata {literals})",
+        f"(allow file-read-metadata {_literals(meta)})",
         f"(allow file-read* {_subpaths(reads)})",
         '(deny file-write* (subpath "/"))',
-        f"(allow file-write* {_subpaths(SYSTEM_WRITABLE)})",
+        f"(allow file-write* {_subpaths([*SYSTEM_WRITABLE, *writes])})",
+        '(deny network-outbound (subpath "/"))',
+        f"(allow network-outbound {_subpaths([*SYSTEM_SOCKETS, *writes])})",
+        "(deny process-info*)",
+        "(allow process-info* (target self))",
+        "(deny lsopen)",
+        "(deny appleevent-send)",
+        f"(deny mach-lookup {mach})",
     ]
-    if tmp is not None:
-        rules.append(f"(allow file-read* file-write* network-outbound {_temp_names(tmp)})")
     if writes:
-        rules.append(f"(allow file-read* file-write* network-outbound {_subpaths(writes)})")
+        rules.append(f"(allow file-read* file-write* {_subpaths(writes)})")
+    if tmp is not None:
+        rules.append(f"(allow file-read* file-write* {_temp_regex(tmp, _MKTEMP_RE)})")
+        rules.append(
+            f"(allow file-read* file-write* network-outbound {_temp_regex(tmp, _CHROME_RE)})")
     return "\n".join(rules) + "\n"
 
 

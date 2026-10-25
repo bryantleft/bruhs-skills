@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import uuid
+from shlex import quote as shlex_quote
 from dataclasses import replace
 from pathlib import Path
 
@@ -278,6 +279,125 @@ def test_grading_scratch_outside_run_root(tmp_path):
     assert not root.is_relative_to(ws.parent)
     argv = commands.sandboxed_check("true", root / "grade-x")
     assert f'(subpath "{(tmp_path / "work").resolve()}")' in argv[2].splitlines()[2]
+
+
+# ------------------------------------------------------------------- R19-R21: escapes
+
+
+def test_temp_name_regexes_are_prefix_anchored():
+    """The Darwin-temp allowances must not match arbitrary system socket dirs
+    (com.apple.*, com.openai.*): they anchor on the mktemp and Chrome prefixes."""
+    assert sandbox._MKTEMP_RE.startswith("tmp\\.")
+    assert "com\\.google\\.Chrome" in sandbox._CHROME_RE
+    assert "[^/]" not in sandbox._MKTEMP_RE and "[^/]" not in sandbox._CHROME_RE
+    text = sandbox.profile(writable=[Path("/private/tmp/bruhsbench/x/run")])
+    # network-outbound is allowed to the Chrome singleton only, never the mktemp form
+    net = [ln for ln in text.splitlines() if ln.startswith("(allow network-outbound")]
+    assert net and all("tmp\\." not in ln for ln in net)
+
+
+def _sbx(root, script, **kw):
+    env = sandbox.private_tmp({"PATH": os.environ["PATH"]}, root)
+    return subprocess.run(sandbox.wrap(["/bin/sh", "-c", script], writable=[root], **kw),
+                          cwd=root, env=env, capture_output=True, text=True, timeout=60)
+
+
+def test_clipboard_cannot_be_read(tmp_path):
+    marker = f"clip-{uuid.uuid4().hex}"
+    had = subprocess.run(["pbpaste"], capture_output=True, text=True).stdout
+    try:
+        subprocess.run(["pbcopy"], input=marker, text=True)
+        proc = _sbx(tmp_path, "pbpaste")
+        assert marker not in proc.stdout and (proc.returncode != 0 or proc.stdout == "")
+    finally:
+        subprocess.run(["pbcopy"], input=had, text=True)
+
+
+def test_launching_apps_is_blocked(tmp_path):
+    harmless = tmp_path / "x.command"
+    harmless.write_text("#!/bin/sh\necho hi\n")
+    harmless.chmod(0o755)
+    try:
+        assert _sbx(tmp_path, "open -a TextEdit").returncode != 0
+        assert _sbx(tmp_path, f"open -g -j {harmless}").returncode != 0
+        assert not subprocess.run(["pgrep", "-x", "TextEdit"], capture_output=True).stdout
+    finally:
+        subprocess.run(["osascript", "-e", 'tell application "TextEdit" to quit'],
+                       capture_output=True)
+
+
+def test_other_processes_cannot_be_enumerated(tmp_path):
+    victim = subprocess.Popen(["/bin/sleep", "30"])
+    try:
+        # lsof -U (unix sockets of all processes) is refused
+        assert "Operation not permitted" in _sbx(tmp_path, "lsof -U 2>&1 | head").stdout \
+            or _sbx(tmp_path, "lsof -U").returncode != 0
+        # the victim's own info is not visible
+        proc = _sbx(tmp_path, f"ps -o pid= -p {victim.pid} 2>&1")
+        assert str(victim.pid) not in proc.stdout
+    finally:
+        victim.kill()
+        victim.wait()
+
+
+def test_unix_socket_outside_writable_roots_denied():
+    import shutil
+    import socket
+    import threading
+    # short paths: AF_UNIX sun_path is ~104 chars, and /private/tmp is a blocked root,
+    # so a socket there is "outside the writable roots"
+    base = Path("/private/tmp") / f"sbxut-{uuid.uuid4().hex[:8]}"
+    run = base / "r"
+    run.mkdir(parents=True)
+    outside = base / "ext.sock"
+    inside = run / "own.sock"
+    servers = []
+    for path in (outside, inside):
+        srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        srv.bind(str(path))
+        srv.listen(1)
+        servers.append(srv)
+        threading.Thread(target=lambda s=srv: _accept_quietly(s), daemon=True).start()
+    try:
+        prog = ("import socket,sys\n"
+                "s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)\n"
+                "try:\n s.connect(sys.argv[1]); print('OK')\n"
+                "except Exception as e: print(type(e).__name__)\n")
+        denied = _sbx(run, f'python3 -c {shlex_quote(prog)} "{outside}"')
+        allowed = _sbx(run, f'python3 -c {shlex_quote(prog)} "{inside}"')
+        assert "OK" not in denied.stdout, denied.stdout
+        assert "OK" in allowed.stdout, (allowed.stdout, allowed.stderr)
+    finally:
+        for srv in servers:
+            srv.close()
+        shutil.rmtree(base, ignore_errors=True)
+
+
+def _accept_quietly(srv):
+    try:
+        conn, _ = srv.accept()
+        conn.close()
+    except OSError:
+        pass
+
+
+def test_agent_cannot_forge_its_transcript(tmp_path, monkeypatch):
+    def fake_home(cli, arm, run_dir, bruhs_src, **kw):
+        (run_dir / "home").mkdir(parents=True)
+        return {"PATH": os.environ["PATH"], "HOME": str(run_dir / "home")}
+
+    monkeypatch.setattr(runner, "build_home", fake_home)
+    # the agent emits the real stream, then tries to overwrite run_dir/stdout with a forgery
+    script = ('printf \'{"type":"result","subtype":"success","is_error":false,'
+              '"result":"REAL","num_turns":1}\\n\'; '
+              'echo FORGED > "$PWD/../stdout" 2>/dev/null; '
+              'echo FORGED > stdout 2>/dev/null; true')
+    res = runner.run_one(RunSpec(load_task(_task_dir(tmp_path)), SPEC["claude"], "bare", 1),
+                         tmp_path / "out", bruhs_src=tmp_path, work_root=tmp_path / "work",
+                         command_override=lambda spec, argv: ["bash", "-c", script])
+    transcript = (tmp_path / "out" / res.run_id / "transcript.jsonl").read_text()
+    assert "REAL" in transcript and "FORGED" not in transcript
+    assert res.final_message == "REAL"
 
 
 # --------------------------------------------------------------------------- R22: git

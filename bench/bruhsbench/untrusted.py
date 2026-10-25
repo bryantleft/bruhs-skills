@@ -20,9 +20,10 @@ import os
 import shutil
 import stat
 import subprocess
+from collections.abc import Iterable
 from pathlib import Path
 
-from .sandbox import real_home, wrap
+from .sandbox import real_home, work_base, wrap
 from .workspace import GIT
 
 _DIR_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
@@ -96,7 +97,10 @@ def files(root: Path, rel_dir: str | Path, suffix: str = "") -> list[str]:
     try:
         for dirpath, _dirs, names, dfd in os.fwalk(".", dir_fd=top, follow_symlinks=False):
             for name in names:
-                st = os.stat(name, dir_fd=dfd, follow_symlinks=False)
+                try:  # an entry can vanish mid-walk; just skip it
+                    st = os.stat(name, dir_fd=dfd, follow_symlinks=False)
+                except (FileNotFoundError, NotADirectoryError, OSError):
+                    continue
                 if stat.S_ISREG(st.st_mode) and name.endswith(suffix):
                     found.append(str(Path(*parts, dirpath, name)))
     finally:
@@ -104,35 +108,79 @@ def files(root: Path, rel_dir: str | Path, suffix: str = "") -> list[str]:
     return sorted(found)
 
 
-def _clear(path: Path) -> None:
-    if path.is_symlink() or path.is_file():
-        path.unlink()
-    elif path.exists():
-        shutil.rmtree(path)
+def _clear_at(dfd: int, name: str) -> None:
+    """Remove ``name`` under ``dfd`` whether it's a symlink, file or directory."""
+    try:
+        st = os.stat(name, dir_fd=dfd, follow_symlinks=False)
+    except FileNotFoundError:
+        return
+    if stat.S_ISDIR(st.st_mode):
+        _rmtree_at(dfd, name)
+    else:
+        os.unlink(name, dir_fd=dfd)
+
+
+def _rmtree_at(dfd: int, name: str) -> None:
+    sub = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=dfd)
+    try:
+        for entry in os.listdir(sub):
+            st = os.stat(entry, dir_fd=sub, follow_symlinks=False)
+            if stat.S_ISDIR(st.st_mode):
+                _rmtree_at(sub, entry)
+            else:
+                os.unlink(entry, dir_fd=sub)
+    finally:
+        os.close(sub)
+    os.rmdir(name, dir_fd=dfd)
+
+
+def _child_dir(dfd: int, name: str) -> int:
+    """Open (creating, never through a symlink) a real subdirectory ``name`` of ``dfd``."""
+    try:
+        return os.open(name, _DIR_FLAGS, dir_fd=dfd)
+    except NotADirectoryError:
+        _clear_at(dfd, name)
+    except FileNotFoundError:
+        pass
+    except OSError:  # e.g. ELOOP: a symlink is in the way
+        _clear_at(dfd, name)
+    try:
+        os.mkdir(name, 0o755, dir_fd=dfd)
+    except FileExistsError:
+        _clear_at(dfd, name)
+        os.mkdir(name, 0o755, dir_fd=dfd)
+    return os.open(name, _DIR_FLAGS, dir_fd=dfd)
 
 
 def overlay(src: Path, dest: Path) -> None:
-    """Copy the trusted tree ``src`` into ``dest`` (an agent-controlled tree); a symlink
-    or non-directory where a directory goes, and anything at a file's target, is
-    removed first. Refuses a symlinked ``dest``."""
+    """Copy the trusted tree ``src`` into the agent-controlled tree ``dest``, descending
+    with ``O_NOFOLLOW`` dir fds so no symlink in an intermediate component is ever
+    followed. A symlink or non-directory where a directory must go, and anything at a
+    file's target, is removed first. Refuses a symlinked ``dest`` root."""
     if dest.is_symlink() or not dest.is_dir():
         raise UnsafePath(f"overlay destination {dest} is not a real directory")
-    for dirpath, dirnames, filenames in os.walk(src):
-        rel = Path(dirpath).relative_to(src)
-        dirnames[:] = [d for d in dirnames if d not in ("__pycache__",)]
-        target_dir = dest / rel
-        if rel != Path("."):
-            if target_dir.is_symlink() or (target_dir.exists() and not target_dir.is_dir()):
-                _clear(target_dir)
-            target_dir.mkdir(exist_ok=True)
-        for name in filenames:
-            if name == ".DS_Store":
-                continue
-            target = target_dir / name
-            if target.is_symlink() or target.exists():
-                _clear(target)
-            fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
-            with os.fdopen(fd, "wb") as out, open(Path(dirpath) / name, "rb") as inp:
+    root = os.open(dest, _DIR_FLAGS)
+    try:
+        _overlay_into(Path(src), root)
+    finally:
+        os.close(root)
+
+
+def _overlay_into(src_dir: Path, dfd: int) -> None:
+    for entry in sorted(os.scandir(src_dir), key=lambda e: e.name):
+        if entry.name in ("__pycache__", ".DS_Store"):
+            continue
+        if entry.is_dir(follow_symlinks=False):
+            child = _child_dir(dfd, entry.name)
+            try:
+                _overlay_into(Path(entry.path), child)
+            finally:
+                os.close(child)
+        elif entry.is_file(follow_symlinks=False):
+            _clear_at(dfd, entry.name)
+            fd = os.open(entry.name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                         0o644, dir_fd=dfd)
+            with os.fdopen(fd, "wb") as out, open(entry.path, "rb") as inp:
                 shutil.copyfileobj(inp, out)
 
 
@@ -152,28 +200,34 @@ def _git_env() -> dict[str, str]:
     return {**env, **GIT_ENV}
 
 
-def _filter_names(repo: Path) -> list[str]:
-    """``filter.<name>.*`` drivers in the repo's config, includes followed."""
+def _filter_names(repo: Path, denied: Iterable[Path]) -> list[str]:
+    """``filter.<name>.*`` drivers in the repo's config, includes followed. NUL-delimited
+    so values with newlines can't inject keys; config read failure means none."""
     proc = subprocess.run(
-        wrap([*GIT, *HARDEN, "config", "--includes", "--get-regexp", r"^filter\."],
-             writable=[], extra_readable=[repo]),
+        wrap([*GIT, *HARDEN, "config", "--includes", "--null", "--get-regexp", r"^filter\."],
+             writable=[], extra_readable=[repo], denied=denied),
         cwd=repo, env=_git_env(), capture_output=True, text=True)
+    if proc.returncode not in (0, 1):  # 1 = no matching keys
+        return []
     names = set()
-    for line in proc.stdout.splitlines():
-        key = line.split(" ", 1)[0]
-        if key.count(".") >= 2:
+    for record in proc.stdout.split("\0"):
+        key = record.split("\n", 1)[0]  # "key\nvalue"; key is the first line
+        if key.startswith("filter.") and key.count(".") >= 2:
             names.add(key[len("filter."):key.rindex(".")])
     return sorted(names)
 
 
 def git(repo: Path, *args: str, write: bool = True, check: bool = True,
-        text: bool = False) -> subprocess.CompletedProcess:
-    """``git <args>`` in the agent-touched ``repo``, hardened and sandboxed."""
+        text: bool = False, denied: Iterable[Path] = ()) -> subprocess.CompletedProcess:
+    """``git <args>`` in the agent-touched ``repo``, hardened and sandboxed. ``denied``
+    roots (e.g. the work root) are unreadable so a sibling run can't be touched."""
     repo = check_outside_home(repo)
     if repo.is_symlink():
         raise UnsafePath(f"repo {repo} is a symlink")
+    # Always deny the work base so git on one repo can't touch a sibling run (R21/R22).
+    denied = [*denied, work_base()]
     neutral = []
-    for name in _filter_names(repo):
+    for name in _filter_names(repo, denied):
         for key in ("clean", "smudge", "process"):
             neutral += ["-c", f"filter.{name}.{key}="]
         neutral += ["-c", f"filter.{name}.required=false"]
@@ -181,5 +235,5 @@ def git(repo: Path, *args: str, write: bool = True, check: bool = True,
     flags = list(DIFF_FLAGS) if sub in _DIFFING else []
     cmd = [*GIT, *HARDEN, *neutral, sub, *flags, *rest]
     return subprocess.run(
-        wrap(cmd, writable=[repo] if write else [], extra_readable=[repo]),
+        wrap(cmd, writable=[repo] if write else [], extra_readable=[repo], denied=denied),
         cwd=repo, env=_git_env(), check=check, capture_output=True, text=text)
