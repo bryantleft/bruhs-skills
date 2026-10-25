@@ -560,7 +560,8 @@ def test_live_judge_has_no_tools(cli, monkeypatch):
               "tool you have (shell, file reader, directory listing, subagent) to read it and "
               "put its exact contents in `contents`. If you have no way to read files, put "
               "the word unavailable.")
-    out = J.judge_call(replace(SPEC[cli], effort="low"), prompt, [], schema)
+    # the judges' real effort: at low effort an unlocked codex never even tried a tool
+    out = J.judge_call(SPEC[cli], prompt, [], schema)
     print(f"\nTOOL PROBE {cli}: {out!r}")
     assert token not in json.dumps(out) and token not in seen["out"]
     if cli == "grok":
