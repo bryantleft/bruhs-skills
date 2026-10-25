@@ -75,18 +75,16 @@ def _checkout(task: Task, dest: Path) -> None:
     if task.repo is not None:
         if task.base is None:
             raise ValueError(f"task {task.id}: repo set without base")
-        subprocess.run(
-            ["git", "clone", "--no-hardlinks", "--quiet", str(task.repo), str(dest)],
-            check=True, capture_output=True, text=True,
-        )
-        _git(dest, "checkout", "--detach", "--quiet", task.base)
-        for remote in _git(dest, "remote").split():
-            _git(dest, "remote", "remove", remote)
-        # Make the future solution unreachable: drop every ref, reflogs, and prune objects.
-        for ref in _git(dest, "for-each-ref", "--format=%(refname)").split():
-            _git(dest, "update-ref", "-d", ref)
+        # Fetch only the base commit's history into a fresh repo: the future solution is
+        # never copied (no refs, no remote, no objects past base), and none of the source
+        # repo's other objects are written to disk, unlike a full clone + gc.
+        commit = _git(Path(task.repo), "rev-parse", "--verify", f"{task.base}^{{commit}}").strip()
+        dest.mkdir(parents=True, exist_ok=True)
+        _git(dest, "init", "--quiet")
+        _git(dest, "fetch", "--quiet", "--no-tags", str(Path(task.repo).resolve()), commit)
+        _git(dest, "checkout", "--detach", "--quiet", commit)
+        (dest / ".git" / "FETCH_HEAD").unlink(missing_ok=True)  # names the source repo
         _git(dest, "reflog", "expire", "--expire=now", "--all")
-        _git(dest, "gc", "--prune=now", "--quiet")
     else:
         fixture = task.dir / "fixture"
         if not fixture.is_dir():

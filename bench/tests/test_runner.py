@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from bruhsbench import runner, sandbox
-from bruhsbench.runner import AuthAbort, matrix_order, run_matrix, run_one, scan_contamination
+from bruhsbench.runner import AuthAbort, DiskGuard, DiskLow, matrix_order, run_matrix, run_one, scan_contamination
 from bruhsbench.tasks import load_task
 from bruhsbench.types import ModelSpec, RunSpec
 
@@ -77,6 +77,7 @@ def hermetic(tmp_path, monkeypatch):
         argv, writable=[*writable, side], **kw))
     monkeypatch.setattr(runner, "cli_version", lambda cli: f"{cli} 0.0-test")
     monkeypatch.setenv("BRUHSBENCH_WORK", str(tmp_path / "work"))
+    monkeypatch.setenv("BRUHSBENCH_MIN_FREE_GB", "0")  # the disk guard has its own tests
 
 
 @pytest.fixture(scope="session")
@@ -451,3 +452,222 @@ def test_work_root_inside_home_refused(tmp_path, monkeypatch):
     monkeypatch.setenv("BRUHSBENCH_WORK", str(Path.home() / "bruhsbench-work"))
     with pytest.raises(ValueError):
         runner.default_work_root(tmp_path / "out")
+
+
+# --------------------------------------------------------------------------- disk guard
+
+
+def test_disk_guard_refuses_at_once_with_nothing_running():
+    slept = []
+    guard = DiskGuard([Path("/")], min_gb=40, free_fn=lambda p: 10.0, sleep=slept.append)
+    with pytest.raises(DiskLow, match="10.0 GB free.*BRUHSBENCH_MIN_FREE_GB"):
+        guard.wait("run x")
+    assert slept == []
+    assert DiskGuard([Path("/")], min_gb=40, free_fn=lambda p: 50.0).wait("x") == 50.0
+
+
+def test_disk_guard_waits_for_other_jobs_then_proceeds_or_gives_up():
+    import threading
+
+    free = {"gb": 10.0}
+    held, release = threading.Event(), threading.Event()
+
+    def other_job(guard):
+        with guard.job():
+            held.set()
+            release.wait(10)
+
+    def frees_up(_s):
+        free["gb"] = 45.0  # the other run's cleanup freed space
+
+    guard = DiskGuard([Path("/")], min_gb=40, free_fn=lambda p: free["gb"], poll_s=1,
+                      wait_s=5, sleep=frees_up)
+    t = threading.Thread(target=other_job, args=(guard,))
+    t.start()
+    held.wait(10)
+    try:
+        with guard.job():  # the caller's own job doesn't count as "others"
+            assert guard.wait("run x") == 45.0
+        free["gb"] = 10.0
+        slept = []
+        guard._sleep = slept.append
+        with pytest.raises(DiskLow):
+            guard.wait("run y")
+        assert slept == [1, 1, 1, 1, 1]  # polled up to wait_s, then gave up
+    finally:
+        release.set()
+        t.join()
+
+
+def test_min_free_gb_from_env(monkeypatch):
+    monkeypatch.delenv("BRUHSBENCH_MIN_FREE_GB")
+    assert runner.min_free_gb() == 40
+    monkeypatch.setenv("BRUHSBENCH_MIN_FREE_GB", "12.5")
+    assert runner.min_free_gb() == 12.5
+    monkeypatch.setenv("BRUHSBENCH_MIN_FREE_GB", "lots")
+    with pytest.raises(ValueError, match="BRUHSBENCH_MIN_FREE_GB"):
+        runner.min_free_gb()
+
+
+def test_run_records_free_gb_at_start(tmp_path, bruhs_src, monkeypatch):
+    monkeypatch.setattr(runner, "free_gb", lambda p: 123.456)
+    spec = RunSpec(make_task(tmp_path, "t1"), CLAUDE, "bare", 1)
+    res = run_one(spec, tmp_path / "out", bruhs_src=bruhs_src,
+                  command_override=override(fake_agent(tmp_path, EDIT_AND_REPLY)))
+    assert res.free_gb_at_start == 123.5
+    saved = json.loads((tmp_path / "out" / spec.run_id / "result.json").read_text())
+    assert saved["free_gb_at_start"] == 123.5 and saved["workspace_deleted"] is False
+
+
+def test_matrix_refuses_to_start_on_low_disk(tmp_path):
+    counter = tmp_path / "side" / "count"
+    guard = DiskGuard([tmp_path], min_gb=40, free_fn=lambda p: 5.0)
+    with pytest.raises(DiskLow):
+        run_matrix([make_task(tmp_path, "t1")], [CLAUDE], ["bare", "bruhs"], 1,
+                   tmp_path / "out", disk_guard=guard, command_override=override(
+                       fake_agent(tmp_path, count_body(counter, EDIT_AND_REPLY))))
+    assert runs_started(counter) == 0
+
+
+def test_low_disk_stops_matrix_cleanly_and_resumes(tmp_path):
+    task = make_task(tmp_path, "t1")
+    out = tmp_path / "out"
+    counter = tmp_path / "side" / "count"
+    ov = override(fake_agent(tmp_path, count_body(counter, EDIT_AND_REPLY)))
+    # space runs out once two runs have started
+    guard = DiskGuard([tmp_path], min_gb=40,
+                      free_fn=lambda p: 5.0 if runs_started(counter) >= 2 else 50.0)
+    with pytest.raises(DiskLow):
+        run_matrix([task], [CLAUDE], ["bare", "bruhs"], 2, out, parallel=1,
+                   disk_guard=guard, command_override=ov)
+    assert runs_started(counter) == 2
+    done = sorted(p.parent.name for p in out.glob("*/result.json"))
+    assert len(done) == 2
+    assert not any((out / p).exists() for p in ("t1__claude__bare__r2",
+                                                "t1__claude__bruhs__r2")
+                   if p not in done)  # nothing half-started
+
+    results = run_matrix([task], [CLAUDE], ["bare", "bruhs"], 2, out, parallel=1,
+                         disk_guard=DiskGuard([tmp_path], min_gb=40,
+                                              free_fn=lambda p: 50.0),
+                         command_override=ov)
+    assert runs_started(counter) == 4 and len(results) == 4
+    assert all(r.free_gb_at_start == 50.0 for r in results if r.run_id not in done)
+
+
+def test_low_disk_lets_live_runs_finish(tmp_path):
+    task = make_task(tmp_path, "t1")
+    out = tmp_path / "out"
+    counter = tmp_path / "side" / "count"
+    # the first run to start is slow; the other worker finds the disk full meanwhile
+    body = count_body(counter, f'[ "$(wc -l < {counter})" -eq 1 ] && sleep 2\n'
+                               f"{EDIT_AND_REPLY}")
+    guard = DiskGuard([tmp_path], min_gb=40, poll_s=0.1, wait_s=0.5,
+                      free_fn=lambda p: 5.0 if runs_started(counter) >= 2 else 50.0)
+    with pytest.raises(DiskLow):
+        run_matrix([task], [CLAUDE], ["bare", "bruhs"], 2, out, parallel=2,
+                   disk_guard=guard, command_override=override(fake_agent(tmp_path, body)))
+    results = [runner.load_result(p) for p in out.glob("*/result.json")]
+    assert runs_started(counter) == 2
+    assert len(results) == 2 and all(r.status == "ok" for r in results)
+
+
+# --------------------------------------------------------------------------- post-run + cleanup
+
+
+def test_post_run_follows_each_run_and_resumes(tmp_path):
+    task = make_task(tmp_path, "t1")
+    out = tmp_path / "out"
+    seen = []
+
+    def post(spec, res):
+        assert (out / spec.run_id / "result.json").is_file()
+        seen.append(res.run_id)
+
+    ov = override(fake_agent(tmp_path, EDIT_AND_REPLY))
+    run_matrix([task], [CLAUDE], ["bare", "bruhs"], 1, out, post_run=post,
+               command_override=ov)
+    assert sorted(seen) == ["t1__claude__bare__r1", "t1__claude__bruhs__r1"]
+    seen.clear()
+    run_matrix([task], [CLAUDE], ["bare", "bruhs"], 1, out, post_run=post,
+               command_override=ov)  # resume: finished runs still get post-processed
+    assert sorted(seen) == ["t1__claude__bare__r1", "t1__claude__bruhs__r1"]
+
+
+def test_post_run_disk_low_stops_new_runs(tmp_path):
+    task = make_task(tmp_path, "t1")
+    counter = tmp_path / "side" / "count"
+
+    def post(spec, res):
+        raise DiskLow("full before grading")
+
+    with pytest.raises(DiskLow, match="before grading"):
+        run_matrix([task], [CLAUDE], ["bare", "bruhs"], 2, tmp_path / "out", parallel=1,
+                   post_run=post, command_override=override(
+                       fake_agent(tmp_path, count_body(counter, EDIT_AND_REPLY))))
+    assert runs_started(counter) == 1
+
+
+def _planted_run(tmp_path, bruhs_src):
+    """A finished run whose workspace holds symlinks to a precious dir outside."""
+    precious = tmp_path / "precious"
+    (precious / "sub").mkdir(parents=True)
+    (precious / "keep.txt").write_text("keep")
+    (precious / "sub" / "deep.txt").write_text("keep")
+    body = f"ln -s {precious} link_dir\nln -s {precious}/keep.txt link_file\n" \
+           f"mkdir -p ro/x && chmod 555 ro/x ro\n{EDIT_AND_REPLY}"
+    out = tmp_path / "out"
+    spec = RunSpec(make_task(tmp_path, "t1"), CLAUDE, "bare", 1)
+    res = run_one(spec, out, bruhs_src=bruhs_src,
+                  command_override=override(fake_agent(tmp_path, body)))
+    assert (res.workspace / "link_dir").is_symlink()
+    return out, spec, res, precious
+
+
+def test_cleanup_run_never_follows_planted_symlinks(tmp_path, bruhs_src):
+    out, spec, res, precious = _planted_run(tmp_path, bruhs_src)
+    work_root = res.workspace.parent.parent
+    assert runner.cleanup_run(out, work_root, spec.run_id)
+    assert not os.path.lexists(work_root / spec.run_id)
+    assert (precious / "keep.txt").read_text() == "keep"
+    assert (precious / "sub" / "deep.txt").read_text() == "keep"
+    saved = runner.load_result(out / spec.run_id / "result.json")
+    assert saved.workspace_deleted is True
+    # the artifacts the judges need stay
+    assert {"result.json", "diff.patch", "final.txt", "transcript.jsonl"} <= {
+        p.name for p in (out / spec.run_id).iterdir()}
+    assert runner.cleanup_run(out, work_root, spec.run_id)  # idempotent
+
+
+def test_cleanup_refuses_paths_outside_the_work_root(tmp_path, bruhs_src, monkeypatch):
+    work = tmp_path / "work" / "w"
+    (work / "run").mkdir(parents=True)
+    for name in ("..", "a/b", "", "."):
+        with pytest.raises(ValueError):
+            runner.remove_work_dir(work, name)
+    # a work root overlapping the repo (bench/results, bench/tasks) or the results dir
+    for bad in (runner.BRUHS_REPO / "bench", runner.BRUHS_REPO / "bench" / "results",
+                Path("/")):
+        with pytest.raises(ValueError, match="refusing"):
+            runner.remove_work_dir(bad, "x")
+        with pytest.raises(ValueError, match="refusing"):
+            runner.remove_work_root(bad)
+    with pytest.raises(ValueError, match="refusing"):
+        runner.remove_work_dir(work, "run", protect=[work / "run" / "results"])
+    # a symlinked work root resolves to its target, which is checked
+    link = tmp_path / "link"
+    link.symlink_to(runner.BRUHS_REPO / "bench")
+    with pytest.raises(ValueError, match="refusing"):
+        runner.remove_work_root(link)
+    assert (work / "run").is_dir()
+
+
+def test_remove_work_root_removes_everything_inside_only(tmp_path, bruhs_src):
+    out, spec, res, precious = _planted_run(tmp_path, bruhs_src)
+    work_root = res.workspace.parent.parent
+    (work_root / "_scratch" / "grade-x").mkdir(parents=True)
+    assert runner.remove_work_root(work_root, protect=[out])
+    assert not work_root.exists() and work_root.parent.is_dir()
+    assert (precious / "keep.txt").exists() and (precious / "sub" / "deep.txt").exists()
+    assert (out / spec.run_id / "result.json").is_file()
+    assert not runner.remove_work_root(work_root)

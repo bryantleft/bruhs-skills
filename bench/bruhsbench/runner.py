@@ -50,7 +50,7 @@ import time
 import traceback
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from pathlib import Path, PurePath
@@ -86,6 +86,11 @@ class AuthAbort(Exception):
 
 class RunInterrupted(Exception):
     """The matrix was stopped while this run was live; nothing is recorded for it."""
+
+
+class DiskLow(Exception):
+    """Too little free disk to start (or capture/grade) a run; the matrix stops cleanly
+    and is resumable."""
 
 
 class RunControl:
@@ -156,6 +161,150 @@ def ensure_bruhs_export(work_root: Path, commit: str) -> Path:
         export_bruhs(BRUHS_REPO, commit, dest)
         done.touch()
         return dest
+
+
+# --------------------------------------------------------------------------- disk
+
+MIN_FREE_ENV = "BRUHSBENCH_MIN_FREE_GB"
+DEFAULT_MIN_FREE_GB = 40.0
+DISK_WAIT_S = 20 * 60  # how long a starved run waits for other runs' cleanup
+DISK_POLL_S = 30.0
+FreeSpace = Callable[[Path], float]
+
+
+def free_gb(path: Path) -> float:
+    """Free GiB (as ``df -g`` counts) on the filesystem holding ``path`` (or its nearest
+    existing ancestor)."""
+    p = Path(path)
+    while not p.exists() and p != p.parent:
+        p = p.parent
+    return shutil.disk_usage(p).free / 2**30
+
+
+def min_free_gb() -> float:
+    raw = os.environ.get(MIN_FREE_ENV)
+    if not raw:
+        return DEFAULT_MIN_FREE_GB
+    try:
+        return float(raw)
+    except ValueError:
+        raise ValueError(f"{MIN_FREE_ENV}={raw!r} is not a number") from None
+
+
+class DiskGuard:
+    """Refuses to start work while the filesystems holding ``paths`` have less than
+    ``min_gb`` free (``$BRUHSBENCH_MIN_FREE_GB``, default 40). While other jobs are live
+    (:meth:`job`), :meth:`wait` polls for up to ``wait_s`` for their cleanup to free
+    space; then (or at once, with nothing else running) it raises :class:`DiskLow`."""
+
+    def __init__(self, paths: Sequence[Path], *, min_gb: float | None = None,
+                 free_fn: FreeSpace | None = None, wait_s: float = DISK_WAIT_S,
+                 poll_s: float = DISK_POLL_S, sleep: Callable[[float], None] = time.sleep):
+        self.paths = [Path(p) for p in paths]
+        self.min_gb = min_free_gb() if min_gb is None else min_gb
+        self._free_fn = free_fn
+        self.wait_s, self.poll_s, self._sleep = wait_s, poll_s, sleep
+        self._lock = threading.Lock()
+        self._active = 0
+        self._local = threading.local()
+
+    def free(self) -> float:
+        fn = self._free_fn or free_gb  # looked up late, so tests can patch free_gb
+        return min(fn(p) for p in self.paths)
+
+    @contextmanager
+    def job(self):
+        """Mark the calling thread as a live job (its cleanup may free space)."""
+        with self._lock:
+            self._active += 1
+        self._local.depth = getattr(self._local, "depth", 0) + 1
+        try:
+            yield
+        finally:
+            self._local.depth -= 1
+            with self._lock:
+                self._active -= 1
+
+    def _others(self) -> int:
+        with self._lock:
+            return self._active - (1 if getattr(self._local, "depth", 0) else 0)
+
+    def wait(self, what: str) -> float:
+        """Free GiB once there is at least ``min_gb``; :class:`DiskLow` if it doesn't
+        come."""
+        free, waited = self.free(), 0.0
+        while free < self.min_gb:
+            if self._others() <= 0 or waited >= self.wait_s:
+                raise DiskLow(
+                    f"only {free:.1f} GB free under {self.paths[0]} (need {self.min_gb:g}, "
+                    f"${MIN_FREE_ENV}) before {what}; stopped cleanly. Free space (e.g. "
+                    "`bruhsbench clean`) and rerun the same command to resume.")
+            log.warning("%s: %.1f GB free (< %g); waiting for other runs' cleanup", what,
+                        free, self.min_gb)
+            self._sleep(self.poll_s)
+            waited += self.poll_s
+            free = self.free()
+        return free
+
+
+# --------------------------------------------------------------------------- cleanup
+
+
+def _check_cleanable(work_root: Path, protect: Sequence[Path]) -> Path:
+    """The resolved work root, if deleting inside it can't touch the user's home, the
+    bruhs repo (bench/results, bench/tasks*) or any ``protect`` path."""
+    root = Path(work_root).resolve()
+    guarded = [real_home(), BRUHS_REPO, *protect]
+    if root == Path(root.anchor):
+        raise ValueError(f"refusing to clean {root}: not a bruhsbench work root")
+    for g in guarded:
+        g = Path(g).resolve()
+        if root.is_relative_to(g) or g.is_relative_to(root):
+            raise ValueError(f"refusing to clean {root}: it overlaps {g}")
+    if not root.is_dir():
+        raise FileNotFoundError(f"no work root at {root}")
+    return root
+
+
+def remove_work_dir(work_root: Path, name: str, *, protect: Sequence[Path] = ()) -> bool:
+    """Delete ``<work_root>/<name>`` without following symlinks; False if it wasn't
+    there. ``name`` is one path component (a run id, ``_scratch``, ...)."""
+    if name in ("", ".", "..") or Path(name).name != name:
+        raise ValueError(f"not a work-root entry name: {name!r}")
+    root = _check_cleanable(work_root, protect)
+    if not os.path.lexists(root / name):
+        return False
+    untrusted.remove(root, name)
+    return True
+
+
+def remove_work_root(work_root: Path, *, protect: Sequence[Path] = ()) -> bool:
+    """Delete the whole work root (every run dir, export, scratch); False if absent."""
+    try:
+        root = _check_cleanable(work_root, protect)
+    except FileNotFoundError:
+        return False
+    untrusted.remove(root.parent, root.name)
+    return True
+
+
+def mark_workspace_deleted(out_dir: Path) -> None:
+    path = Path(out_dir) / "result.json"
+    if path.is_file():
+        _write_result(Path(out_dir), replace(load_result(path), workspace_deleted=True))
+
+
+def cleanup_run(out_root: Path, work_root: Path, run_id: str) -> bool:
+    """Delete run ``run_id``'s work dir (workspace, home, tmp) and record
+    ``workspace_deleted`` in its result.json. Never raises for a failed delete (logged,
+    returns False): a cleanup problem must not stop the matrix."""
+    try:
+        remove_work_dir(work_root, run_id, protect=[out_root])
+    except (OSError, ValueError) as exc:
+        log.warning("%s: cleanup failed: %s", run_id, exc)
+        return False
+    mark_workspace_deleted(Path(out_root) / run_id)
+    return True
 
 
 # --------------------------------------------------------------------------- contamination
@@ -343,6 +492,7 @@ def run_one(
     command_override: CommandOverride | None = None,
     claude_slots: threading.Semaphore | None = None,
     control: RunControl | None = None,
+    free_gb_at_start: float | None = None,
 ) -> RunResult:
     """Run ``spec`` from scratch and write its artifacts to ``out_root/<run_id>/``.
 
@@ -354,18 +504,23 @@ def run_one(
     work_root = _check_outside_home(work_root) if work_root else default_work_root(out_root)
     if bruhs_src is None:
         bruhs_src = ensure_bruhs_export(work_root, git_head(BRUHS_REPO))
+    if free_gb_at_start is None:
+        free_gb_at_start = min(free_gb(work_root), free_gb(out_root))
     cli = spec.model.cli
     out_dir = out_root / spec.run_id
     run_dir = work_root / spec.run_id
+    if os.path.lexists(run_dir):  # a partial earlier attempt; symlink-safe removal
+        remove_work_dir(work_root, spec.run_id, protect=[out_root])
+    if out_dir.exists():
+        shutil.rmtree(out_dir)
     for d in (out_dir, run_dir):
-        if d.exists():
-            shutil.rmtree(d)
         d.mkdir(parents=True)
     workspace = run_dir / "workspace"
     transcript = out_dir / "transcript.jsonl"
     diff_path = out_dir / "diff.patch"
     base = RunResult(spec.run_id, "ok", 0.0, None, None, None, None, "", diff_path,
-                     transcript, workspace=workspace)
+                     transcript, workspace=workspace,
+                     free_gb_at_start=round(free_gb_at_start, 1))
 
     try:
         prepare_workspace(spec.task, spec.arm, workspace, scripts_dir=bruhs_src / "scripts")
@@ -507,6 +662,8 @@ def run_matrix(
     timeout_s: int = DEFAULT_TIMEOUT_S,
     work_root: Path | None = None,
     command_override: CommandOverride | None = None,
+    disk_guard: DiskGuard | None = None,
+    post_run: Callable[[RunSpec, RunResult], None] | None = None,
 ) -> list[RunResult]:
     """Run every (task, model, arm, repeat), skipping runs that already have result.json.
 
@@ -515,12 +672,24 @@ def run_matrix(
     runs are cancelled, every live agent process group is killed (those runs write no
     result.json and are redone on resume), and the exception is re-raised. With claude in
     ``models`` and no claude token, :class:`ClaudeAuthMissing` is raised up front.
+
+    Disk: before each run starts, ``disk_guard`` (default: a :class:`DiskGuard` on the
+    work and results roots) must see enough free space. If it doesn't come, no further
+    run starts, live runs finish normally, and :class:`DiskLow` is raised at the end
+    (resumable).
+
+    ``post_run(spec, result)`` (the pipeline's capture -> grade -> cleanup) runs in the
+    same worker right after each run, and for already-finished runs on resume; it may
+    raise :class:`DiskLow` to stop the matrix the same way. Its other exceptions are
+    logged and the matrix goes on.
     """
     if any(m.cli == "claude" for m in models):
         claude_auth()  # R20: raises ClaudeAuthMissing before any process starts
     out_root = Path(out_root)
     out_root.mkdir(parents=True, exist_ok=True)
     work_root = _check_outside_home(work_root) if work_root else default_work_root(out_root)
+    guard = disk_guard or DiskGuard([work_root, out_root])
+    guard.wait("starting the matrix")  # nothing runs yet: raises DiskLow at once if low
     commit = git_head(BRUHS_REPO, bruhs_commit)
     _record_matrix(out_root, commit, tasks, models, arms, repeats, seed, timeout_s)
     bruhs_src = ensure_bruhs_export(work_root, commit)
@@ -533,20 +702,35 @@ def run_matrix(
         done = out_root / spec.run_id / "result.json"
         if done.is_file():
             results[spec.run_id] = load_result(done)
+            if post_run is not None:
+                todo.append(spec)  # finished; only its post-processing may be left
         else:
             todo.append(spec)
-    log.info("%d runs: %d done, %d to run", len(specs), len(results), len(todo))
+    log.info("%d runs: %d done, %d to run", len(specs), len(results),
+             sum(s.run_id not in results for s in specs))
 
     claude_slots = threading.BoundedSemaphore(claude_parallel)
     control = RunControl()
+    draining = threading.Event()  # low disk: start nothing new, let live runs finish
+    low: list[DiskLow] = []
 
-    def work(spec: RunSpec) -> RunResult | None:
-        if control.stopped.is_set():
+    def stop_for_disk(exc: DiskLow) -> None:
+        if not draining.is_set():
+            log.error("%s", exc)
+        low.append(exc)
+        draining.set()
+
+    def run(spec: RunSpec) -> RunResult | None:
+        try:
+            free = guard.wait(spec.run_id)
+        except DiskLow as exc:
+            stop_for_disk(exc)
             return None
         try:
             return run_one(spec, out_root, timeout_s=timeout_s, bruhs_src=bruhs_src,
                            work_root=work_root, command_override=command_override,
-                           claude_slots=claude_slots, control=control)
+                           claude_slots=claude_slots, control=control,
+                           free_gb_at_start=free)
         except RunInterrupted:
             return None
         except (AuthAbort, ClaudeAuthMissing):
@@ -555,6 +739,22 @@ def run_matrix(
         except Exception:
             log.exception("%s: harness error, recorded as status=error", spec.run_id)
             return _record_error(spec, out_root, work_root, traceback.format_exc())
+
+    def work(spec: RunSpec) -> RunResult | None:
+        if control.stopped.is_set() or draining.is_set():
+            return None
+        with guard.job():
+            res = results.get(spec.run_id) or run(spec)
+            if res is None or post_run is None or control.stopped.is_set():
+                return res
+            try:
+                post_run(spec, res)
+            except DiskLow as exc:
+                stop_for_disk(exc)
+            except Exception:
+                log.exception("%s: post-processing failed (run kept; rerun to retry)",
+                              spec.run_id)
+            return res
 
     pool = ThreadPoolExecutor(max_workers=max(1, parallel))
     try:
@@ -569,6 +769,8 @@ def run_matrix(
         pool.shutdown(wait=False, cancel_futures=True)
         raise
     pool.shutdown(wait=True)
+    if low:
+        raise low[0]
     return [results[s.run_id] for s in specs]
 
 

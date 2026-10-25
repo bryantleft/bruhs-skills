@@ -139,6 +139,21 @@ def test_remotes_removed(tmp_path):
     assert git(ws, "remote").strip() == ""
 
 
+def test_repo_checkout_holds_only_base_history(tmp_path):
+    repo, base = make_repo(tmp_path)
+    later = git(repo, "rev-parse", "HEAD").strip()
+    ws = prepare_workspace(make_task(tmp_path, repo, base[:10]), "bare", tmp_path / "ws")
+    assert (ws / "app.txt").read_text() == "hello\n"
+    assert git(ws, "rev-parse", "HEAD~1").strip() == base
+    # the future solution is unreachable and absent; nothing names the source repo
+    missing = subprocess.run([*GIT, "cat-file", "-e", later], cwd=ws, capture_output=True)
+    assert missing.returncode != 0
+    assert git(ws, "for-each-ref", "--format=%(refname)").split() == ["refs/tags/bench-base"]
+    for f in (ws / ".git").rglob("*"):
+        if f.is_file() and "objects" not in f.parts:
+            assert str(repo) not in f.read_text(errors="replace"), f
+
+
 def test_seeded_task_uses_fixture(tmp_path):
     task = make_task(tmp_path, None, None)
     (task.dir / "fixture").mkdir()

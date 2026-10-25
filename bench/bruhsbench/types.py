@@ -84,3 +84,7 @@ class RunResult:
     # a descendant that left the process group still held the output pipes after the run
     # (its remaining output was dropped instead of hanging the harness)
     orphaned_output: bool = False
+    # free space (GiB) on the work/results filesystem when the run started
+    free_gb_at_start: float | None = None
+    # the run's work dir (workspace, home) was deleted after capture + grade
+    workspace_deleted: bool = False

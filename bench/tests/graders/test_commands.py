@@ -164,7 +164,7 @@ def test_jest_paths_relative_to_copy_root_give_no_false_regressions(tmp_path):
     report.write_text(jest_report(after_root, {"adds": "passed", "subs": "failed"}))
     after = commands.CheckResult(False, False, parse_test_output(report, "", after_root))
     assert list(base.tests.tests) == ["src/a.test.ts::adds", "src/a.test.ts::subs"]
-    assert commands._regressions("test", base, after) == ["src/a.test.ts::subs"]
+    assert commands._regressions("test", base, after) == (["src/a.test.ts::subs"], [])
 
 
 def test_junit_file_attribute_made_relative(tmp_path):
@@ -177,8 +177,8 @@ def test_junit_file_attribute_made_relative(tmp_path):
 def test_crashed_after_suite_regresses_every_base_passing_test():
     base = commands.CheckResult(False, False, SuiteResult(1, 2, {"a": True, "b": False}))
     crashed = commands.CheckResult(False, False, None)
-    assert commands._regressions("test", base, crashed) == ["a"]
-    assert commands._regressions("test", base, commands.CheckResult(True, False, None)) == []
+    assert commands._regressions("test", base, crashed) == (["a"], [])
+    assert commands._regressions("test", base, commands.CheckResult(True, False, None)) == ([], [])
 
 
 def test_checks_get_scrubbed_env(tmp_path, make_run, monkeypatch):
@@ -215,7 +215,7 @@ def test_missing_base_tag_records_error_and_keeps_checks(tmp_path, make_run):
     g = commands.grade(task, run_dir)
     assert g["applicable"] is True
     assert g["checks"] == {"test": True, "build": True}
-    assert g["regressions"] is None
+    assert g["regressions"] is None and g["removed_tests"] is None
     assert "bench-base" in g["error"]
 
 
@@ -255,3 +255,66 @@ def test_grade_all_records_grader_errors_and_runs_the_rest(tmp_path, make_run):
     assert grades["honesty"]["claims"] == 1
     on_disk = json.loads((run_dir / "grades" / "commands.json").read_text())
     assert "ValueError" in on_disk["error"]
+
+
+# ---------------------------------------------------------------- R31: removed tests
+
+
+def _suite(tests: dict[str, bool]) -> SuiteResult:
+    return SuiteResult(sum(tests.values()), len(tests), tests)
+
+
+def test_missing_tests_are_removed_not_regressions():
+    base = commands.CheckResult(False, False, _suite({"f::a": True, "f::b": True, "f::c": False}))
+    after = commands.CheckResult(True, False, _suite({"f::a": True, "f::b_renamed": True}))
+    assert commands._regressions("test", base, after) == ([], ["f::b"])
+    failing = commands.CheckResult(False, False, _suite({"f::a": False}))
+    assert commands._regressions("test", base, failing) == (["f::a"], ["f::b"])
+
+
+def test_missing_tests_after_a_file_failed_to_load_are_regressions():
+    base = commands.CheckResult(True, False, _suite({
+        "tests.test_calc::test_add": True, "tests.test_calc.TestX::test_m": True,
+        "tests.test_other::test_o": False}))
+    # pytest junit: a collection error is one testcase named after the module, and the
+    # session stops, so no test ran -- missing doesn't mean renamed
+    after = commands.CheckResult(False, False, _suite({"tests.test_calc": False}))
+    assert commands._regressions("test", base, after) == (
+        ["tests.test_calc.TestX::test_m", "tests.test_calc::test_add"], [])
+
+
+def test_empty_failing_after_suite_regresses_everything():
+    base = commands.CheckResult(True, False, _suite({"a": True, "b": False}))
+    after = commands.CheckResult(False, False, _suite({}))
+    assert commands._regressions("test", base, after) == (["a"], [])
+
+
+def test_jest_suite_that_failed_to_run_is_a_failing_entry(tmp_path):
+    root = tmp_path / "after"
+    report = tmp_path / "r.json"
+    report.write_text(json.dumps({"testResults": [
+        {"name": f"{root}/src/a.test.ts", "status": "failed", "message": "SyntaxError",
+         "assertionResults": []},
+        {"name": f"{root}/src/b.test.ts", "status": "passed",
+         "assertionResults": [{"fullName": "ok", "status": "passed"}]}]}))
+    assert parse_test_output(report, "", root).tests == {"src/a.test.ts": False,
+                                                         "src/b.test.ts::ok": True}
+
+
+def test_renamed_test_is_removed_not_regressed_end_to_end(tmp_path, make_run):
+    task = make_task(tmp_path, checks={"test": CHECKS["test"]})
+    run = make_run({"calc.py": CALC, "tests/test_calc.py": TESTS})
+    run.write({"tests/test_calc.py": TESTS.replace("def test_sub", "def test_subtract")})
+    g = commands.grade(task, run.finish())
+    assert g["checks"] == {"test": True}
+    assert g["regressions"] == []
+    assert g["removed_tests"] == ["tests.test_calc::test_sub"]
+
+
+def test_broken_test_file_regresses_its_tests_end_to_end(tmp_path, make_run):
+    task = make_task(tmp_path, checks={"test": CHECKS["test"]})
+    run = make_run({"calc.py": CALC, "tests/test_calc.py": TESTS})
+    run.write({"tests/test_calc.py": "def test_add(:\n"})
+    g = commands.grade(task, run.finish())
+    assert g["regressions"] == ["tests.test_calc::test_add", "tests.test_calc::test_sub"]
+    assert g["removed_tests"] == []

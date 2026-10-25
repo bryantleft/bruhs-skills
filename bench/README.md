@@ -78,8 +78,10 @@ picks any other dir.
 |---|---|
 | `uv run bruhsbench probe [--models claude codex grok]` | Isolation probe for every CLI x arm: each sees exactly its arm's skills and MCPs, and the two arms differ only by bruhs. Prints setup steps when the claude token is missing. |
 | `uv run bruhsbench run [--pilot] [--tasks ID…] [--models …] [--repeats N] [--heldout] [--parallel N] [--timeout MIN]` | Runs the matrix. Defaults: all non-held-out tasks, 3 models, 2 arms, 3 repeats, 45-minute timeout. `--pilot` runs the tasks in `bench/pilot.toml` with 1 repeat and can't be combined with `--tasks`. Runs that already have `result.json` are skipped. |
+| `uv run bruhsbench pipeline [same options as run] [--no-cleanup]` | `run`, plus capture (ui/copy), grade and cleanup for each run as soon as it finishes, still in parallel across runs. Once a run is captured and fully graded, its work dir (workspace and home) is deleted and `result.json` records `workspace_deleted: true`. Runs whose grading fails partway keep their workspace, and the next `pipeline` call retries them. Use this for the full matrix. |
 | `uv run bruhsbench capture` | Screenshots ui/copy runs and each task's starting state at desktop and mobile sizes, in light and dark. |
 | `uv run bruhsbench grade` | Grades every finished run in this order: commands, scope, checklist, audit, honesty. The checklist judges see the screenshots, so run `capture` first (`grade` warns about ui/copy runs without screenshots). Runs with a grader error or an invalid checklist are retried on the next call. |
+| `uv run bruhsbench clean [--all]` | Deletes the work dirs of runs that are already captured and graded, after you ran the stages one by one. `--all` deletes this results dir's whole work root. It never touches `bench/results` or `bench/tasks*`, and it removes symlinks without following them. |
 | `uv run bruhsbench judge` | Blind pairwise verdicts for ui/copy: each (task, model, repeat) is judged by both other model families. Judge errors are retried on the next call. |
 | `uv run bruhsbench spotcheck [-n 20] [--seed 0] [--port 8765] [--force]` | A local page (127.0.0.1 only) where you blind-pick ~20 ui/copy pairs. Picks are saved to `spotcheck.json`, and it prints how often the judges agreed with you. The first sample drawn is reused on later runs; `--force` draws a new one and clears the picks (the old file is kept as `spotcheck.json.bak`). |
 | `uv run bruhsbench report [--public] [--out DIR]` | Writes an HTML report and its markdown twin. The private report goes to `<results>/report/`; `--public` writes to `bench/results/published/<date>/`. |
@@ -87,9 +89,28 @@ picks any other dir.
 Held-out tasks (anything under `tasks-heldout/`, or with `heldout = true`) are refused unless
 you pass `--heldout`. With `--heldout` and no `--tasks`, `run` runs only the held-out set.
 
-Run the stages in order: `probe`, `run`, `capture`, `grade`, `judge`, `spotcheck`, `report`.
-`capture` and `grade` need each run's workspace, which lives in the work root under
-`/private/tmp`. Finish both before a reboot clears it.
+Run the stages in order: `probe`, `run`, `capture`, `grade`, `judge`, `spotcheck`, `report`,
+or `probe`, `pipeline`, `judge`, `spotcheck`, `report`. `capture` and `grade` need each
+run's workspace, which lives in the work root under `/private/tmp`. Finish both before a
+reboot clears it. Judging, spot-checks and reports only read the results dir, so they work
+after cleanup.
+
+### Disk
+
+A full matrix is about 290 runs, and each run's workspace holds a checkout plus installed
+dependencies. That is about 0.1 GB for the mints tasks, whose node_modules, Convex binary and
+seed data are APFS clones, and 0.1 to 0.5 GB for seeded `npm ci` tasks. Kept workspaces
+would add up to tens of GB, so use `pipeline`, or `clean` after `grade`.
+
+- **Free-space guard.** `run`, `pipeline`, `capture` and `grade` check free space on the
+  work and results filesystems before each run, capture or grade. The threshold is
+  `BRUHSBENCH_MIN_FREE_GB`, 40 by default. When space is short and other runs are live, the
+  guard waits up to 20 minutes for their cleanup. If space still doesn't free up, no new
+  work starts, live runs finish normally, and the command exits with code 4. Rerun the same
+  command to resume. Each `result.json` records `free_gb_at_start`.
+- **Clones, not copies.** Grading and capture work in APFS clones (`cp -c`) of the
+  workspace. Real-repo checkouts fetch only the base commit's history. A task's `setup.sh`
+  should copy large seed data with `cp -c` (see `tasks-private/_shared/mints/install.sh`).
 
 ## Method
 
@@ -122,6 +143,12 @@ Run the stages in order: `probe`, `run`, `capture`, `grade`, `judge`, `spotcheck
   | pr-review | full checklist hit, checks green and hidden tests pass (1/0) | 1 passing repeat: a win needs 2 or more |
   | ship | checklist score | 10 points |
 
+- **Regressions (R31).** A regression is a test that passed at base and is still there but
+  failing after the run. A base-passing test that is missing afterwards, such as a renamed
+  one, is listed in `removed_tests` and doesn't count as a regression. The exception is a
+  test file that fails to load (a pytest collection error, or a jest/vitest suite with no
+  results). In that case missing tests can't be told apart from tests that never ran, so
+  all of them count as regressions.
 - **Exclusions.** A run that is contaminated, errored, or timed out with no diff drops its
   (task, model, repeat) pair from both arms. So does a missing grade, such as an invalid
   checklist. Judge errors are excluded and counted.

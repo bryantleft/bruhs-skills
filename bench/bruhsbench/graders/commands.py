@@ -9,7 +9,11 @@ never in the agent's workspace:
   paths and ``checks["hidden"]`` runs -> pass/total (hidden/ without checks.hidden is
   a task error).
 * base copy (reset to ``bench-base``): ``checks["test"]`` again; a test passing at base
-  and not passing after is a regression.
+  and present-and-failing after is a regression (R31). A base-passing test missing after
+  (renamed, deleted) goes to ``removed_tests`` instead, reported but not a regression --
+  unless a test file failed to load after (a jest/vitest suite with no results, a pytest
+  collection error), when missing tests can't be told from tests that never ran and
+  all count as regressions.
 
 Per-test results come from a report file or stdout. Each command gets
 ``$BRUHSBENCH_REPORT`` (a path in a scratch dir) to point its reporter at, e.g.
@@ -20,7 +24,8 @@ line (counts only). With nothing parseable the exit code decides: 1/1 or 0/1, an
 regression is reported under the check's name when base passed and after failed; when
 only the base run names tests and the agent's run fails, every base-passing test counts.
 
-If bench-base can't be restored (no .git / no tag) ``regressions`` is None and ``error``
+If bench-base can't be restored (no .git / no tag) ``regressions`` and ``removed_tests``
+are None and ``error``
 says why; the other checks still run. Checks get the harness environment minus
 credentials and agent-CLI configuration, with ``HOME`` in the scratch dir
 (:func:`sandboxed_env`) and ``TMPDIR`` in it, under the OS sandbox (``sandbox.wrap``):
@@ -94,12 +99,16 @@ def _parse_jest(data: object, root: Path | None = None) -> SuiteResult | None:
         if not isinstance(suite, dict):
             continue
         name = _rel(suite.get("name") or suite.get("testFilePath") or "", root)
+        counted = False
         for a in suite.get("assertionResults") or []:
             status = a.get("status")
             if status not in ("passed", "failed"):
                 continue  # pending / skipped / todo
             title = a.get("fullName") or " ".join([*a.get("ancestorTitles", []), a.get("title", "")])
             tests[f"{name}::{title}"] = status == "passed"
+            counted = True
+        if not counted and suite.get("status") == "failed":
+            tests[name] = False  # the file failed to load or run: one failing entry
     return _from_tests(tests)
 
 
@@ -294,16 +303,29 @@ def _counts(res: CheckResult) -> tuple[int, int]:
     return int(res.ok), 1
 
 
-def _regressions(name: str, base: CheckResult, after: CheckResult) -> list[str]:
+def _regressions(name: str, base: CheckResult, after: CheckResult
+                 ) -> tuple[list[str], list[str]]:
+    """(regressions, removed tests) (R31). A regression passed at base and is present and
+    failing after; a base-passing test missing after (e.g. renamed) is only *removed*.
+    Except when a test file failed to load after (a new failing entry naming a file, not
+    a test: a jest/vitest suite with no results, a pytest collection error, which also
+    aborts the whole session): then a missing test can't be told from one that never
+    ran, so every missing base-passing test counts as a regression."""
     base_tests = base.tests.tests if base.tests else None
     after_tests = after.tests.tests if after.tests else None
     if base_tests is not None:
-        if after_tests is not None:
-            return sorted(t for t, ok in base_tests.items() if ok and not after_tests.get(t))
-        if not after.ok:  # the suite crashed or timed out: nothing that passed is known to
-            return sorted(t for t, ok in base_tests.items() if ok)
-        return []
-    return [name] if base.ok and not after.ok else []
+        passed = sorted(t for t, ok in base_tests.items() if ok)
+        if after_tests is None or (not after_tests and not after.ok):
+            # the suite crashed or timed out: nothing that passed is known to still pass
+            return (passed, []) if not after.ok else ([], [])
+        load_failed = any(not ok and "::" not in t and t not in base_tests
+                          for t, ok in after_tests.items())
+        regressions = [t for t in passed if t in after_tests and not after_tests[t]]
+        missing = [t for t in passed if t not in after_tests]
+        if load_failed:
+            return sorted(regressions + missing), []
+        return regressions, missing
+    return ([name] if base.ok and not after.ok else []), []
 
 
 def _base_problem(copy: Path, workspace: Path) -> str | None:
@@ -345,6 +367,7 @@ def grade(task: Task, run_dir: Path) -> dict:
                 timed_out.append(name)
 
         regressions: list[str] | None = []
+        removed: list[str] | None = []
         problem = None
         if "test" in task.checks:
             base = scratch / "base"
@@ -357,10 +380,10 @@ def grade(task: Task, run_dir: Path) -> dict:
                 problem = f"git refused: {exc}"
         if problem is not None:
             result["error"] = f"regressions not computed: {problem}"
-            regressions = None
+            regressions = removed = None
         elif "test" in task.checks:
             base_res = run_check("test", task.checks["test"], base, scratch, log_dir)
-            regressions = _regressions("test", base_res, after_results["test"])
+            regressions, removed = _regressions("test", base_res, after_results["test"])
 
         hidden_pass = hidden_total = 0
         if has_hidden:
@@ -378,5 +401,5 @@ def grade(task: Task, run_dir: Path) -> dict:
         shutil.rmtree(scratch, ignore_errors=True)
 
     result.update(checks=checks, hidden_pass=hidden_pass, hidden_total=hidden_total,
-                  regressions=regressions, timed_out=timed_out)
+                  regressions=regressions, removed_tests=removed, timed_out=timed_out)
     return write_grade(run_dir, "commands", result)

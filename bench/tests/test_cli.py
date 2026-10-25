@@ -12,6 +12,13 @@ from bruhsbench.graders import grade_all
 from bruhsbench.tasks import load_task
 
 
+@pytest.fixture(autouse=True)
+def roomy_disk(tmp_path, monkeypatch):
+    """Plenty of free disk (the guard has its own tests), work root under tmp_path."""
+    monkeypatch.setenv("BRUHSBENCH_MIN_FREE_GB", "0")
+    monkeypatch.setenv("BRUHSBENCH_WORK", str(tmp_path / "work"))
+
+
 def _heldout_task(tmp_path):
     d = tmp_path / "tasks-heldout" / "sealed"
     d.mkdir(parents=True)
@@ -134,3 +141,231 @@ def test_grade_warns_on_ui_runs_without_screens(tmp_path, monkeypatch, capsys):
     err = capsys.readouterr().err
     assert "capture" in err and "t-ui__claude__bruhs__r1" in err
     assert "t-ui__claude__bare__r1" not in err and "t-ui__claude__bare__r2" not in err
+
+
+# --------------------------------------------------------------------------- disk + cleanup
+
+
+def _all_graded(d):
+    (d / "grades").mkdir(exist_ok=True)
+    for n in cli.GRADE_FILES:
+        (d / "grades" / f"{n}.json").write_text(json.dumps({"applicable": False}))
+
+
+def test_grade_stops_on_low_disk(tmp_path, monkeypatch, capsys):
+    t = make_task(tmp_path, "t-audit", "audit")
+    root = tmp_path / "res"
+    make_run(root, t, "claude", "bare", 1)
+    monkeypatch.setattr(cli, "_task_index", lambda heldout: {t.id: t})
+    monkeypatch.setenv("BRUHSBENCH_MIN_FREE_GB", "40")
+    monkeypatch.setattr("bruhsbench.runner.free_gb", lambda p: 3.0)
+    monkeypatch.setattr(cli, "_grade_run", lambda d, task: pytest.fail("graded on a full disk"))
+    assert cli.cmd_grade(_args(root)) == cli.DISK_LOW_EXIT
+    assert "3.0 GB free" in capsys.readouterr().err
+
+
+def test_grade_never_regrades_a_deleted_workspace(tmp_path, monkeypatch, capsys):
+    t = make_task(tmp_path, "t-audit", "audit")
+    root = tmp_path / "res"
+    d = make_run(root, t, "claude", "bare", 1)
+    meta = json.loads((d / "result.json").read_text())
+    (d / "result.json").write_text(json.dumps({**meta, "workspace_deleted": True}))
+    _all_graded(d)
+    monkeypatch.setattr(cli, "_task_index", lambda heldout: {t.id: t})
+    monkeypatch.setattr(cli, "_grade_run", lambda d, task: pytest.fail("regraded"))
+    cli.cmd_grade(_args(root, force=True))
+    assert "workspace was deleted" in capsys.readouterr().err
+
+
+def _work_dir(root, d, precious):
+    """A run's work dir with symlinks an agent could plant: to a precious dir outside,
+    to the results dir and to the task dir."""
+    from bruhsbench.runner import default_work_root
+
+    ws = default_work_root(root) / d.name / "workspace"
+    (ws / "node_modules" / "pkg").mkdir(parents=True)
+    (ws / "node_modules" / "pkg" / "index.js").write_text("x")
+    (ws / "to_precious").symlink_to(precious)
+    (ws / "to_results").symlink_to(root)
+    (ws / "to_file").symlink_to(precious / "keep.txt")
+    return ws
+
+
+def _clean_fixture(tmp_path):
+    precious = tmp_path / "precious"
+    precious.mkdir()
+    (precious / "keep.txt").write_text("keep")
+    audit = make_task(tmp_path, "t-audit", "audit")
+    ui = make_task(tmp_path, "t-ui", "ui", pages=["/"])
+    root = tmp_path / "res"
+    runs = {
+        "graded": make_run(root, audit, "claude", "bare", 1),
+        "ungraded": make_run(root, audit, "claude", "bruhs", 1),
+        "errored": make_run(root, audit, "codex", "bare", 1, status="error"),
+        "ui_uncaptured": make_run(root, ui, "claude", "bare", 1),
+        "ui_done": make_run(root, ui, "claude", "bruhs", 1, screens=True),
+    }
+    _all_graded(runs["graded"])
+    _all_graded(runs["ui_uncaptured"])
+    _all_graded(runs["ui_done"])
+    (runs["ui_done"] / "grades" / "capture.json").write_text(json.dumps({"applicable": True}))
+    work = {k: _work_dir(root, d, precious) for k, d in runs.items()}
+    return root, runs, work, precious, {audit.id: audit, ui.id: ui}
+
+
+def test_clean_removes_only_finished_runs_and_never_follows_links(tmp_path, monkeypatch):
+    root, runs, work, precious, tasks = _clean_fixture(tmp_path)
+    monkeypatch.setattr(cli, "_task_index", lambda heldout: tasks)
+    before = sorted(p.relative_to(root) for p in root.rglob("*"))
+    assert cli.cmd_clean(_args(root, all=False)) == 0
+
+    gone = {"graded", "errored", "ui_done"}
+    for k, ws in work.items():
+        assert ws.parent.exists() == (k not in gone), k
+        meta = json.loads((runs[k] / "result.json").read_text())
+        assert meta.get("workspace_deleted", False) == (k in gone), k
+    assert (precious / "keep.txt").read_text() == "keep"
+    assert sorted(p.relative_to(root) for p in root.rglob("*")) == before  # results intact
+    assert all(t.dir.is_dir() and (t.dir / "task.toml").is_file() for t in tasks.values())
+
+
+def test_clean_all_removes_the_work_root_only(tmp_path, monkeypatch):
+    from bruhsbench.runner import default_work_root
+
+    root, runs, work, precious, tasks = _clean_fixture(tmp_path)
+    monkeypatch.setattr(cli, "_task_index", lambda heldout: tasks)
+    (default_work_root(root) / "_scratch" / "grade-1").mkdir(parents=True)
+    other = default_work_root(tmp_path / "other-results")
+    other.mkdir(parents=True)  # another results id's work root stays
+    assert cli.cmd_clean(_args(root, all=True)) == 0
+    assert not default_work_root(root).exists() and other.is_dir()
+    assert (precious / "keep.txt").read_text() == "keep"
+    assert all((d / "result.json").is_file() and (d / "diff.patch").is_file()
+               for d in runs.values())
+    assert all(json.loads((d / "result.json").read_text())["workspace_deleted"]
+               for d in runs.values())
+
+
+def test_parser_has_pipeline_and_clean():
+    p = cli.build_parser()
+    a = p.parse_args(["pipeline", "--tasks", "x"])
+    assert a.fn is cli.cmd_pipeline and a.cleanup is True
+    assert p.parse_args(["pipeline", "--no-cleanup"]).cleanup is False
+    a = p.parse_args(["clean", "--all"])
+    assert a.fn is cli.cmd_clean and a.all is True
+
+
+@pytest.fixture
+def fake_agents(tmp_path, monkeypatch):
+    """runner's hermetic setup (test_runner.hermetic): fake homes, fake CLI, sandboxed."""
+    import os
+
+    from bruhsbench import runner, sandbox
+
+    def fake_build_home(cli_, arm, run_dir, bruhs_src, **kw):
+        home = run_dir / "home"
+        home.mkdir(parents=True)
+        return {"PATH": os.environ["PATH"], "HOME": str(home)}
+
+    monkeypatch.setattr(runner, "build_home", fake_build_home)
+    monkeypatch.setattr(runner, "claude_auth", lambda: {})
+    monkeypatch.setattr(runner, "cli_version", lambda c: f"{c} 0.0-test")
+    side = tmp_path / "side"
+    side.mkdir(exist_ok=True)
+    monkeypatch.setattr(runner, "wrap", lambda argv, *, writable, **kw: sandbox.wrap(
+        argv, writable=[*writable, side], **kw))
+
+
+def test_pipeline_captures_grades_then_cleans_each_run(tmp_path, monkeypatch, fake_agents):
+    from test_runner import CLAUDE, EDIT_AND_REPLY, fake_agent, override
+
+    from bruhsbench.runner import default_work_root, run_matrix
+
+    ui = make_task(tmp_path, "t-ui", "ui", pages=["/"])
+    feat = make_task(tmp_path, "t-feat", "feature")
+    for t in (ui, feat):
+        (t.dir / "fixture").mkdir()
+        (t.dir / "fixture" / "app.txt").write_text("hello\n")
+    root = tmp_path / "res"
+    events = []
+
+    def fake_capture(d, task, ws):
+        assert ws.is_dir()
+        events.append(("capture", d.name))
+        (d / "grades").mkdir(exist_ok=True)
+        (d / "grades" / "capture.json").write_text(json.dumps({"applicable": True}))
+
+    def fake_grade(d, task):
+        assert (default_work_root(root) / d.name / "workspace").is_dir()
+        events.append(("grade", d.name))
+        _all_graded(d)
+
+    monkeypatch.setattr(cli, "_capture_run", fake_capture)
+    monkeypatch.setattr(cli, "_grade_run", fake_grade)
+    monkeypatch.setattr("bruhsbench.capture.capture_before", lambda *a, **k: [])
+    post = cli._post_processor(root, cli._disk_guard(root), cleanup=True)
+    ov = override(fake_agent(tmp_path, EDIT_AND_REPLY))
+    results = run_matrix([ui, feat], [CLAUDE], ["bare", "bruhs"], 1, root, parallel=2,
+                         command_override=ov, post_run=post)
+    assert len(results) == 4
+    for r in results:
+        assert not (default_work_root(root) / r.run_id).exists()
+        meta = json.loads((root / r.run_id / "result.json").read_text())
+        assert meta["workspace_deleted"] is True
+        steps = [e for e, rid in events if rid == r.run_id]
+        assert steps == (["capture", "grade"] if r.run_id.startswith("t-ui") else ["grade"])
+    events.clear()
+    run_matrix([ui, feat], [CLAUDE], ["bare", "bruhs"], 1, root, parallel=2,
+               command_override=ov, post_run=post)  # resume: nothing left to do
+    assert events == []
+
+
+def test_pipeline_keeps_workspace_when_grading_is_incomplete(tmp_path, monkeypatch,
+                                                             fake_agents):
+    from test_runner import CLAUDE, EDIT_AND_REPLY, fake_agent, override
+
+    from bruhsbench.runner import default_work_root, run_matrix
+
+    feat = make_task(tmp_path, "t-feat", "feature")
+    (feat.dir / "fixture").mkdir()
+    (feat.dir / "fixture" / "app.txt").write_text("hello\n")
+    root = tmp_path / "res"
+    monkeypatch.setattr(cli, "_grade_run", lambda d, task: None)  # e.g. a judge failure
+    run_matrix([feat], [CLAUDE], ["bare"], 1, root, command_override=override(
+        fake_agent(tmp_path, EDIT_AND_REPLY)), post_run=cli._post_processor(root, cli._disk_guard(root), cleanup=True))
+    rid = "t-feat__claude__bare__r1"
+    assert (default_work_root(root) / rid / "workspace").is_dir()
+    assert not json.loads((root / rid / "result.json").read_text())["workspace_deleted"]
+
+
+def test_pipeline_post_run_waits_on_the_matrix_guard(tmp_path, monkeypatch):
+    import threading
+
+    from bruhsbench.runner import DiskGuard, DiskLow
+    from bruhsbench.types import ModelSpec, RunSpec
+
+    t = make_task(tmp_path, "t-audit", "audit")
+    root = tmp_path / "res"
+    make_run(root, t, "claude", "bare", 1)
+    monkeypatch.setattr(cli, "_grade_run", lambda d, task: pytest.fail("graded on a full disk"))
+    slept = []
+    guard = DiskGuard([tmp_path], min_gb=40, free_fn=lambda p: 5.0, poll_s=0.1, wait_s=0.3,
+                      sleep=slept.append)
+    held, release = threading.Event(), threading.Event()
+
+    def other_run():  # another run of the matrix is live, so its cleanup may free space
+        with guard.job():
+            held.set()
+            release.wait(10)
+
+    th = threading.Thread(target=other_run)
+    th.start()
+    held.wait(10)
+    try:
+        post = cli._post_processor(root, guard, cleanup=True)
+        with guard.job(), pytest.raises(DiskLow):
+            post(RunSpec(t, ModelSpec("claude", "m", "high"), "bare", 1), None)
+    finally:
+        release.set()
+        th.join()
+    assert slept  # it waited for the other run before giving up

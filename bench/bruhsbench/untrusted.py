@@ -8,6 +8,7 @@ not let the agent steer it:
   a single link; anything else raises :class:`UnsafePath` (callers skip and record it).
 * :func:`overlay` copies trusted files into an untrusted tree, removing symlinks along
   every destination path first, so a planted ``tests -> ~/`` link can't redirect it.
+* :func:`remove` deletes a tree by dir fds, removing symlinks as links.
 * :func:`git` runs git on an agent-touched repo under the OS sandbox (writes only in
   the repo), with system/global config off and every config-driven command hook
   neutralized: fsmonitor, hooks, external diff, textconv, auto-gc and the
@@ -128,6 +129,10 @@ def _rmtree_at(dfd: int, name: str) -> None:
     except FileNotFoundError:
         return
     try:
+        try:  # a read-only dir (e.g. a Go module cache) can't have its entries unlinked
+            os.fchmod(sub, 0o700)
+        except OSError:
+            pass
         for entry in os.listdir(sub):
             try:
                 st = os.stat(entry, dir_fd=sub, follow_symlinks=False)
@@ -143,6 +148,20 @@ def _rmtree_at(dfd: int, name: str) -> None:
         os.rmdir(name, dir_fd=dfd)
     except FileNotFoundError:
         pass
+
+
+def remove(root: Path, name: str) -> None:
+    """Delete ``root/name`` (file, symlink or whole tree) without following any symlink:
+    ``root`` is opened ``O_NOFOLLOW`` and the tree is walked by dir fds, so a link an
+    agent planted is removed as a link, never traversed. ``name`` must be one plain path
+    component."""
+    if _parts(name) != (name,):
+        raise UnsafePath(f"not a single path component: {name!r}")
+    fd = os.open(root, _DIR_FLAGS)
+    try:
+        _clear_at(fd, name)
+    finally:
+        os.close(fd)
 
 
 def _child_dir(dfd: int, name: str) -> int:
