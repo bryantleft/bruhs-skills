@@ -18,6 +18,13 @@ the task's own code (a real repo's files at ``base``, a seeded fixture's files):
   ``.git/info/exclude``, ``.git/description``, ``.git/hooks/*`` and the reflogs
   (``.git/logs/**``; :func:`workspace.prepare_workspace` expires them after setup).
 
+Dependency and build trees (``node_modules/<pkg>``, site-packages, a real virtualenv, a
+Cargo ``target/``; see :func:`_excluded`) get a reduced check: symlink targets and a
+case-sensitive byte search for :func:`_reduced_tokens`. Build output records the
+workspace's own absolute path, so the workspace must live under a neutral path, as a run's
+does (``<work base>/<12 hex>/workspace``, R40); a ``$BRUHSBENCH_WORK`` naming the benchmark
+would trip the guard.
+
 Limits: a file over 512 KB (:data:`MAX_TEXT_BYTES`) or with a NUL byte in its first 8 KB
 gets only the case-sensitive byte search for :data:`BYTE_TOKENS`, not the line, decoding or
 arm-name checks.
@@ -40,6 +47,7 @@ import re
 import subprocess
 from pathlib import Path
 
+from .homes import BRUHS_REPO
 from .types import Arm, Task
 from .workspace import GIT, strip_bruhs_blocks
 
@@ -130,24 +138,41 @@ TOOL_DOT_ENTRIES = (".pnpm", ".bin", ".cache", ".vite", ".vite-temp", ".modules.
                     ".package-lock.json", ".ignored", ".tmp", ".prisma")
 
 
-# installed dependencies and build output: their contents are the dependencies' (or the
-# compiler's) own, e.g. a FastAPI README that mentions benchmarks, libtest strings in a
-# Rust test binary
-THIRD_PARTY_DIRS = (".venv", "venv", "site-packages", "__pycache__")
+# Dependency and build trees: their contents are the dependencies' (or the compiler's) own
+# text, e.g. a FastAPI README that mentions benchmarks, libtest strings in a Rust test
+# binary, a package named tinybench. They are not dropped: every file in them still gets a
+# reduced check (:data:`REDUCED_TOKENS`, case-sensitive bytes, and symlink targets), which
+# catches a path into the bench repo or the old harness names (a .pyc co_filename, an
+# editable .pth or direct_url.json, a Cargo dep-info file). Which trees:
+#   node_modules/<pkg> and package managers' own dot entries (TOOL_DOT_ENTRIES);
+#   site-packages/, __pycache__/, a .venv/ or venv/ that holds pyvenv.cfg, and a target/
+#   next to a Cargo.toml -- but never under a harness dot dir in node_modules (e.g.
+#   node_modules/.local-stack/venv is the harness's own and fully checked).
+NAME_EXCLUDED = ("site-packages", "__pycache__")
 
 
-def _third_party(rel: str) -> bool:
-    """Under ``node_modules/<pkg>`` (a package, or a package manager's own dot dir), a
-    Python virtualenv / site-packages, or ``__pycache__``."""
+def _harness_dot_dir(part: str) -> bool:
+    return (part.startswith(".") and part not in TOOL_DOT_ENTRIES
+            and not part.startswith(".pnpm-"))
+
+
+def _excluded(ws: Path, rel: str) -> bool:
+    """``rel`` is (inside) a dependency or build tree (see above)."""
     parts = rel.split("/")
-    if any(part in THIRD_PARTY_DIRS for part in parts[:-1]) or parts[-1] in THIRD_PARTY_DIRS:
-        return True
     for i, part in enumerate(parts[:-1]):
-        if part == "node_modules":
-            nxt = parts[i + 1]
-            if (not nxt.startswith(".") or nxt in TOOL_DOT_ENTRIES
-                    or nxt.startswith(".pnpm-")):
-                return True  # e.g. node_modules/.local-stack/hidden/node_modules/vitest
+        if part == "node_modules" and not _harness_dot_dir(parts[i + 1]):
+            return True  # node_modules/<pkg>, node_modules/.pnpm, ...
+    if any(part == "node_modules" and _harness_dot_dir(parts[i + 1])
+           for i, part in enumerate(parts[:-1])):
+        return False  # the harness's own dir: no name exclusions inside it
+    for i, part in enumerate(parts):
+        here = ws.joinpath(*parts[:i + 1])
+        if part in NAME_EXCLUDED:
+            return True
+        if part in (".venv", "venv") and (here / "pyvenv.cfg").is_file():
+            return True
+        if part == "target" and (here.parent / "Cargo.toml").is_file():
+            return True
     return False
 
 
@@ -162,37 +187,53 @@ def _source_text(task: Task, rel: str) -> str:
 
 
 def _walk(ws: Path):
+    """(rel, is_dir, excluded) for every entry; a symlink (to a file or a directory) is
+    reported as a non-directory so its target is checked; excluded trees are walked too."""
+    excluded_dirs: dict[str, bool] = {"": False}
     for dirpath, dirnames, filenames in os.walk(ws):
         rel_dir = Path(dirpath).relative_to(ws).as_posix()
-        rel_dir = "" if rel_dir == "." else rel_dir + "/"
-        # a symlink to a directory is listed as a directory but never walked: report it
-        # as an entry so its target is checked
+        rel_dir = "" if rel_dir == "." else rel_dir
+        parent_ex = excluded_dirs.get(rel_dir, False)
+        prefix = rel_dir + "/" if rel_dir else ""
         links = [d for d in dirnames if os.path.islink(os.path.join(dirpath, d))]
-        dirnames[:] = [d for d in dirnames if d != ".git" and d not in links
-                       and not _third_party(rel_dir + d)]
+        dirnames[:] = [d for d in dirnames if d != ".git" and d not in links]
         for d in links:
-            if not _third_party(rel_dir + d):
-                yield rel_dir + d, False
+            yield prefix + d, False, parent_ex or _excluded(ws, prefix + d)
         for d in dirnames:
-            yield rel_dir + d, True
-        for f in filenames:
-            yield rel_dir + f, False
+            ex = parent_ex or _excluded(ws, prefix + d)
+            excluded_dirs[prefix + d] = ex
+            yield prefix + d, True, ex
+        for f in filenames:  # e.g. node_modules/.modules.yaml is the package manager's
+            yield prefix + f, False, parent_ex or _excluded(ws, prefix + f)
 
 
-def _cargo_targets(ws: Path) -> list[str]:
-    """Cargo build dirs: ``target/`` next to a Cargo.toml (build output, not the harness's)."""
-    return sorted(str(p.parent.relative_to(ws) / "target").removeprefix("./") + "/"
-                  for p in ws.glob("**/Cargo.toml")
-                  if "node_modules" not in p.parts and (p.parent / "target").is_dir())
+def _reduced_tokens() -> tuple[bytes, ...]:
+    """What a dependency/build file must not hold: the bench repo's path and the harness's
+    own names. (The work root is left out on purpose: a run's workspace lives under it,
+    behind an opaque name, so build output naming its own paths is expected and reveals
+    nothing; neither is `BENCH_`/`__bench`, which libraries use.)"""
+    repo = str(BRUHS_REPO)
+    forms = {repo, str(Path(repo).resolve())}
+    return (*sorted(f.encode() for f in forms), b"bruhs", b"mints-bench", b".bench/")
 
 
 def workspace_leaks(task: Task, ws: Path, arm: Arm) -> list[str]:
     ws = Path(ws)
     source = _source_files(task) or {}
-    targets = [t.removeprefix("./") for t in _cargo_targets(ws)]
+    reduced = _reduced_tokens()
     found: list[str] = []
-    for rel, is_dir in _walk(ws):
-        if _third_party(rel) or any((rel + "/").startswith(t) for t in targets):
+    for rel, is_dir, excluded in _walk(ws):
+        if excluded:  # a dependency or build tree: the reduced check only
+            p = ws / rel
+            if p.is_symlink():
+                target = os.readlink(p).encode()
+                if any(t in target for t in reduced):
+                    found.append(f"symlink: {rel} -> {target.decode(errors='replace')}")
+            elif not is_dir and p.is_file():
+                data = p.read_bytes()
+                hits = [t.decode() for t in reduced if t in data]
+                if hits:
+                    found.append(f"{rel}: dependency/build file holds {hits}")
             continue
         if is_dir:
             if _hint(rel.rsplit("/", 1)[-1]) and not any(
@@ -229,7 +270,7 @@ def workspace_leaks(task: Task, ws: Path, arm: Arm) -> list[str]:
             if _hint(line) and line not in own:
                 found.append(f"{rel}: {line.strip()[:160]}")
     for pkg in [ws / "package.json", *ws.glob("*/package.json"), *ws.glob("*/*/package.json")]:
-        if pkg.is_file() and not _third_party(pkg.relative_to(ws).as_posix()):
+        if pkg.is_file() and not _excluded(ws, pkg.relative_to(ws).as_posix()):
             rel = pkg.relative_to(ws).as_posix()
             try:
                 scripts = json.loads(pkg.read_text()).get("scripts") or {}

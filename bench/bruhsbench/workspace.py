@@ -155,6 +155,8 @@ def prepare_workspace(
     # what setup did in git (branches it made and dropped, checkouts) stays out of the
     # reflog an agent can read, as for the checkout itself
     _git(dest, "reflog", "expire", "--expire=now", "--all")
+    # and its dropped commits out of the object store (`git fsck --unreachable`)
+    _git(dest, "gc", "--prune=now", "--quiet")
     return dest
 
 

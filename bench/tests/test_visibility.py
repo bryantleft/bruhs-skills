@@ -27,7 +27,8 @@ def _seeded(tmp_path: Path, setup: str) -> object:
     return load_task(d)
 
 
-LEAKY = """mkdir -p node_modules/.bench node_modules/tinybench node_modules/.bench/hidden/node_modules/tinybench
+LEAKY = """mkdir -p node_modules && echo 'tinybench@2.9.0: {}' > node_modules/.modules.yaml
+mkdir -p node_modules/.bench node_modules/tinybench node_modules/.bench/hidden/node_modules/tinybench
 echo 'instance="mints-bench"' > node_modules/.bench/dev.sh
 echo 'tinybench' > node_modules/.bench/hidden/node_modules/tinybench/README.md
 echo 'export const x = 1' > node_modules/tinybench/index.js
@@ -143,7 +144,8 @@ def test_private_tasks_are_present():
 @pytest.mark.parametrize("task", _private_tasks(), ids=lambda t: t.id)
 def test_private_task_workspaces_name_neither_benchmark_nor_arm(task, tmp_path):
     for arm in ("bare", "bruhs"):
-        ws = prepare_workspace(task, arm, tmp_path / arm)
+        # a neutral dir name, as in a real run (build output records its own paths)
+        ws = prepare_workspace(task, arm, tmp_path / f"ws{('bare', 'bruhs').index(arm)}")
         leaks = workspace_leaks(task, ws, arm)
         assert leaks == [], (task.id, arm, leaks)
 
@@ -168,6 +170,10 @@ def test_setup_branches_leave_no_reflog_trace_and_logs_are_scanned(tmp_path):
     logs = "".join(p.read_text(errors="replace") for p in (ws / ".git" / "logs").rglob("*")
                    if p.is_file())
     assert "bench-tmp" not in reflog + logs
+    # the dropped branch's commit is gone from the object store too
+    unreachable = subprocess.run([*GIT, "fsck", "--unreachable", "--no-reflogs"], cwd=ws,
+                                 capture_output=True, text=True).stdout
+    assert "commit" not in unreachable
     assert workspace_leaks(task, ws, "bare") == []
     (ws / ".git" / "logs" / "refs" / "heads").mkdir(parents=True, exist_ok=True)
     (ws / ".git" / "logs" / "refs" / "heads" / "x").write_text(
@@ -178,8 +184,38 @@ def test_setup_branches_leave_no_reflog_trace_and_logs_are_scanned(tmp_path):
 def test_dependency_and_build_dirs_are_not_the_harness(tmp_path):
     """A virtualenv's packages and a Cargo target dir hold third-party/compiler text
     (FastAPI's README mentions benchmarks; Rust test binaries contain libtest strings)."""
-    setup = ("mkdir -p .venv/lib/site-packages/fastapi target/debug && "
+    setup = ("mkdir -p .venv/lib/site-packages/fastapi target/debug && touch .venv/pyvenv.cfg && "
              "echo 'TechEmpower benchmarks' > .venv/lib/site-packages/fastapi/METADATA && "
              "touch Cargo.toml && printf 'x\\0RUST_BENCH_FORMAT' > target/debug/app\n")
     task, ws = _setup_adds(tmp_path, "bare", setup)
     assert workspace_leaks(task, ws, "bare") == []
+
+
+@pytest.mark.parametrize("setup, where", [
+    # a virtualenv file (a .pth / direct_url.json / co_filename) naming the harness path
+    ("mkdir -p .venv/lib/site-packages && touch .venv/pyvenv.cfg && "
+     "echo '/Users/x/bruhs-skills-bench/bench/tasks/t' > .venv/lib/site-packages/_t.pth",
+     ".venv/lib/site-packages/_t.pth"),
+    # a Cargo dep-info file naming it
+    ("touch Cargo.toml && mkdir -p target/debug && "
+     "echo 'target/debug/app: /x/bruhs-skills-bench/src/main.rs' > target/debug/app.d",
+     "target/debug/app.d"),
+    # a third-party package file with the old dir name in it
+    ("mkdir -p node_modules/pkg && echo 'require(\"../.bench/dev.sh\")' > node_modules/pkg/i.js",
+     "node_modules/pkg/i.js"),
+])
+def test_dependency_and_build_trees_still_get_a_harness_token_search(tmp_path, setup, where):
+    task, ws = _setup_adds(tmp_path, "bare", setup + "\n")
+    assert any(l.startswith(where) for l in workspace_leaks(task, ws, "bare"))
+
+
+def test_name_exclusions_never_apply_inside_a_harness_dir(tmp_path):
+    """`venv`/`target`/`__pycache__` under node_modules/.local-stack are the harness's own
+    files, fully checked; a dir named .venv without pyvenv.cfg isn't a virtualenv."""
+    setup = ("mkdir -p node_modules/.local-stack/venv node_modules/.local-stack/__pycache__ .venv && "
+             "echo 'mode=bare_run' > node_modules/.local-stack/venv/cfg && "
+             "echo 'ARM_BARE=1' > .venv/env\n")
+    task, ws = _setup_adds(tmp_path, "bare", setup)
+    leaks = workspace_leaks(task, ws, "bare")
+    assert any(l.startswith("node_modules/.local-stack/venv/cfg") for l in leaks)
+    assert any(l.startswith(".venv/env") for l in leaks)

@@ -650,5 +650,6 @@ def test_seeded_workspaces_pass_the_visibility_guard(task_id, prepared, tmp_path
 
     task = _task(task_id)
     assert workspace_leaks(task, prepared(task_id), "bare") == []
-    ws = prepare_workspace(task, "bruhs", tmp_path / "bruhs")
+    # a neutral dir name, as in a real run (build output records its own paths)
+    ws = prepare_workspace(task, "bruhs", tmp_path / "ws1")
     assert workspace_leaks(task, ws, "bruhs") == []
