@@ -22,7 +22,8 @@ What is hashed (the exact rule). A task's hash is the SHA-256 of its manifest: o
 * every file under the task dir (label ``task/<relative path>``): task.toml, prompt.md,
   setup.sh, after_base.sh, checklist.json, known_issues.json, hidden/**, fixture/** (a
   seeded task's repo), seed/** (seed data: large blobs enter by their content hash only,
-  like every file), bench-deps/** and anything else there;
+  like every file), stack-deps/** (a hidden-test runner's pinned deps) and anything else
+  there;
 * every file of each shared dir the task's setup.sh, after_base.sh or task.toml names as
   ``_shared/<name>`` (a sibling ``_shared/<name>/`` of the task dir; label
   ``shared/<name>/<relative path>``): install scripts, dev.sh, the Convex backend binary,

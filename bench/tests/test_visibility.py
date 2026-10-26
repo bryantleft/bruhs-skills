@@ -57,10 +57,74 @@ def test_scan_is_clean_for_neutral_setup_in_both_arms(tmp_path, arm):
         assert "bruhs:state:begin" in (ws / "CLAUDE.md").read_text()
 
 
+def _setup_adds(tmp_path, arm, setup):
+    task = _seeded(tmp_path, setup)
+    ws = prepare_workspace(task, arm, tmp_path / "ws")
+    return task, ws
+
+
+@pytest.mark.parametrize("setup, expect", [
+    # a hex-encoded secret that spells the benchmark's name
+    ("echo 'secret=\"%s\"' > .env.local" % "bruhsbench-local".encode().hex(), ".env.local"),
+    # base64 of it
+    ("echo 'TOKEN=YnJ1aHNiZW5jaC1sb2NhbC1vbmx5' > .env.local", ".env.local"),
+    # a symlink whose target names it
+    ("mkdir -p node_modules && ln -s /opt/bruhsbench/stack node_modules/.stack", "symlink"),
+    # a lockfile's own top-level name
+    ("echo '{\"name\": \"bench-hidden\", \"lockfileVersion\": 3}' > package-lock.json",
+     "lockfile name"),
+    # the harness's tokens in a binary file
+    ("printf 'SQLite\\0\\0mints-bench|key' > data.db", "binary or large file"),
+    # arm names joined with underscores
+    ("echo 'WORKDIR=/srv/bare_ws' > .env.local", ".env.local"),
+    ("echo 'export ARM_BARE_X=1' > .env.local", ".env.local"),
+])
+def test_scan_sees_encoded_linked_locked_binary_and_joined_names(tmp_path, setup, expect):
+    task, ws = _setup_adds(tmp_path, "bare", setup + "\n")
+    leaks = workspace_leaks(task, ws, "bare")
+    assert any(expect in l for l in leaks), leaks
+
+
+@pytest.mark.parametrize("setup", [
+    # a random secret, a random base64 token, a lockfile listing tinybench as a dependency
+    "echo 'secret=\"49b1508560ba88b232e16cac42bb9646dc15a2099d84a2326a69ed897a9dedd6\"' > .env.local",
+    "echo 'TOKEN=c2VjcmV0LXRva2VuLWZvci1sb2NhbC1kZXY=' > .env.local",
+    "echo '{\"name\": \"app\", \"packages\": {\"node_modules/tinybench\": {}}}' > package-lock.json",
+    # the card name "Bench" in seed data, words containing "bare"
+    "printf 'SQLite\\0\\0Bench Warmer\\0barely' > data.db",
+    "echo 'MODE=barely_ok bareMetal=1' > .env.local",
+])
+def test_scan_ignores_neutral_content(tmp_path, setup):
+    task, ws = _setup_adds(tmp_path, "bare", setup + "\n")
+    assert workspace_leaks(task, ws, "bare") == []
+
+
+def test_scan_reads_git_bodies_config_exclude_description_and_hooks(tmp_path):
+    task, ws = _setup_adds(tmp_path, "bare", "true\n")
+    assert workspace_leaks(task, ws, "bare") == []  # git's own core.bare key isn't a hit
+    import subprocess
+    from bruhsbench.workspace import GIT
+    subprocess.run([*GIT, "commit", "-q", "--allow-empty", "-m", "setup", "-m",
+                    "made by bruhsbench"], cwd=ws, check=True)
+    (ws / ".git" / "info" / "exclude").write_text("/.bench/\n")
+    (ws / ".git" / "description").write_text("bench workspace\n")
+    (ws / ".git" / "hooks" / "pre-commit").write_text("#!/bin/sh\n# ARM=bare\n")
+    subprocess.run([*GIT, "config", "bench.arm", "x"], cwd=ws, check=True)
+    leaks = " ".join(workspace_leaks(task, ws, "bare"))
+    for needle in ("made by bruhsbench", "/.bench/", "bench workspace", "ARM=bare", "[bench]"):
+        assert needle in leaks, needle
+
+
 def _private_tasks():
     if not PRIVATE.is_dir():
         return []
     return [t for t in load_tasks(PRIVATE, include_heldout=True)]
+
+
+@pytest.mark.private
+def test_private_tasks_are_present():
+    """Under the private marker a missing tasks-private is a failure, not a skip."""
+    assert PRIVATE.is_dir() and _private_tasks(), f"no private tasks under {PRIVATE}"
 
 
 @pytest.mark.private
