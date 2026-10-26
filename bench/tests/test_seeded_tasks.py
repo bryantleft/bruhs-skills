@@ -640,3 +640,15 @@ def test_ui_focus_reset_removed_shows_browser_focus_rings(prepared, tmp_path, mo
     assert _checklist_hits(task, run_dir, monkeypatch) == {
         "no-overflow-390": False, "focus-visible": True, "named-controls": False,
         "labelled-fields": False, "keyboard-toggles": False}
+
+
+@pytest.mark.parametrize("task_id", SEEDED)
+def test_seeded_workspaces_pass_the_visibility_guard(task_id, prepared, tmp_path):
+    """R47: every seeded task's prepared workspace passes the runner's pre-launch scan in
+    both arms (bare from the shared fixture; bruhs prepared here)."""
+    from bruhsbench.visibility import workspace_leaks
+
+    task = _task(task_id)
+    assert workspace_leaks(task, prepared(task_id), "bare") == []
+    ws = prepare_workspace(task, "bruhs", tmp_path / "bruhs")
+    assert workspace_leaks(task, ws, "bruhs") == []

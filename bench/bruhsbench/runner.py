@@ -68,6 +68,7 @@ from .homes import (AGENT_TOOL_HOMES, ClaudeAuthMissing, bruhs_content_hash, bui
 from .sandbox import (PLAYWRIGHT_BROWSER_RE, PLAYWRIGHT_CACHE, check_tmp_base, read_allow, private_tmp, real_home, remove_private_tmp,
                       work_base, wrap)
 from .types import Arm, Cli, ModelSpec, RunResult, RunSpec, Task
+from .visibility import workspace_leaks
 from .workspace import BASE_TAG, SetupFailed, check_task_setup, prepare_workspace
 
 log = logging.getLogger(__name__)
@@ -683,6 +684,19 @@ def run_one(
         for p in (transcript, diff_path, out_dir / "final.txt"):
             p.write_text("")
         result = replace(base, status="setup_failed")
+        _write_result(out_dir, result)
+        return result
+
+    # R47: nothing in the prepared workspace may name the benchmark or the arm; a leak
+    # fails the run before the agent ever starts (a few seconds even on the largest
+    # private workspace, so it runs per run rather than as a per-task preflight)
+    leaks = workspace_leaks(spec.task, workspace, spec.arm)
+    if leaks:
+        reason = "visibility: " + "; ".join(leaks[:20])
+        (out_dir / "stderr.txt").write_text(reason + "\n")
+        for p in (transcript, diff_path, out_dir / "final.txt"):
+            p.write_text("")
+        result = replace(base, status="error", error=reason)
         _write_result(out_dir, result)
         return result
 

@@ -1,7 +1,9 @@
 """R40-R43: nothing the harness or a task's setup puts in a workspace names the benchmark
 or an arm (the bruhs marker blocks in the bruhs arm are the treatment)."""
 
+import base64
 import json
+import subprocess
 from dataclasses import replace
 from pathlib import Path
 
@@ -63,6 +65,10 @@ def _setup_adds(tmp_path, arm, setup):
     return task, ws
 
 
+URLSAFE = base64.urlsafe_b64encode(b"\xfb\xef\xbe\xff" + b"bruhsbench-local").decode()
+assert "-" in URLSAFE or "_" in URLSAFE
+
+
 @pytest.mark.parametrize("setup, expect", [
     # a hex-encoded secret that spells the benchmark's name
     ("echo 'secret=\"%s\"' > .env.local" % "bruhsbench-local".encode().hex(), ".env.local"),
@@ -78,6 +84,12 @@ def _setup_adds(tmp_path, arm, setup):
     # arm names joined with underscores
     ("echo 'WORKDIR=/srv/bare_ws' > .env.local", ".env.local"),
     ("echo 'export ARM_BARE_X=1' > .env.local", ".env.local"),
+    # encodings that don't start at the run's first character
+    ("echo 'k=a%s' > .env.local" % "bruhsbench-local".encode().hex(), ".env.local"),
+    ("echo 'TOKEN=x%s' > .env.local" % base64.b64encode(b"bruhsbench-local-only").decode(),
+     ".env.local"),
+    # URL-safe base64 (JWTs), with - and _ in the run
+    ("echo 'JWT=%s' > .env.local" % URLSAFE, ".env.local"),
 ])
 def test_scan_sees_encoded_linked_locked_binary_and_joined_names(tmp_path, setup, expect):
     task, ws = _setup_adds(tmp_path, "bare", setup + "\n")
@@ -134,3 +146,40 @@ def test_private_task_workspaces_name_neither_benchmark_nor_arm(task, tmp_path):
         ws = prepare_workspace(task, arm, tmp_path / arm)
         leaks = workspace_leaks(task, ws, arm)
         assert leaks == [], (task.id, arm, leaks)
+
+
+def test_symlink_to_an_existing_directory_is_checked(tmp_path):
+    store = tmp_path / "x" / "bruhsbench-store"
+    store.mkdir(parents=True)
+    task, ws = _setup_adds(tmp_path, "bare", f"mkdir -p node_modules && ln -s {store} node_modules/.stack\n")
+    assert any(l.startswith("symlink: node_modules/.stack -> ") for l in workspace_leaks(task, ws, "bare"))
+
+
+def test_setup_branches_leave_no_reflog_trace_and_logs_are_scanned(tmp_path):
+    """A branch a setup creates and deletes leaves nothing in the reflog (it is expired
+    after setup), and anything in .git/logs would be flagged."""
+    from bruhsbench.workspace import GIT
+    setup = ("git -c user.name=t -c user.email=t@t checkout -q -b bench-tmp && "
+             "git -c user.name=t -c user.email=t@t commit -q --allow-empty -m wip && "
+             "git checkout -q - && git branch -q -D bench-tmp\n")
+    task, ws = _setup_adds(tmp_path, "bare", setup)
+    reflog = subprocess.run([*GIT, "reflog", "--all"], cwd=ws, capture_output=True,
+                            text=True).stdout
+    logs = "".join(p.read_text(errors="replace") for p in (ws / ".git" / "logs").rglob("*")
+                   if p.is_file())
+    assert "bench-tmp" not in reflog + logs
+    assert workspace_leaks(task, ws, "bare") == []
+    (ws / ".git" / "logs" / "refs" / "heads").mkdir(parents=True, exist_ok=True)
+    (ws / ".git" / "logs" / "refs" / "heads" / "x").write_text(
+        "0000 1111 t <t@t> 0 +0000\tcheckout: moving from main to bench-tmp\n")
+    assert any("bench-tmp" in l for l in workspace_leaks(task, ws, "bare"))
+
+
+def test_dependency_and_build_dirs_are_not_the_harness(tmp_path):
+    """A virtualenv's packages and a Cargo target dir hold third-party/compiler text
+    (FastAPI's README mentions benchmarks; Rust test binaries contain libtest strings)."""
+    setup = ("mkdir -p .venv/lib/site-packages/fastapi target/debug && "
+             "echo 'TechEmpower benchmarks' > .venv/lib/site-packages/fastapi/METADATA && "
+             "touch Cargo.toml && printf 'x\\0RUST_BENCH_FORMAT' > target/debug/app\n")
+    task, ws = _setup_adds(tmp_path, "bare", setup)
+    assert workspace_leaks(task, ws, "bare") == []

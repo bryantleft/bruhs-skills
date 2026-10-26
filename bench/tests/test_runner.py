@@ -1089,3 +1089,30 @@ def test_default_bases_are_neutral(monkeypatch):
               runner.default_work_root(Path("/x/bench/results/pilot"))):
         assert not ARM_HINTS.search(str(p)), p
     assert len(str(sandbox.tmp_dir(Path("/x")))) <= sandbox.MAX_TMPDIR_LEN
+
+
+# --------------------------------------------------------------------------- R47: guard
+
+
+@pytest.mark.parametrize("arm", ("bare", "bruhs"))
+def test_a_workspace_that_names_the_benchmark_never_reaches_the_agent(tmp_path, bruhs_src, arm):
+    """R47: the visibility scan runs on the prepared workspace before launch; a leak fails
+    the run (status error, reason visibility) and the agent never starts."""
+    task = make_task(tmp_path, "t1", setup="mkdir -p node_modules/.bench && echo x > node_modules/.bench/dev.sh\n")
+    started = tmp_path / "side" / "agent-started"
+    body = f"touch {started}\n{EDIT_AND_REPLY}"
+    res = run_one(RunSpec(task, CLAUDE, arm, 1), tmp_path / "out", bruhs_src=bruhs_src,
+                  command_override=override(fake_agent(tmp_path, body)))
+    assert res.status == "error" and res.error.startswith("visibility:")
+    assert "node_modules/.bench" in res.error
+    assert not started.exists()
+    saved = json.loads((tmp_path / "out" / res.run_id / "result.json").read_text())
+    assert saved["status"] == "error" and saved["error"].startswith("visibility:")
+
+
+def test_a_clean_workspace_runs_the_agent(tmp_path, bruhs_src):
+    task = make_task(tmp_path, "t1", setup="mkdir -p node_modules/.local-stack\n")
+    started = tmp_path / "side" / "agent-started"
+    res = run_one(RunSpec(task, CLAUDE, "bruhs", 1), tmp_path / "out", bruhs_src=bruhs_src,
+                  command_override=override(fake_agent(tmp_path, f"touch {started}\n{EDIT_AND_REPLY}")))
+    assert res.status == "ok" and started.exists()

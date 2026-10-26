@@ -152,6 +152,9 @@ def prepare_workspace(
     # after_base.sh leaves work the agent starts from uncommitted (staged, unstaged,
     # untracked); it shows in the run's diff against the base like the agent's own edits.
     _run_task_script(task, task.after_base, dest)
+    # what setup did in git (branches it made and dropped, checkouts) stays out of the
+    # reflog an agent can read, as for the checkout itself
+    _git(dest, "reflog", "expire", "--expire=now", "--all")
     return dest
 
 

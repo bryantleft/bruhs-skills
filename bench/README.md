@@ -60,7 +60,12 @@ the bruhs arm's home) and `npx`, which starts chrome-devtools-mcp.
   in the bruhs arm's home, is named bruhs: that is the treatment.) The workspace's git is
   neutral too (R42): the base commit is `dev <dev@localhost>`, "setup", tagged `base`
   (seeded fixtures start from an "initial" commit). Checklists frozen earlier that say
-  `bench-base` get that tag only in the graders' own clones.
+  `bench-base` get that tag only in the graders' own clones. Before an agent starts, the
+  runner scans its prepared workspace for anything the harness or setup wrote that names the
+  benchmark or an arm (`bruhsbench/visibility.py`: paths, added lines, decoded hex/base64,
+  symlink targets, git metadata and reflogs); a hit fails the run with status `error`
+  ("visibility: …") and the agent never runs (ruling R47; a few seconds per workspace).
+  `uv run pytest -m private` runs the same scan over every private task in both arms.
 - **OS sandbox.** Agents, judges, probes, grader check commands and capture dev servers all run
   under `sandbox-exec`. They cannot read or write the real home (except a read-only
   allowlist of tool installs: the CLIs, node, uv's Pythons, `~/.cargo/{bin,registry,git}`,

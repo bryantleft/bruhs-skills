@@ -15,7 +15,12 @@ the task's own code (a real repo's files at ``base``, a seeded fixture's files):
   seed data legitimately holds words like the card name "Bench";
 * the workspace's git metadata: authors, committers and full commit messages of the
   harness's commits, refs, ``.git/config`` (minus git's own ``core.bare`` key),
-  ``.git/info/exclude``, ``.git/description`` and ``.git/hooks/*``.
+  ``.git/info/exclude``, ``.git/description``, ``.git/hooks/*`` and the reflogs
+  (``.git/logs/**``; :func:`workspace.prepare_workspace` expires them after setup).
+
+Limits: a file over 512 KB (:data:`MAX_TEXT_BYTES`) or with a NUL byte in its first 8 KB
+gets only the case-sensitive byte search for :data:`BYTE_TOKENS`, not the line, decoding or
+arm-name checks.
 
 Matches (:data:`HINT_RE`) are case-insensitive ``bench``/``bruhs`` anywhere and ``bare`` as
 a word with ``_`` counted as a separator (``bare_ws``, ``ARM_BARE_X``), not inside a word
@@ -39,8 +44,8 @@ from .types import Arm, Task
 from .workspace import GIT, strip_bruhs_blocks
 
 HINT_RE = re.compile(r"bench|bruhs|(?<![A-Za-z0-9])bare(?![A-Za-z0-9])", re.IGNORECASE)
-HEX_RUN_RE = re.compile(r"(?:[0-9a-fA-F]{2}){8,}")
-B64_RUN_RE = re.compile(r"[A-Za-z0-9+/]{16,}={0,2}")
+HEX_RUN_RE = re.compile(r"[0-9a-fA-F]{16,}")
+B64_RUN_RE = re.compile(r"[A-Za-z0-9+/_-]{16,}={0,2}")
 # the harness's own tokens, searched case-sensitively in large or binary files
 BYTE_TOKENS = (b"bruhs", b"mints-bench", b"__bench", b".bench/", b"BENCH_")
 MAX_TEXT_BYTES = 512_000
@@ -49,22 +54,33 @@ LOCKFILES = ("pnpm-lock.yaml", "package-lock.json", "yarn.lock", "bun.lock", "bu
              "Cargo.lock", "uv.lock", "poetry.lock")
 
 
+def _decodings(text: str):
+    """Hex runs decoded at offsets 0 and 1, base64 runs (standard and URL-safe) at offsets
+    0-3: an encoding needn't start where the run of its alphabet does (``k=a<hex>``)."""
+    for m in HEX_RUN_RE.finditer(text):
+        run = m.group(0)
+        for o in (0, 1):
+            part = run[o:]
+            yield bytes.fromhex(part[:len(part) - len(part) % 2])
+    for m in B64_RUN_RE.finditer(text):
+        run = m.group(0).rstrip("=")
+        for o in range(4):
+            part = run[o:]
+            part = part[:len(part) - len(part) % 4]
+            if len(part) < 12:
+                continue
+            for alt in (b"+/", b"-_"):
+                try:
+                    yield base64.b64decode(part, altchars=alt, validate=True)
+                except (binascii.Error, ValueError):
+                    pass
+
+
 def _hint(text: str) -> bool:
     """A benchmark or arm name in ``text`` or in a hex or base64 run decoded from it."""
     if HINT_RE.search(text):
         return True
-    for m in HEX_RUN_RE.finditer(text):
-        if HINT_RE.search(bytes.fromhex(m.group(0)).decode("latin-1")):
-            return True
-    for m in B64_RUN_RE.finditer(text):
-        run = m.group(0)
-        try:
-            raw = base64.b64decode(run + "=" * (-len(run) % 4), validate=True)
-        except (binascii.Error, ValueError):
-            continue
-        if HINT_RE.search(raw.decode("latin-1")):
-            return True
-    return False
+    return any(HINT_RE.search(raw.decode("latin-1")) for raw in _decodings(text))
 
 
 def _lockfile_name(p: Path, data: bytes) -> str | None:
@@ -114,9 +130,18 @@ TOOL_DOT_ENTRIES = (".pnpm", ".bin", ".cache", ".vite", ".vite-temp", ".modules.
                     ".package-lock.json", ".ignored", ".tmp", ".prisma")
 
 
+# installed dependencies and build output: their contents are the dependencies' (or the
+# compiler's) own, e.g. a FastAPI README that mentions benchmarks, libtest strings in a
+# Rust test binary
+THIRD_PARTY_DIRS = (".venv", "venv", "site-packages", "__pycache__")
+
+
 def _third_party(rel: str) -> bool:
-    """Under ``node_modules/<pkg>`` (a package, or a package manager's own dot dir)."""
+    """Under ``node_modules/<pkg>`` (a package, or a package manager's own dot dir), a
+    Python virtualenv / site-packages, or ``__pycache__``."""
     parts = rel.split("/")
+    if any(part in THIRD_PARTY_DIRS for part in parts[:-1]) or parts[-1] in THIRD_PARTY_DIRS:
+        return True
     for i, part in enumerate(parts[:-1]):
         if part == "node_modules":
             nxt = parts[i + 1]
@@ -140,20 +165,34 @@ def _walk(ws: Path):
     for dirpath, dirnames, filenames in os.walk(ws):
         rel_dir = Path(dirpath).relative_to(ws).as_posix()
         rel_dir = "" if rel_dir == "." else rel_dir + "/"
-        dirnames[:] = [d for d in dirnames if d != ".git"
+        # a symlink to a directory is listed as a directory but never walked: report it
+        # as an entry so its target is checked
+        links = [d for d in dirnames if os.path.islink(os.path.join(dirpath, d))]
+        dirnames[:] = [d for d in dirnames if d != ".git" and d not in links
                        and not _third_party(rel_dir + d)]
+        for d in links:
+            if not _third_party(rel_dir + d):
+                yield rel_dir + d, False
         for d in dirnames:
             yield rel_dir + d, True
         for f in filenames:
             yield rel_dir + f, False
 
 
+def _cargo_targets(ws: Path) -> list[str]:
+    """Cargo build dirs: ``target/`` next to a Cargo.toml (build output, not the harness's)."""
+    return sorted(str(p.parent.relative_to(ws) / "target").removeprefix("./") + "/"
+                  for p in ws.glob("**/Cargo.toml")
+                  if "node_modules" not in p.parts and (p.parent / "target").is_dir())
+
+
 def workspace_leaks(task: Task, ws: Path, arm: Arm) -> list[str]:
     ws = Path(ws)
     source = _source_files(task) or {}
+    targets = [t.removeprefix("./") for t in _cargo_targets(ws)]
     found: list[str] = []
     for rel, is_dir in _walk(ws):
-        if _third_party(rel):
+        if _third_party(rel) or any((rel + "/").startswith(t) for t in targets):
             continue
         if is_dir:
             if _hint(rel.rsplit("/", 1)[-1]) and not any(
@@ -210,7 +249,8 @@ def workspace_leaks(task: Task, ws: Path, arm: Arm) -> list[str]:
     if config.is_file():  # git's own `bare = false` key is not an arm name
         meta.append(re.sub(r"(?m)^\s*bare\s*=\s*(true|false)\s*$", "", config.read_text()))
     for extra in (git_dir / "info" / "exclude", git_dir / "description",
-                  *sorted((git_dir / "hooks").glob("*"))):
+                  *sorted((git_dir / "hooks").glob("*")),
+                  *sorted((git_dir / "logs").rglob("*"))):  # reflogs
         if extra.is_file() and not extra.is_symlink():
             meta.append(extra.read_text(errors="replace"))
     for line in "\n".join(meta).splitlines():
