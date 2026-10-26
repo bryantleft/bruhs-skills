@@ -68,6 +68,7 @@ from .homes import (AGENT_TOOL_HOMES, ClaudeAuthMissing, bruhs_content_hash, bui
 from .sandbox import (PLAYWRIGHT_BROWSER_RE, PLAYWRIGHT_CACHE, check_tmp_base, read_allow, private_tmp, real_home, remove_private_tmp,
                       work_base, wrap)
 from .types import Arm, Cli, ModelSpec, RunResult, RunSpec, Task
+from .visibility import _hint as hint
 from .visibility import workspace_leaks
 from .workspace import BASE_TAG, SetupFailed, check_task_setup, prepare_workspace
 
@@ -690,8 +691,7 @@ def run_one(
     # R47: nothing in the prepared workspace may name the benchmark or the arm; a leak
     # fails the run before the agent ever starts (a few seconds even on the largest
     # private workspace, so it runs per run rather than as a per-task preflight)
-    leaks = workspace_leaks(spec.task, workspace, spec.arm)
-    if leaks:
+    def visibility_failure(leaks: list[str]) -> RunResult:
         reason = "visibility: " + "; ".join(leaks[:20])
         (out_dir / "stderr.txt").write_text(reason + "\n")
         for p in (transcript, diff_path, out_dir / "final.txt"):
@@ -699,6 +699,10 @@ def run_one(
         result = replace(base, status="error", error=reason)
         _write_result(out_dir, result)
         return result
+
+    leaks = workspace_leaks(spec.task, workspace, spec.arm)
+    if leaks:
+        return visibility_failure(leaks)
 
     env = build_home(cli, spec.arm, run_dir, bruhs_src)
     argv = build_command(spec.model, spec.arm, spec.task.prompt, workspace,
@@ -708,6 +712,12 @@ def run_one(
     # R19/R21: no real home, no other run or root under the work base, private TMPDIR
     argv = wrap(argv, writable=[run_dir], denied=[work_root])
     env = private_tmp(env, run_dir)
+    # ... nor may the paths the agent itself is given (a work root passed in directly,
+    # or a base that slipped past work_base()/tmp_base())
+    seen = {"cwd": str(workspace.resolve()), "HOME": env.get("HOME", ""),
+            "TMPDIR": env.get("TMPDIR", "")}
+    if bad := [f"{k}={v}" for k, v in seen.items() if v and hint(v)]:
+        return visibility_failure([f"agent path {b}" for b in bad])
 
     # R22: the agent's stdout/stderr are drained over pipes straight into the results
     # dir (outside the sandbox); there is no stdout file in the run dir for the agent to

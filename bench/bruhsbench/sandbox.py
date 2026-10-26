@@ -198,9 +198,22 @@ def real_home() -> Path:
     return home
 
 
+# a path an agent sees must not name the benchmark or an arm (R40; visibility.HINT_RE)
+NAME_HINT_RE = re.compile(r"bench|bruhs|(?<![A-Za-z0-9])bare(?![A-Za-z0-9])", re.IGNORECASE)
+
+
+def _neutral(var: str, path: Path) -> Path:
+    if NAME_HINT_RE.search(str(path)):
+        raise ValueError(f"${var}={str(path)!r} names the benchmark or an arm; agents see "
+                         "paths under it (cwd, HOME, TMPDIR): use a neutral directory")
+    return path
+
+
 def work_base() -> Path:
-    """Where every run, judge and grading root lives (``$BRUHSBENCH_WORK``)."""
-    return Path(os.environ.get("BRUHSBENCH_WORK") or DEFAULT_WORK_BASE)
+    """Where every run, judge and grading root lives (``$BRUHSBENCH_WORK``); refused if
+    it names the benchmark or an arm."""
+    return _neutral("BRUHSBENCH_WORK",
+                    Path(os.environ.get("BRUHSBENCH_WORK") or DEFAULT_WORK_BASE))
 
 
 def darwin_temp_dir() -> Path | None:
@@ -335,7 +348,10 @@ def tmp_base() -> Path:
     path = Path(os.path.normpath(raw))
     if path.name in ("", ".."):
         raise TmpDirInvalid(f"${TMP_BASE_ENV}={raw!r} must name a directory below /")
-    return path.parent.resolve() / path.name
+    try:
+        return _neutral(TMP_BASE_ENV, path.parent.resolve() / path.name)
+    except ValueError as exc:
+        raise TmpDirInvalid(str(exc)) from None
 
 
 def tmp_dir(root: Path) -> Path:

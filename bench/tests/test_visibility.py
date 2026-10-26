@@ -219,3 +219,18 @@ def test_name_exclusions_never_apply_inside_a_harness_dir(tmp_path):
     leaks = workspace_leaks(task, ws, "bare")
     assert any(l.startswith("node_modules/.local-stack/venv/cfg") for l in leaks)
     assert any(l.startswith(".venv/env") for l in leaks)
+
+
+def test_repo_path_token_is_searched_in_dependency_trees(tmp_path, monkeypatch):
+    """The bench repo's path is a token in its own right (a repo checked out under a name
+    without "bruhs" must still be caught in a .pth or dep-info file)."""
+    import bruhsbench.visibility as V
+
+    repo = tmp_path / "checkouts" / "agentkit"
+    monkeypatch.setattr(V, "BRUHS_REPO", repo)
+    setup = ("mkdir -p .venv/lib/site-packages && touch .venv/pyvenv.cfg && "
+             f"echo '{repo}/src' > .venv/lib/site-packages/_editable.pth\n")
+    task, ws = _setup_adds(tmp_path, "bare", setup)
+    leaks = workspace_leaks(task, ws, "bare")
+    assert any(l.startswith(".venv/lib/site-packages/_editable.pth") and str(repo) in l
+               for l in leaks), leaks

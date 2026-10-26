@@ -20,10 +20,11 @@ the task's own code (a real repo's files at ``base``, a seeded fixture's files):
 
 Dependency and build trees (``node_modules/<pkg>``, site-packages, a real virtualenv, a
 Cargo ``target/``; see :func:`_excluded`) get a reduced check: symlink targets and a
-case-sensitive byte search for :func:`_reduced_tokens`. Build output records the
-workspace's own absolute path, so the workspace must live under a neutral path, as a run's
-does (``<work base>/<12 hex>/workspace``, R40); a ``$BRUHSBENCH_WORK`` naming the benchmark
-would trip the guard.
+case-sensitive byte search for :func:`_reduced_tokens`. This scan doesn't judge the
+workspace's own location (build output records it, and it is checked elsewhere):
+``sandbox.work_base()``/``tmp_base()`` refuse a ``$BRUHSBENCH_WORK``/``$BRUHSBENCH_TMP`` that
+names the benchmark or an arm, and the runner checks the agent's cwd, HOME and TMPDIR
+before launch.
 
 Limits: a file over 512 KB (:data:`MAX_TEXT_BYTES`) or with a NUL byte in its first 8 KB
 gets only the case-sensitive byte search for :data:`BYTE_TOKENS`, not the line, decoding or

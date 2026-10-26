@@ -1021,7 +1021,9 @@ def test_harness_only_commit_does_not_block_resume(tmp_path, skill_repo):
     assert commits[0] != commits[1]  # recorded per start, as information only
 
 
-def test_bruhs_skill_change_blocks_resume(tmp_path, skill_repo):
+def test_skill_content_change_blocks_resume(tmp_path, skill_repo):
+    # (named without "bruhs": tmp_path carries the test name, and work_base() refuses a
+    # work root naming the benchmark)
     task = make_task(tmp_path, "t1")
     out = tmp_path / "out"
     ov = override(fake_agent(tmp_path, EDIT_AND_REPLY))
@@ -1116,3 +1118,42 @@ def test_a_clean_workspace_runs_the_agent(tmp_path, bruhs_src):
     res = run_one(RunSpec(task, CLAUDE, "bruhs", 1), tmp_path / "out", bruhs_src=bruhs_src,
                   command_override=override(fake_agent(tmp_path, f"touch {started}\n{EDIT_AND_REPLY}")))
     assert res.status == "ok" and started.exists()
+
+
+@pytest.mark.parametrize("name", ["w-bench-runs", "w-bruhs-x"])
+def test_a_work_root_naming_the_benchmark_never_reaches_the_agent(tmp_path, bruhs_src, name):
+    """The agent sees its cwd, HOME and TMPDIR: a work root naming the benchmark fails the
+    run before launch (the files inside can be clean)."""
+    task = make_task(tmp_path, "t1")
+    started = tmp_path / "side" / "agent-started"
+    work = Path(tempfile.mkdtemp(prefix="n", dir="/private/tmp")) / name
+    try:
+        res = run_one(RunSpec(task, CLAUDE, "bare", 1), tmp_path / "out", bruhs_src=bruhs_src,
+                      work_root=work,
+                      command_override=override(fake_agent(tmp_path, f"touch {started}\n{EDIT_AND_REPLY}")))
+        assert res.status == "error" and res.error.startswith("visibility:")
+        assert name in res.error and not started.exists()
+    finally:
+        shutil.rmtree(work.parent, ignore_errors=True)
+
+
+def test_a_neutral_12_hex_work_root_runs(tmp_path, bruhs_src):
+    task = make_task(tmp_path, "t1")
+    started = tmp_path / "side" / "agent-started"
+    work = Path(tempfile.mkdtemp(prefix="n", dir="/private/tmp")) / "0123456789ab"
+    try:
+        res = run_one(RunSpec(task, CLAUDE, "bare", 1), tmp_path / "out", bruhs_src=bruhs_src,
+                      work_root=work,
+                      command_override=override(fake_agent(tmp_path, f"touch {started}\n{EDIT_AND_REPLY}")))
+        assert res.status == "ok" and started.exists()
+    finally:
+        shutil.rmtree(work.parent, ignore_errors=True)
+
+
+@pytest.mark.parametrize("var, value", [("BRUHSBENCH_WORK", "/private/tmp/bench-work"),
+                                        ("BRUHSBENCH_WORK", "/private/tmp/x/bruhs"),
+                                        ("BRUHSBENCH_TMP", "/private/tmp/bare_t")])
+def test_bases_naming_the_benchmark_are_refused_up_front(monkeypatch, var, value):
+    monkeypatch.setenv(var, value)
+    with pytest.raises(ValueError, match="names the benchmark or an arm"):
+        sandbox.work_base() if var == "BRUHSBENCH_WORK" else sandbox.tmp_base()
