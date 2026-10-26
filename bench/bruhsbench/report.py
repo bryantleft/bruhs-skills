@@ -305,9 +305,11 @@ def context(summary: Summary, private: bool) -> dict:
         "private": private,
         "date": date.today().isoformat(),
         "matrix": {"bruhs_content": m.get("bruhs_content") or "",
-                   "bruhs_commit": (m.get("bruhs_commit")
-                                    or ((m.get("starts") or [{}])[0].get("harness_commit"))
-                                    or "unknown"),
+                   # R41 matrices pin the content; the harness commits are per start
+                   "harness_commits": list(dict.fromkeys(
+                       s["harness_commit"] for s in m.get("starts") or []
+                       if s.get("harness_commit"))),
+                   "bruhs_commit": m.get("bruhs_commit") or "unknown",
                    "repeats": m.get("repeats"), "seed": m.get("seed"),
                    "cli_versions": m.get("cli_versions", {}),
                    "models": m.get("models") or [asdict(s) for s in MODELS

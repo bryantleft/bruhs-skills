@@ -78,7 +78,7 @@ figcaption { color: var(--muted); font-size: 12px; }
 <div class="viz-root">
 <main>
 <h1>Does bruhs help?</h1>
-<p class="meta">Generated {{ date }} &middot; bruhs commit <code>{{ matrix.bruhs_commit[:12] }}</code>{% if matrix.bruhs_content %} (skill content <code>{{ matrix.bruhs_content[:12] }}</code>){% endif %}
+<p class="meta">Generated {{ date }} &middot; {% if matrix.bruhs_content %}bruhs content <code>{{ matrix.bruhs_content[:12] }}</code> &middot; harness commit{{ 's' if matrix.harness_commits|length > 1 }} {% for c in matrix.harness_commits %}<code>{{ c[:12] }}</code>{% if not loop.last %}, {% endif %}{% endfor %}{% else %}bruhs commit <code>{{ matrix.bruhs_commit[:12] }}</code>{% endif %}
  &middot; {{ matrix.repeats or "?" }} repeats per task, model and arm{% if not private %} &middot; public report{% endif %}</p>
 
 <p>Each task ran with the same prompt, model, effort, tools and sandbox in two arms:

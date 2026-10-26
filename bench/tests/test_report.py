@@ -71,3 +71,28 @@ def test_method_states_the_tmp_write_limitation(tmp_path, summary):
         html, md = render(summary, tmp_path / str(private), private=private)
         for text in (html.read_text(), md.read_text()):
             assert "/tmp" in text and "TMPDIR" in text and "both arms" in text
+
+
+@pytest.mark.parametrize("legacy", (False, True))
+def test_header_names_the_pinned_bruhs(tmp_path, summary, legacy):
+    """R41 matrices pin the bruhs content hash; the header shows it and the harness
+    commit(s) of the starts. Older matrices still show their pinned bruhs commit."""
+    import dataclasses
+
+    if legacy:
+        matrix = {"bruhs_commit": "c0ffee" * 7, "starts": [{}]}
+    else:
+        matrix = {"bruhs_content": "abc123" * 10,
+                  "starts": [{"harness_commit": "1111aaaa" * 5},
+                             {"harness_commit": "2222bbbb" * 5},
+                             {"harness_commit": "1111aaaa" * 5}]}
+    html, md = render(dataclasses.replace(summary, matrix=matrix), tmp_path / "o",
+                      private=True)
+    for text in (html.read_text(), md.read_text()):
+        if legacy:
+            assert "bruhs commit" in text and "c0ffeec0ffee" in text
+        else:
+            assert "bruhs commit" not in text and "bruhs content" in text
+            assert "abc123abc123" in text
+            assert "1111aaaa1111" in text and "2222bbbb2222" in text
+            assert text.count("1111aaaa1111") == 1  # each harness commit once
