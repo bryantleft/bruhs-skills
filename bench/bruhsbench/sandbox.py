@@ -140,8 +140,11 @@ READ_ALLOW: tuple[Path, ...] = (
 # profiles (mcp-chrome-*: cookies, saved logins) and other state (b/, .links): only the
 # browser installs in it are readable.
 PLAYWRIGHT_CACHE = Path("Library/Caches/ms-playwright")
-PLAYWRIGHT_BROWSER_RE = re.compile(r"(?:chromium|chromium_headless_shell|ffmpeg|firefox"
-                                   r"|webkit)-\d+")
+# install dirs are "<browser>-<revision>", the browser name with - or _ separators
+# (chromium_tip_of_tree, chromium-tip-of-tree, firefox_beta, ...); never mcp-* profiles
+PLAYWRIGHT_BROWSER_RE = re.compile(
+    r"(?:chromium(?:[-_]tip[-_]of[-_]tree)?(?:[-_]headless[-_]shell)?"
+    r"|firefox(?:[-_]beta)?|webkit|ffmpeg)-\d+")
 
 
 def read_allow(home: Path) -> list[Path]:

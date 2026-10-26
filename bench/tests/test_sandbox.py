@@ -880,3 +880,16 @@ def test_cargo_and_rustup_secrets_unreadable():
         assert HOME / rel in allowed
     assert HOME / "Library/Caches/ms-playwright" not in allowed
     assert HOME / ".cargo" not in allowed and HOME / ".rustup" not in allowed
+
+
+@pytest.mark.parametrize("name, ok", [
+    ("chromium-1248", True), ("chromium_headless_shell-1248", True), ("ffmpeg-1013", True),
+    ("firefox-1490", True), ("webkit-2203", True),
+    ("chromium-tip-of-tree-1380", True), ("chromium_tip_of_tree-1380", True),
+    ("chromium_tip_of_tree_headless_shell-1380", True), ("firefox_beta-1490", True),
+    ("firefox-beta-1490", True),
+    ("mcp-chrome-3e16e53", False), ("mcp-chromium-1248", False), ("b", False),
+    (".links", False), ("chromium-1248-evil", False), ("chromium", False),
+])
+def test_playwright_browser_dir_names(name, ok):
+    assert bool(sandbox.PLAYWRIGHT_BROWSER_RE.fullmatch(name)) is ok
