@@ -28,4 +28,5 @@ addopts = "-m 'not live' --ignore=tests/reference"
 markers = [
     "live: tests that call real agent CLIs (excluded by default)",
     "seeded: builds seeded task fixtures (setup.sh: npm ci / cargo build) and grades them; slow",
+    "private: prepares every private task's workspace in both arms (gitignored tasks; slow)",
 ]
