@@ -8,7 +8,7 @@ never in the agent's workspace:
   exit code; then the task's ``hidden/`` contents are copied in at the same relative
   paths and ``checks["hidden"]`` runs -> pass/total (hidden/ without checks.hidden is
   a task error).
-* base copy (reset to ``bench-base``): ``checks["test"]`` again; a test passing at base
+* base copy (reset to the base tag): ``checks["test"]`` again; a test passing at base
   and present-and-failing after is a regression (R31). A base-passing test missing after
   (renamed, deleted) goes to ``removed_tests`` instead, reported but not a regression --
   unless the reporter flagged a test file that failed to load after (a jest/vitest suite
@@ -24,7 +24,7 @@ line (counts only). With nothing parseable the exit code decides: 1/1 or 0/1, an
 regression is reported under the check's name when base passed and after failed; when
 only the base run names tests and the agent's run fails, every base-passing test counts.
 
-If bench-base can't be restored (no .git / no tag) ``regressions`` and ``removed_tests``
+If the base can't be restored (no .git / no tag) ``regressions`` and ``removed_tests``
 are None and ``error``
 says why; the other checks still run. Checks get the harness environment minus
 credentials and agent-CLI configuration, with ``HOME`` in the scratch dir
@@ -297,7 +297,7 @@ def run_check(name: str, cmd: str, cwd: Path, scratch: Path, log_dir: Path) -> C
 
 
 def _to_base(copy: Path) -> None:
-    """Reset a copy to bench-base; ignored files (deps installed by setup) stay."""
+    """Reset a copy to the base; ignored files (deps installed by setup) stay."""
     untrusted.git(copy, "reset", "--quiet", "--hard", BASE_TAG)
     untrusted.git(copy, "clean", "--quiet", "-fd")
 
@@ -340,7 +340,7 @@ def _regressions(name: str, base: CheckResult, after: CheckResult
 
 
 def _base_problem(copy: Path, workspace: Path) -> str | None:
-    """Why the bench-base state can't be restored (checked in ``copy``, a clone of the
+    """Why the the base state can't be restored (checked in ``copy``, a clone of the
     agent's ``workspace``), if it can't."""
     if not os.path.lexists(copy / ".git"):
         return f"no .git in {workspace}"

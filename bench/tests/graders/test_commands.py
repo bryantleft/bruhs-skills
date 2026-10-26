@@ -216,7 +216,7 @@ def test_missing_base_tag_records_error_and_keeps_checks(tmp_path, make_run):
     assert g["applicable"] is True
     assert g["checks"] == {"test": True, "build": True}
     assert g["regressions"] is None and g["removed_tests"] is None
-    assert "bench-base" in g["error"]
+    assert f"tag {BASE_TAG} missing" in g["error"]
 
 
 def test_hidden_dir_without_hidden_check_is_an_error(tmp_path, make_run):

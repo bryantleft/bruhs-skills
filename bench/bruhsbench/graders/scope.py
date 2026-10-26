@@ -1,6 +1,6 @@
 """Scope creep: files and lines the agent changed outside ``task.allowed_paths``.
 
-Reads the run's ``diff.patch`` (``git diff --binary`` vs bench-base). A file is inside
+Reads the run's ``diff.patch`` (``git diff --binary`` vs the base). A file is inside
 scope when any of its paths (both sides of a rename) matches an ``fnmatch`` glob (``*``
 spans ``/``, so ``app/**`` and ``app/*`` both cover the whole tree). No globs = everything
 is in scope. Lines = added + removed lines; binary files count as 0 lines.

@@ -45,7 +45,7 @@ class Task:
     known_issues: Path | None
     checklist: Path | None
     heldout: bool
-    # runs after the bench-base commit: leaves uncommitted work (e.g. a messy diff to ship)
+    # runs after the the base commit: leaves uncommitted work (e.g. a messy diff to ship)
     after_base: Path | None = None
 
 

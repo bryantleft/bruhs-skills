@@ -57,7 +57,10 @@ the bruhs arm's home) and `npx`, which starts chrome-devtools-mcp.
   work root, each run's dir (`<work root>/<12 hex>/{home,workspace}`) and its `TMPDIR` are
   opaque hashes under neutral bases (`/private/tmp/w`, `/private/tmp/t`). Only
   `<results>/work_ids.json` maps a run dir back to its run id. (The bruhs install itself,
-  in the bruhs arm's home, is named bruhs: that is the treatment.)
+  in the bruhs arm's home, is named bruhs: that is the treatment.) The workspace's git is
+  neutral too (R42): the base commit is `dev <dev@localhost>`, "setup", tagged `base`
+  (seeded fixtures start from an "initial" commit). Checklists frozen earlier that say
+  `bench-base` get that tag only in the graders' own clones.
 - **OS sandbox.** Agents, judges, probes, grader check commands and capture dev servers all run
   under `sandbox-exec`. They cannot read or write the real home (except a read-only
   allowlist of tool installs: the CLIs, node, uv's Pythons, `~/.cargo/{bin,registry,git}`,
@@ -149,7 +152,7 @@ would add up to tens of GB, so use `pipeline`, or `clean` after `grade`.
   repos (`tasks-private/`, gitignored). Each task has one category and a frozen hidden
   checklist, hidden tests or known issues.
   A task's `setup.sh` (installing deps, or putting the repo on the branch a review was
-  left on) runs before the `bench-base` commit; an optional `after_base.sh` runs after it,
+  left on) runs before the base commit (tagged `base`); an optional `after_base.sh` runs after it,
   for tasks that start from uncommitted work. Hidden tests (`hidden/`) are copied into a
   copy of the finished workspace and run by the task's `checks.hidden`, which is
   self-contained: tasks that test in a browser build and serve the app themselves. Reference

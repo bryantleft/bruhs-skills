@@ -185,3 +185,27 @@ def test_ship_prompt_skips_head_only_commit_messages(run, monkeypatch):
     monkeypatch.setattr(J, "judge_call", fake)
     checklist.grade(task, run_dir, [SPEC["codex"], SPEC["grok"]])
     assert calls == []
+
+
+def test_frozen_scripts_naming_the_old_base_tag_still_work(tmp_path, make_run):
+    """Checklists frozen before R42 say `bench-base`; the agent's workspace no longer has
+    that tag, so the graders add it to their disposable clone only."""
+    from bruhsbench.workspace import BASE_TAG, FROZEN_BASE_ALIAS
+
+    r = make_run({"README.md": "# tool\n"}, run_id="ship__claude__bare__r1")
+    r.write({"README.md": "# tool\nmore\n"})
+    git(r.workspace, "add", "-A")
+    git(r.workspace, "commit", "-qm", "docs: more")
+    run_dir = r.finish()
+    (tmp_path / "task").mkdir(exist_ok=True)
+    cl = tmp_path / "task" / "checklist.json"
+    cl.write_text(json.dumps({"items": [
+        {"id": "committed", "text": "a commit past the base", "check": "script",
+         "script": f"[ -n \"$(git rev-list --branches --not {FROZEN_BASE_ALIAS})\" ]"},
+        {"id": "new-tag", "text": "the base tag", "check": "script",
+         "script": f"git rev-parse --verify -q {BASE_TAG}"}]}))
+    task = make_task(tmp_path, id="ship", category="ship", checklist=cl, prompt="Ship it.")
+    out = checklist.grade(task, run_dir, [SPEC["codex"], SPEC["grok"]])
+    assert [i["hit"] for i in out["items"]] == [True, True]
+    tags = git(r.workspace, "tag")
+    assert FROZEN_BASE_ALIAS not in (tags if isinstance(tags, str) else tags.stdout)

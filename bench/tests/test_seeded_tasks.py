@@ -1,7 +1,7 @@
 """Validate each seeded task end to end with the real graders (Task 10, Step 2).
 
 For every task in ``SEEDED``: build its workspace exactly as a run would
-(``prepare_workspace``: fixture copy, setup.sh, bench-base commit, after_base.sh), then grade
+(``prepare_workspace``: fixture copy, setup.sh, base commit, after_base.sh), then grade
 
 * the untouched workspace -> low score, and
 * the workspace with the reference solution applied (``tests/reference/<task>/apply.sh``,
@@ -410,7 +410,7 @@ def test_ship_judges_see_commits_on_every_branch(prepared, tmp_path, monkeypatch
     assert "src/util/dates.ts" not in commits and "DEBUG report opts" not in commits
     uncommitted = uncommitted.split("## Screenshots", 1)[0]
     assert "src/util/dates.ts" in uncommitted and "+# Add CSV export" in uncommitted
-    assert "## Code diff" not in prompt  # the net diff vs bench-base isn't the evidence
+    assert "## Code diff" not in prompt  # the net diff vs the base isn't the evidence
 
 
 # --------------------------------------------------------------------------- debug
@@ -448,7 +448,7 @@ def test_pr_review_starts_on_the_reviewed_branch(prepared):
     ws = prepared("seed-pr-review")
     assert _git(ws, "rev-parse", "--abbrev-ref", "HEAD").strip() == "feat/webhook-retries"
     log = _git(ws, "log", "--format=%an|%s", "main..HEAD").splitlines()
-    assert log == ["bruhsbench|bench: base", "Jordan Reyes|docs: document delivery retries",
+    assert log == ["dev|setup", "Jordan Reyes|docs: document delivery retries",
                    "Jordan Reyes|feat(deliver): retry failed webhook deliveries with backoff"]
     assert _git(ws, "rev-parse", "HEAD") == _git(ws, "rev-parse", BASE_TAG)
     assert _git(ws, "status", "--porcelain") == ""

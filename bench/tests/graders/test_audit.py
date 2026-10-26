@@ -126,7 +126,7 @@ def test_valid_unlisted_findings_do_not_lower_precision(tmp_path, make_run):
     task = audit_task(tmp_path)
     run = make_run({"src/db.ts": "".join(f"line {n}\n" for n in range(1, 61)),
                     "src/other.ts": "ok\n"})
-    run.write({"src/db.ts": "agent edited\n"})  # classify sees bench-base, not this
+    run.write({"src/db.ts": "agent edited\n"})  # classify sees the base, not this
     run_dir = run.finish()
     seen = []
 

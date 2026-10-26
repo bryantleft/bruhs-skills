@@ -6,6 +6,8 @@ import pytest
 
 from bruhsbench.tasks import load_task
 from bruhsbench.workspace import (
+    BASE_MESSAGE,
+    BASE_TAG,
     SetupFailed,
     check_task_setup,
     insert_bruhs_blocks,
@@ -117,8 +119,8 @@ def test_bare_and_bruhs_differ_only_in_blocks(tmp_path):
     assert changed <= {"CLAUDE.md", "AGENTS.md"} and changed
     assert (bare / "app.txt").read_text() == "hello\n"  # base checked out
     assert "bruhs:" not in (bare / "CLAUDE.md").read_text()
-    assert git(bare, "rev-parse", "bench-base").strip() == git(bare, "rev-parse", "HEAD").strip()
-    assert git(bare, "log", "-1", "--format=%s").strip() == "bench: base"
+    assert git(bare, "rev-parse", BASE_TAG).strip() == git(bare, "rev-parse", "HEAD").strip()
+    assert git(bare, "log", "-1", "--format=%s").strip() == BASE_MESSAGE
     assert git(bruhs, "status", "--porcelain") == ""
 
 
@@ -148,7 +150,7 @@ def test_repo_checkout_holds_only_base_history(tmp_path):
     # the future solution is unreachable and absent; nothing names the source repo
     missing = subprocess.run([*GIT, "cat-file", "-e", later], cwd=ws, capture_output=True)
     assert missing.returncode != 0
-    assert git(ws, "for-each-ref", "--format=%(refname)").split() == ["refs/tags/bench-base"]
+    assert git(ws, "for-each-ref", "--format=%(refname)").split() == [f"refs/tags/{BASE_TAG}"]
     for f in (ws / ".git").rglob("*"):
         if f.is_file() and "objects" not in f.parts:
             assert str(repo) not in f.read_text(errors="replace"), f
@@ -160,8 +162,8 @@ def test_seeded_task_uses_fixture(tmp_path):
     (task.dir / "fixture/a.txt").write_text("a\n")
     ws = prepare_workspace(task, "bare", tmp_path / "ws")
     assert (ws / "a.txt").read_text() == "a\n"
-    assert git(ws, "log", "-1", "--format=%s").strip() == "bench: base"
-    assert git(ws, "rev-parse", "bench-base").strip()
+    assert git(ws, "log", "-1", "--format=%s").strip() == BASE_MESSAGE
+    assert git(ws, "rev-parse", BASE_TAG).strip()
 
 
 def test_seeded_missing_fixture_errors(tmp_path):
@@ -210,7 +212,7 @@ def test_setup_output_is_part_of_base(tmp_path):
     ws = prepare_workspace(task, "bare", tmp_path / "ws")
     assert (ws / "generated.txt").exists()
     git(ws, "add", "-A")
-    assert git(ws, "diff", "--cached", "bench-base") == ""
+    assert git(ws, "diff", "--cached", BASE_TAG) == ""
 
 
 def test_after_base_leaves_uncommitted_work(tmp_path):
@@ -220,8 +222,8 @@ def test_after_base_leaves_uncommitted_work(tmp_path):
                                 "echo changed > app.txt\necho new > untracked.txt\n")
     ws = prepare_workspace(task, "bare", tmp_path / "ws")
     # setup output is in base; after_base output is not
-    assert git(ws, "show", "bench-base:installed.txt") == "dep\n"
-    assert git(ws, "rev-parse", "HEAD") == git(ws, "rev-parse", "bench-base")
+    assert git(ws, "show", f"{BASE_TAG}:installed.txt") == "dep\n"
+    assert git(ws, "rev-parse", "HEAD") == git(ws, "rev-parse", BASE_TAG)
     status = git(ws, "status", "--porcelain").splitlines()
     assert sorted(status) == [" M app.txt", "?? untracked.txt", "A  staged.txt"]
 
@@ -241,7 +243,7 @@ def test_future_commits_unreachable(tmp_path):
     ws = prepare_workspace(make_task(tmp_path, repo, base), "bare", tmp_path / "ws")
     revs = git(ws, "rev-list", "--all").split()
     assert later not in revs and base in revs and len(revs) == 2
-    assert git(ws, "for-each-ref", "--format=%(refname)").split() == ["refs/tags/bench-base"]
+    assert git(ws, "for-each-ref", "--format=%(refname)").split() == [f"refs/tags/{BASE_TAG}"]
     assert subprocess.run(["git", "cat-file", "-e", later], cwd=ws).returncode != 0
 
 
@@ -256,3 +258,28 @@ def test_prepare_fails_fast_when_tmpdirs_would_be_too_long(tmp_path, monkeypatch
     with pytest.raises(TmpDirTooLong, match="77"):
         prepare_workspace(load_task(d), "bare", tmp_path / "ws")
     assert not (tmp_path / "ws").exists()
+
+
+HINTS = ("bench", "bruhs", "bare")
+
+
+@pytest.mark.parametrize("seeded", (True, False))
+def test_workspace_git_metadata_names_neither_benchmark_nor_arm(tmp_path, seeded):
+    """R42: author, messages, tags and branches an agent sees in git are neutral, in both
+    arms, for seeded fixtures and real-repo checkouts."""
+    for arm in ("bare", "bruhs"):
+        root = tmp_path / arm
+        root.mkdir()
+        if seeded:
+            task = make_task(root, None, None, setup="echo dep > installed.txt\n")
+            (task.dir / "fixture").mkdir()
+            (task.dir / "fixture" / "a.txt").write_text("a\n")
+        else:
+            repo, base = make_repo(root)
+            task = make_task(root, repo, base, setup="echo dep > installed.txt\n")
+        ws = prepare_workspace(task, arm, root / "ws")
+        seen = "\n".join([git(ws, "log", "--format=%an %ae %cn %ce %s %b", "--all"),
+                          git(ws, "tag"), git(ws, "branch", "-a"),
+                          git(ws, "for-each-ref", "--format=%(refname)")]).lower()
+        assert not [h for h in HINTS if h in seen], (arm, seen)
+        assert git(ws, "rev-parse", BASE_TAG).strip() == git(ws, "rev-parse", "HEAD").strip()

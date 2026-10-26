@@ -17,8 +17,8 @@ Matching, per finding (``unmatched`` = entries no earlier finding matched):
 3. still nothing (including a located finding overlapping no site): ``match_finding``
    over every unmatched entry, decoys included;
 4. still nothing: ``classify_finding`` labels it ``valid_unlisted`` (a real problem the
-   task didn't plant) or ``incorrect``, judged against the code it cites at bench-base
-   (or, citing no readable file, the file list, README and manifests at bench-base).
+   task didn't plant) or ``incorrect``, judged against the code it cites at the base
+   (or, citing no readable file, the file list, README and manifests at the base).
 
 A match on a decoy counts in ``decoys_flagged``; a second finding on an already-found
 issue is ignored. precision = tp / (tp + incorrect + decoys_flagged): valid findings that
@@ -163,7 +163,7 @@ def match(finding: dict, known: list[dict], workspace: Path | None,
 
 
 def _base_file(workspace: Path, file: str) -> str | None:
-    """``file`` as it was at bench-base, or None (missing, unsafe path, git refused)."""
+    """``file`` as it was at the base, or None (missing, unsafe path, git refused)."""
     if not file or file.startswith("/") or ".." in PurePosixPath(file).parts:
         return None
     try:  # agent-controlled repo: hardened, sandboxed git (R22)
@@ -175,7 +175,7 @@ def _base_file(workspace: Path, file: str) -> str | None:
 
 
 def project_context(workspace: Path) -> str:
-    """Codebase-wide evidence at bench-base, for findings that cite no readable file: the
+    """Codebase-wide evidence at the base, for findings that cite no readable file: the
     file list plus the README and package manifest(s)."""
     try:
         proc = untrusted.git(workspace, "ls-tree", "-r", "--name-only", BASE_TAG,
@@ -193,9 +193,9 @@ def project_context(workspace: Path) -> str:
 
 
 def code_context(workspace: Path | None, finding: dict) -> str:
-    """Evidence for :func:`classify_finding`, as of bench-base (the agent may have edited
+    """Evidence for :func:`classify_finding`, as of the base (the agent may have edited
     the tree): the cited range +/- CODE_CONTEXT_LINES, numbered; for a finding with no
-    file, or a file missing at bench-base, the :func:`project_context` instead."""
+    file, or a file missing at the base, the :func:`project_context` instead."""
     if workspace is None:
         return ""
     file = _norm(str(finding.get("file") or ""), workspace)

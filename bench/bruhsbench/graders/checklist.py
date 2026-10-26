@@ -11,7 +11,7 @@ list of items is accepted too).
   kept in ``votes``; an item is hit only with a strict majority, so with two judges a 1-1
   split is a miss.
   For ship tasks the evidence is git state rather than the run's net diff: each commit
-  on any local branch that isn't in bench-base (message + patch), the branch list, and
+  on any local branch that isn't in the base (message + patch), the branch list, and
   the uncommitted changes against HEAD, so a judge sees exactly what was committed
   where, even when the agent ended on another branch.
 
@@ -34,7 +34,7 @@ from .. import judge as J
 from .. import untrusted
 from ..sandbox import remove_private_tmp
 from ..types import ModelSpec, Task
-from ..workspace import BASE_TAG
+from ..workspace import BASE_TAG, FROZEN_BASE_ALIAS
 from . import not_applicable, run_meta, workspace_of, write_grade
 from .commands import clone_tree, run_check, scratch_root
 
@@ -58,6 +58,8 @@ def _run_script(item: dict, workspace: Path, run_dir: Path) -> bool:
     try:
         copy = scratch / "ws"
         clone_tree(workspace, copy)
+        # frozen scripts may name the pre-R42 base tag: alias it in this clone only
+        untrusted.git(copy, "tag", "-f", FROZEN_BASE_ALIAS, BASE_TAG, check=False)
         res = run_check(f"checklist-{item['id']}", item["script"], copy, scratch,
                         Path(run_dir) / "grades" / "logs")
         return res.ok
@@ -88,7 +90,7 @@ def _git_out(workspace: Path, *args: str) -> str:
 
 
 def ship_evidence(workspace: Path | None, notes: dict[str, str] | None = None) -> str:
-    """What a ship task left in git: branches, each commit not in bench-base on any
+    """What a ship task left in git: branches, each commit not in the base on any
     local branch (oldest first, message + patch), and the uncommitted changes vs HEAD.
     Redacted, agent-config files dropped, clipped to the judge's diff budget."""
     if workspace is None:

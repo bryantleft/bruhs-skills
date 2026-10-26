@@ -1,4 +1,4 @@
-"""Builders for a finished run: a tiny git workspace tagged bench-base plus a results dir
+"""Builders for a finished run: a tiny git workspace tagged with the base tag plus a results dir
 laid out like runner.run_one's (result.json, diff.patch, final.txt, transcript.jsonl)."""
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 
 from bruhsbench.types import Task
-from bruhsbench.workspace import BASE_TAG, GIT
+from bruhsbench.workspace import BASE_MESSAGE, BASE_TAG, GIT
 
 
 def _sandbox_readable_pytest() -> str:
@@ -70,7 +70,7 @@ class Run:
         self.write(files)
         git(self.workspace, "init", "--quiet", "-b", "main")
         git(self.workspace, "add", "-A")
-        git(self.workspace, "commit", "--quiet", "-m", "bench: base")
+        git(self.workspace, "commit", "--quiet", "-m", BASE_MESSAGE)
         git(self.workspace, "tag", BASE_TAG)
 
     def write(self, files: dict[str, str]) -> None:

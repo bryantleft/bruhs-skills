@@ -14,9 +14,16 @@ from .types import Arm, Task
 
 DEFAULT_SCRIPTS_DIR = Path(__file__).resolve().parents[2] / "scripts"
 SETUP_TIMEOUT_S = 15 * 60
-BASE_TAG = "bench-base"
+# R42: everything an agent can see in the workspace's git is neutral (no benchmark, no
+# arm): the identity, the commit messages and the tag the graders diff against.
+BASE_TAG = "base"
+BASE_MESSAGE = "setup"
+FIXTURE_MESSAGE = "initial"
+# Frozen checklist scripts written before R42 name the base `bench-base`; graders add it
+# as an alias in their own disposable clones only (never in the agent's workspace).
+FROZEN_BASE_ALIAS = "bench-base"
 
-GIT = ["git", "-c", "user.name=bruhsbench", "-c", "user.email=bench@localhost",
+GIT = ["git", "-c", "user.name=dev", "-c", "user.email=dev@localhost",
        "-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false"]
 
 _BLOCK_RE = re.compile(
@@ -93,7 +100,7 @@ def _checkout(task: Task, dest: Path) -> None:
         shutil.copytree(fixture, dest, ignore=shutil.ignore_patterns(".git"))
         _git(dest, "init", "--quiet", "-b", "main")
         _git(dest, "add", "-A")
-        _git(dest, "commit", "--quiet", "--allow-empty", "-m", "fixture")
+        _git(dest, "commit", "--quiet", "--allow-empty", "-m", FIXTURE_MESSAGE)
 
 
 def _run_task_script(task: Task, script: Path | None, dest: Path) -> None:
@@ -115,7 +122,8 @@ def _run_task_script(task: Task, script: Path | None, dest: Path) -> None:
 def prepare_workspace(
     task: Task, arm: Arm, dest: Path, scripts_dir: Path | None = None
 ) -> Path:
-    """Create a fresh checkout at `dest` for `arm`, run setup, commit it as `bench: base`.
+    """Create a fresh checkout at `dest` for `arm`, run setup, commit it as the base
+    (:data:`BASE_MESSAGE`, tagged :data:`BASE_TAG`).
 
     Raises ``sandbox.TmpDirTooLong`` first if the sandboxed processes that will use the
     workspace couldn't get a short enough ``TMPDIR`` (R37)."""
@@ -139,10 +147,10 @@ def prepare_workspace(
     _run_task_script(task, task.setup, dest)
 
     _git(dest, "add", "-A")
-    _git(dest, "commit", "--quiet", "--allow-empty", "-m", "bench: base")
+    _git(dest, "commit", "--quiet", "--allow-empty", "-m", BASE_MESSAGE)
     _git(dest, "tag", "-f", BASE_TAG)
     # after_base.sh leaves work the agent starts from uncommitted (staged, unstaged,
-    # untracked); it shows in the run's diff against bench-base like the agent's own edits.
+    # untracked); it shows in the run's diff against the base like the agent's own edits.
     _run_task_script(task, task.after_base, dest)
     return dest
 
