@@ -1,5 +1,6 @@
 import json
 import os
+import shlex
 import re
 import tempfile
 import shutil
@@ -296,6 +297,31 @@ def test_sandbox_readable_tool_dirs_are_not_contamination(tmp_path, bruhs_src):
     res = run_one(RunSpec(task, CLAUDE, "bare", 1), tmp_path / "out", bruhs_src=bruhs_src,
                   command_override=override(fake_agent(tmp_path, body)))
     assert res.contaminated is True and res.contamination == sorted([str(cookies), str(leak)])
+
+
+def test_uninstalled_playwright_revision_in_an_error_is_not_contamination(tmp_path,
+                                                                          bruhs_src):
+    """Playwright names the browser revision it wanted even when it isn't installed; that
+    is a tool path, not the user's material (the scan matches the browser-dir pattern,
+    the sandbox stays existence-based)."""
+    from bruhsbench.sandbox import PLAYWRIGHT_CACHE
+
+    exe = (Path.home() / PLAYWRIGHT_CACHE / "chromium_headless_shell-1179" / "chrome-mac"
+           / "headless_shell")
+    assert not exe.parent.parent.exists()
+    msg = (f"browserType.launch: Executable doesn't exist at {exe}\n"
+           "Looks like Playwright Test or Playwright was just installed or updated.")
+    task = make_task(tmp_path, "t1")
+    body = f"echo {shlex.quote(msg)} >&2\n{EDIT_AND_REPLY}"
+    res = run_one(RunSpec(task, CLAUDE, "bare", 1), tmp_path / "out", bruhs_src=bruhs_src,
+                  command_override=override(fake_agent(tmp_path, body)))
+    assert not res.contaminated and res.contamination == []  # None: no tool events
+    # a non-browser name in the cache still counts
+    profile = Path.home() / PLAYWRIGHT_CACHE / "mcp-chrome-1179" / "Default" / "Cookies"
+    assert scan_contamination(
+        str(profile), forbidden=[Path.home()],
+        allowed_patterns=[(Path.home() / PLAYWRIGHT_CACHE,
+                           runner.PLAYWRIGHT_BROWSER_RE)]) == [str(profile)]
 
 
 def reply_with(transcript: str) -> str:

@@ -65,7 +65,7 @@ from .agents import (agent_finished, build_command, is_auth_failure, parse_outpu
                      tool_event_count)
 from .homes import (AGENT_TOOL_HOMES, ClaudeAuthMissing, bruhs_content_hash, build_home,
                     claude_auth, export_bruhs)
-from .sandbox import (check_tmp_base, read_allow, private_tmp, real_home, remove_private_tmp,
+from .sandbox import (PLAYWRIGHT_BROWSER_RE, PLAYWRIGHT_CACHE, check_tmp_base, read_allow, private_tmp, real_home, remove_private_tmp,
                       work_base, wrap)
 from .types import Arm, Cli, ModelSpec, RunResult, RunSpec, Task
 from .workspace import BASE_TAG, SetupFailed, check_task_setup, prepare_workspace
@@ -437,12 +437,16 @@ def _within(path: str, roots: Sequence[Path]) -> bool:
 
 def scan_contamination(text: str, *, forbidden: Sequence[Path],
                        allowed: Sequence[Path] = (),
-                       allowed_exact: Sequence[Path] = ()) -> list[str]:
+                       allowed_exact: Sequence[Path] = (),
+                       allowed_patterns: Sequence[tuple[Path, re.Pattern]] = ()
+                       ) -> list[str]:
     """Absolute paths under any ``forbidden`` root (and not under ``allowed``) in ``text``.
 
     JSON-escaped slashes are undone first; matches stop at quotes, whitespace and
     other delimiters, and a trailing ``.`` is dropped. ``allowed_exact`` paths are
-    allowed only as themselves, not what is under them.
+    allowed only as themselves, not what is under them. ``allowed_patterns`` pairs
+    ``(parent, name_re)`` allow anything under a child of ``parent`` whose name matches
+    ``name_re``, whether or not it exists.
     """
     exact = {f for r in allowed_exact for f in _forms(r)}
     text = text.replace("\\/", "/")
@@ -453,7 +457,15 @@ def scan_contamination(text: str, *, forbidden: Sequence[Path],
 
     def allowed_path(path: str) -> bool:  # `..` resolved first: no escaping a root
         path = posixpath.normpath(path)
-        return path in exact or _within(path, allowed)
+        if path in exact or _within(path, allowed):
+            return True
+        for parent, name_re in allowed_patterns:
+            for form in _forms(parent):
+                if PurePath(path).is_relative_to(form) and path != form:
+                    child = PurePath(path).relative_to(form).parts[0]
+                    if name_re.fullmatch(child):
+                        return True
+        return False
 
     found: set[str] = set()
     for root in forbidden:
@@ -502,7 +514,10 @@ def _contamination(spec: RunSpec, stdout: str, stderr: str, run_dir: Path, work_
     logs = [_read_untrusted(run_dir, rel, skipped) for rel in session_logs(run_dir)]
     found = scan_contamination("\n".join([stdout, stderr, *logs]), forbidden=forbidden,
                                allowed=[work_root, *path_dirs, *tool_dirs],
-                               allowed_exact=tool_roots)
+                               allowed_exact=tool_roots,
+                               # an uninstalled revision named in a Playwright error
+                               allowed_patterns=[(home_dir / PLAYWRIGHT_CACHE,
+                                                  PLAYWRIGHT_BROWSER_RE)])
     if found:
         return True, found
     tool_level = (tool_event_count(spec.model.cli, stdout) > 0
