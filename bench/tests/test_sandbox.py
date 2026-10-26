@@ -350,7 +350,7 @@ def test_runner_denies_its_whole_work_root(tmp_path, monkeypatch):
     res = runner.run_one(RunSpec(load_task(d), SPEC["codex"], "bare", 1), tmp_path / "out",
                          bruhs_src=tmp_path, work_root=tmp_path / "work",
                          command_override=lambda spec, argv: ["true"])
-    run_dir = tmp_path / "work" / res.run_id
+    run_dir = runner.run_work_dir(tmp_path / "out", tmp_path / "work", res.run_id)
     assert seen == {"writable": [run_dir], "denied": [tmp_path / "work"]}
 
 
@@ -697,7 +697,8 @@ echo '{{}}'
     assert any("final.txt" in u for u in res.unsafe_files)
     out = tmp_path / "out" / res.run_id
     assert not any(token in f.read_text(errors="replace") for f in out.rglob("*") if f.is_file())
-    assert token not in json.dumps(runner.session_logs(tmp_path / "work" / res.run_id))
+    assert token not in json.dumps(runner.session_logs(
+        runner.run_work_dir(tmp_path / "out", tmp_path / "work", res.run_id)))
 
 
 def test_overlay_never_writes_through_symlinks(tmp_path):

@@ -51,8 +51,13 @@ the bruhs arm's home) and `npx`, which starts chrome-devtools-mcp.
   `PLAYWRIGHT_BROWSERS_PATH` and `RUSTUP_HOME` point back at the real (read-only) installs,
   so agents in both arms can launch Playwright's browsers and run cargo.
 - **Work outside `~`.** Run dirs, workspaces and homes live under `$BRUHSBENCH_WORK`
-  (default `/private/tmp/bruhsbench/<results-id>/`), so a CLI walking parent directories never
+  (default `/private/tmp/w/<12 hex>/`), so a CLI walking parent directories never
   picks up `~/.claude` or similar. Only artifacts are copied into `bench/results/`.
+- **Opaque paths (ruling R40).** Nothing an agent sees names its arm or the benchmark: the
+  work root, each run's dir (`<work root>/<12 hex>/{home,workspace}`) and its `TMPDIR` are
+  opaque hashes under neutral bases (`/private/tmp/w`, `/private/tmp/t`). Only
+  `<results>/work_ids.json` maps a run dir back to its run id. (The bruhs install itself,
+  in the bruhs arm's home, is named bruhs: that is the treatment.)
 - **OS sandbox.** Agents, judges, probes, grader check commands and capture dev servers all run
   under `sandbox-exec`. They cannot read or write the real home (except a read-only
   allowlist of tool installs: the CLIs, node, uv's Pythons, `~/.cargo/{bin,registry,git}`,
@@ -62,7 +67,7 @@ the bruhs arm's home) and `npx`, which starts chrome-devtools-mcp.
   private `TMPDIR`. Network access stays on.
 - **Short private `TMPDIR`.** The Convex local backend binds a unix socket under `TMPDIR`,
   and macOS caps a socket path at 104 bytes, so `TMPDIR` must be 77 characters or fewer. Each
-  process's `TMPDIR` is therefore `/private/tmp/bb/<12 hex>` (a hash of its root; the base is
+  process's `TMPDIR` is therefore `/private/tmp/t/<12 hex>` (a hash of its root; the base is
   `$BRUHSBENCH_TMP`, an absolute path whose resolved form is measured), whatever the results-dir name or run id. Only that process can reach
   it. It is deleted with its run dir or scratch dir. `run`, `pipeline` and workspace setup
   stop at once if `$BRUHSBENCH_TMP` would make it too long.
@@ -192,6 +197,7 @@ would add up to tens of GB, so use `pipeline`, or `clean` after `grade`.
 
 ```
 bench/results/<name>/                 # gitignored, except published/
+  work_ids.json                       # opaque work-dir name -> run id (R40)
   matrix.json, excluded.json          # pinned bruhs content hash, models, seed, repeats,
                                       # task hashes; per start: harness commit, CLI versions
   <task>__<cli>__<arm>__r<n>/         # result.json, transcript.jsonl, stderr.txt, diff.patch,

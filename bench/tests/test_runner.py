@@ -1,5 +1,7 @@
 import json
 import os
+import re
+import tempfile
 import shutil
 import subprocess
 import stat
@@ -695,7 +697,7 @@ def test_cleanup_run_never_follows_planted_symlinks(tmp_path, bruhs_src):
     out, spec, res, precious = _planted_run(tmp_path, bruhs_src)
     work_root = res.workspace.parent.parent
     assert runner.cleanup_run(out, work_root, spec.run_id) == []
-    assert not os.path.lexists(work_root / spec.run_id)
+    assert not os.path.lexists(runner.run_work_dir(out, work_root, spec.run_id))
     assert (precious / "keep.txt").read_text() == "keep"
     assert (precious / "sub" / "deep.txt").read_text() == "keep"
     saved = runner.load_result(out / spec.run_id / "result.json")
@@ -750,13 +752,14 @@ def test_cleanup_clears_immutable_flags(tmp_path, bruhs_src):
     assert os.stat(res.workspace / "locked" / "f").st_flags & stat.UF_IMMUTABLE
     work_root = res.workspace.parent.parent
     assert runner.cleanup_run(out, work_root, spec.run_id) == []
-    assert not os.path.lexists(work_root / spec.run_id)
+    assert not os.path.lexists(runner.run_work_dir(out, work_root, spec.run_id))
 
 
 def test_cleanup_reports_leftovers(tmp_path, monkeypatch):
     work = tmp_path / "work" / "w"
-    (work / "r1" / "sub").mkdir(parents=True)
-    (work / "r1" / "sub" / "f").write_text("x")
+    r1 = runner.run_work_name(tmp_path / "out", "r1")
+    (work / r1 / "sub").mkdir(parents=True)
+    (work / r1 / "sub" / "f").write_text("x")
     real_unlink = os.unlink
 
     def stuck(name, *a, **k):
@@ -766,7 +769,7 @@ def test_cleanup_reports_leftovers(tmp_path, monkeypatch):
 
     monkeypatch.setattr(os, "unlink", stuck)
     left = runner.cleanup_run(tmp_path / "out", work, "r1")
-    assert str(work.resolve() / "r1" / "sub" / "f") in left
+    assert str(work.resolve() / r1 / "sub" / "f") in left
 
 
 def test_active_lock_held_during_matrix(tmp_path):
@@ -868,8 +871,9 @@ def test_long_results_dir_gets_a_short_tmpdir_with_room_for_a_socket(tmp_path, b
 def test_default_tmpdir_fits_whatever_the_results_name(monkeypatch, tmp_path):
     monkeypatch.delenv("BRUHSBENCH_TMP")
     work_root = runner.default_work_root(tmp_path / ("x" * 40))
-    tmp = sandbox.tmp_dir(work_root / ("t" * 60 + "__claude__bruhs__r3"))
-    assert tmp.parent == Path("/private/tmp/bb") and len(str(tmp)) <= sandbox.MAX_TMPDIR_LEN
+    tmp = sandbox.tmp_dir(runner.run_work_dir(tmp_path / ("x" * 40), work_root,
+                                              "t" * 60 + "__claude__bruhs__r3"))
+    assert tmp.parent == Path("/private/tmp/t") and len(str(tmp)) <= sandbox.MAX_TMPDIR_LEN
     sandbox.check_tmp_base()
 
 
@@ -884,7 +888,8 @@ def test_matrix_fails_fast_on_a_too_long_tmp_base(tmp_path, monkeypatch):
 
 def test_rerun_starts_with_a_fresh_tmpdir(tmp_path, bruhs_src):
     spec = RunSpec(make_task(tmp_path, "t1"), CLAUDE, "bare", 1)
-    run_dir = tmp_path / "work" / runner.results_id(tmp_path / "out") / spec.run_id
+    out = tmp_path / "out"
+    run_dir = runner.run_work_dir(out, runner.default_work_root(out), spec.run_id)
     stale = sandbox.tmp_dir(run_dir)
     stale.mkdir(parents=True)
     (stale / "left-over").write_text("x")
@@ -1000,3 +1005,61 @@ def test_bruhs_skill_change_blocks_resume(tmp_path, skill_repo):
     _git(skill_repo, "commit", "-qam", "change the skill")
     with pytest.raises(runner.MatrixMismatch, match="bruhs_content"):
         run_matrix([task], [CLAUDE], ["bare"], 1, out, command_override=ov)
+
+
+# --------------------------------------------------------------------------- R40: opaque paths
+
+
+ARM_HINTS = re.compile(r"bruhs|bench|bare", re.IGNORECASE)
+
+
+def test_agent_visible_paths_reveal_neither_arm_nor_benchmark(tmp_path, bruhs_src,
+                                                              monkeypatch):
+    """cwd, HOME, TMPDIR and every other path in the agent's env carry no arm name and no
+    "bruhs"/"bench"/"bare", and have the same shape in both arms; the results dir maps the
+    opaque work-dir names back to run ids."""
+    neutral = Path(tempfile.mkdtemp(prefix="n", dir="/private/tmp"))
+    monkeypatch.setenv("BRUHSBENCH_WORK", str(neutral / "w"))
+    monkeypatch.setenv("BRUHSBENCH_TMP", str(neutral / "t"))
+    fake_real = neutral / "home"
+    (fake_real / ".codex").mkdir(parents=True)
+    (fake_real / ".codex" / "auth.json").write_text("{}")
+    (fake_real / ".agents" / "skills" / "expect").mkdir(parents=True)
+    (fake_real / ".agents" / "skills" / "expect" / "SKILL.md").write_text("x\n")
+    from bruhsbench.homes import build_home as real_build_home
+
+    monkeypatch.setattr(runner, "build_home", lambda cli, arm, run_dir, src, **kw:
+                        real_build_home(cli, arm, run_dir, src, real_home=fake_real))
+    task = make_task(tmp_path, "t1")
+    out = tmp_path / "out"
+    body = f'pwd > "$HOME/../seen.txt"; env >> "$HOME/../seen.txt"\n{EDIT_AND_REPLY}'
+    ov = override(fake_agent(tmp_path, body))
+    seen = {}
+    try:
+        for arm in ("bare", "bruhs"):
+            res = run_one(RunSpec(task, CODEX, arm, 1), out, bruhs_src=bruhs_src,
+                          command_override=ov)
+            lines = (res.workspace.parent / "seen.txt").read_text().splitlines()
+            env = dict(line.split("=", 1) for line in lines[1:] if "=" in line)
+            paths = {"cwd": lines[0], **{k: v for k, v in env.items()
+                                         if v.startswith("/") and k != "PATH"}}
+            for name, value in paths.items():
+                assert not ARM_HINTS.search(value), (arm, name, value)
+            seen[arm] = {k: re.sub(r"[0-9a-f]{12,}", "<id>", v) for k, v in paths.items()
+                         if k not in ("OLDPWD", "_")}
+            assert set(paths) >= {"cwd", "HOME", "TMPDIR", "CODEX_HOME"}
+        assert seen["bare"] == seen["bruhs"]
+        ids = json.loads((out / "work_ids.json").read_text())
+        assert sorted(ids.values()) == ["t1__codex__bare__r1", "t1__codex__bruhs__r1"]
+        assert all(re.fullmatch(r"[0-9a-f]{12}", k) for k in ids)
+    finally:
+        shutil.rmtree(neutral, ignore_errors=True)
+
+
+def test_default_bases_are_neutral(monkeypatch):
+    monkeypatch.delenv("BRUHSBENCH_WORK", raising=False)
+    monkeypatch.delenv("BRUHSBENCH_TMP", raising=False)
+    for p in (sandbox.work_base(), sandbox.tmp_base(),
+              runner.default_work_root(Path("/x/bench/results/pilot"))):
+        assert not ARM_HINTS.search(str(p)), p
+    assert len(str(sandbox.tmp_dir(Path("/x")))) <= sandbox.MAX_TMPDIR_LEN

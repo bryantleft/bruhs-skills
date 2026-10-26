@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import shutil
 import sys
 import tomllib
@@ -189,14 +190,14 @@ def cmd_probe(args) -> int:
     base = work_base() / "_probe"
     shutil.rmtree(base, ignore_errors=True)
     base.mkdir(parents=True)
-    bruhs_src = export_bruhs(BRUHS_REPO, "HEAD", base / "_bruhs")
+    bruhs_src = export_bruhs(BRUHS_REPO, "HEAD", base / "e")  # R40: neutral names
     failed = False
     for spec in select_models(args.models):
         seen = {}
-        for arm in ("bare", "bruhs"):
+        for i, arm in enumerate(("bare", "bruhs")):
             label = f"{spec.cli}/{arm}"
             try:
-                env = build_home(spec.cli, arm, base / f"{spec.cli}-{arm}", bruhs_src)
+                env = build_home(spec.cli, arm, base / f"{spec.cli}-{i}", bruhs_src)
                 seen[arm] = probe_isolation(spec.cli, arm, env)
                 assert_isolated(seen[arm], arm)
                 print(f"PASS  {label}: skills={sorted(seen[arm].skills)} "
@@ -425,12 +426,12 @@ def cmd_pipeline(args) -> int:
 
 def _clean_done(root: Path, args) -> tuple[int, list[str], dict[str, list[str]]]:
     """(run dirs removed, runs kept for a capture error, leftovers per run)."""
-    from .runner import cleanup_run, default_work_root
+    from .runner import cleanup_run, default_work_root, run_work_dir
 
     work_root = default_work_root(root)
     n, capture_kept, leftovers = 0, [], {}
     for d, task in _runs_with_tasks(root, args):
-        if not ((work_root / d.name).exists() or (work_root / d.name).is_symlink()):
+        if not os.path.lexists(run_work_dir(root, work_root, d.name)):
             continue
         if not _done_with_workspace(d, task):
             if _capture_error(d):

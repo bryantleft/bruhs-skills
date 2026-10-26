@@ -7,7 +7,7 @@ the low-taste extraction/matching calls the objective graders make (Ruling R18).
 
 :func:`judge_call` runs one headless call in a fresh bare isolated home
 (``homes.build_home``, under ``$BRUHSBENCH_WORK``/_judge, default
-``/private/tmp/bruhsbench/_judge``) with an empty cwd and NO tools: every material is in
+``/private/tmp/w/_judge``) with an empty cwd and NO tools: every material is in
 the message itself (text inlined, images attached), so a judge can't wander the disk.
 Mechanisms (verified live, ``pytest -m live tests/test_judge.py``):
 

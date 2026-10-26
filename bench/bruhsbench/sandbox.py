@@ -41,7 +41,7 @@ SBPL rules win):
 
 Private ``TMPDIR`` (R37). A process's ``TMPDIR`` is not inside its root but at
 :func:`tmp_dir` ``= <tmp base>/<12 hex of the root's path hash>`` (default base
-``/private/tmp/bb``, ``$BRUHSBENCH_TMP``): the Convex local backend binds a unix socket
+``/private/tmp/t``, ``$BRUHSBENCH_TMP``): the Convex local backend binds a unix socket
 under ``TMPDIR``, and macOS limits a socket path to 104 bytes, so ``TMPDIR`` must stay
 within :data:`MAX_TMPDIR_LEN` (77) characters however long the results-dir name or run id
 is. :func:`profile` makes ``tmp_dir(root)`` read-write for each ``writable`` root and
@@ -106,12 +106,13 @@ from pathlib import Path
 
 SANDBOX_EXEC = Path("/usr/bin/sandbox-exec")
 DATA_VOLUME = Path("/System/Volumes/Data")
-DEFAULT_WORK_BASE = Path("/private/tmp/bruhsbench")
+# neutral names (R40): nothing an agent sees names the benchmark or its arm
+DEFAULT_WORK_BASE = Path("/private/tmp/w")
 SHARED_TMP = Path("/private/tmp")
 # R37: the Convex local backend binds a unix socket under TMPDIR and macOS caps a socket
 # path (sun_path) at 104 bytes, so every private TMPDIR is short: <tmp base>/<12 hex>.
 TMP_BASE_ENV = "BRUHSBENCH_TMP"
-DEFAULT_TMP_BASE = Path("/private/tmp/bb")
+DEFAULT_TMP_BASE = Path("/private/tmp/t")
 MAX_TMPDIR_LEN = 77
 TMP_ID_LEN = 12
 
@@ -321,7 +322,7 @@ class TmpDirTooLong(TmpDirInvalid):
 
 
 def tmp_base() -> Path:
-    """Where private ``TMPDIR``s live (``$BRUHSBENCH_TMP``, default ``/private/tmp/bb``),
+    """Where private ``TMPDIR``s live (``$BRUHSBENCH_TMP``, default ``/private/tmp/t``),
     with its parent resolved (``/tmp`` -> ``/private/tmp``) but not its last component, so
     a symlink planted there is refused by :func:`private_tmp`, never followed.
     :class:`TmpDirInvalid` for a relative ``$BRUHSBENCH_TMP``."""

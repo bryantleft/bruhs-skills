@@ -1,10 +1,12 @@
 """Execute benchmark runs: one (task, model, arm, repeat) at a time, or the whole matrix.
 
 Layout (Ruling R10). Everything an agent touches lives in a *work root* outside the
-user's home (``$BRUHSBENCH_WORK`` or ``/private/tmp/bruhsbench``, plus a per-results
-id): the pinned bruhs export at ``<work>/_bruhs/<commit>/`` and, per run,
-``<work>/<run_id>/{home,workspace,final.txt}``, with its ``TMPDIR`` at the short
-``sandbox.tmp_dir(<work>/<run_id>)`` (R37: under 78 characters for unix sockets); graders' scratch
+user's home (``$BRUHSBENCH_WORK`` or ``/private/tmp/w``, plus an opaque id of the results
+dir): the pinned bruhs export at ``<work>/e/<commit>/`` and, per run,
+``<work>/<12 hex>/{home,workspace,final.txt}`` (R40: :func:`run_work_name`, mapped back to
+the run id only in ``<out_root>/work_ids.json``, so no agent-visible path names the arm or
+the benchmark), with its ``TMPDIR`` at the short ``sandbox.tmp_dir(<run dir>)`` (R37:
+under 78 characters for unix sockets); graders' scratch
 copies go to ``<work>/_scratch/``, outside every run root. The results dir
 ``<out_root>/<run_id>/`` only receives copies: ``result.json``, ``transcript.jsonl`` (raw
 CLI stdout, streaming JSON for all three CLIs), ``stderr.txt``, ``diff.patch``,
@@ -146,9 +148,43 @@ def _check_outside_home(path: Path) -> Path:
     return Path(path)
 
 
+def _opaque(text: str) -> str:
+    return hashlib.sha256(text.encode()).hexdigest()[:12]
+
+
 def default_work_root(out_root: Path) -> Path:
+    """``<work base>/<12 hex>``: an opaque id of the results dir (R40), so no path an
+    agent sees names the results dir, the benchmark or an arm."""
     base = work_base()
-    return _check_outside_home(base / results_id(out_root))
+    return _check_outside_home(base / _opaque(results_id(out_root)))
+
+
+WORK_IDS = "work_ids.json"
+_work_ids_lock = threading.Lock()
+
+
+def run_work_name(out_root: Path, run_id: str) -> str:
+    """The opaque name of run ``run_id``'s work dir (R40): 12 hex of the results id and
+    run id. ``<out_root>/work_ids.json`` maps it back to the run id."""
+    return _opaque(f"{results_id(out_root)}\0{run_id}")
+
+
+def run_work_dir(out_root: Path, work_root: Path, run_id: str) -> Path:
+    return Path(work_root) / run_work_name(out_root, run_id)
+
+
+def _note_work_id(out_root: Path, run_id: str) -> str:
+    """Record ``run_work_name -> run_id`` in the results dir (only there) and return it."""
+    name = run_work_name(out_root, run_id)
+    path = Path(out_root) / WORK_IDS
+    with _work_ids_lock:
+        ids = json.loads(path.read_text()) if path.is_file() else {}
+        if ids.get(name) != run_id:
+            ids[name] = run_id
+            tmp = path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(ids, indent=2, sort_keys=True) + "\n")
+            tmp.replace(path)
+    return name
 
 
 def git_head(repo: Path, rev: str = "HEAD") -> str:
@@ -162,7 +198,7 @@ _export_lock = threading.Lock()
 def ensure_bruhs_export(work_root: Path, commit: str) -> Path:
     """The filtered bruhs tree for ``commit`` under the work root, exported once."""
     with _export_lock:
-        dest = Path(work_root) / "_bruhs" / commit
+        dest = Path(work_root) / "e" / commit  # R40: a neutral name
         done = dest.parent / f"{commit}.ok"  # sibling, so it never reaches an agent's home
         if done.exists() and dest.is_dir():
             return dest
@@ -324,14 +360,15 @@ def cleanup_run(out_root: Path, work_root: Path, run_id: str) -> list[str]:
     ``workspace_deleted`` in its result.json. Returns the paths it couldn't delete ([] on
     success). Never raises for a failed delete (logged): a cleanup problem must not stop
     the matrix."""
+    name = run_work_name(out_root, run_id)
     try:
-        remove_work_dir(work_root, run_id, protect=[out_root])
+        remove_work_dir(work_root, name, protect=[out_root])
     except untrusted.RemoveIncomplete as exc:
         log.warning("%s: cleanup left %d path(s): %s", run_id, len(exc.leftovers), exc)
         return exc.leftovers
     except (OSError, ValueError) as exc:
         log.warning("%s: cleanup failed: %s", run_id, exc)
-        return [str(Path(work_root) / run_id)]
+        return [str(Path(work_root) / name)]
     mark_workspace_deleted(Path(out_root) / run_id)
     return []
 
@@ -607,9 +644,11 @@ def run_one(
         free_gb_at_start = min(free_gb(work_root), free_gb(out_root))
     cli = spec.model.cli
     out_dir = out_root / spec.run_id
-    run_dir = work_root / spec.run_id
+    out_root.mkdir(parents=True, exist_ok=True)
+    name = _note_work_id(out_root, spec.run_id)
+    run_dir = work_root / name  # R40: opaque, no arm or run id in the agent's paths
     if os.path.lexists(run_dir):  # a partial earlier attempt; symlink-safe removal
-        remove_work_dir(work_root, spec.run_id, protect=[out_root])
+        remove_work_dir(work_root, name, protect=[out_root])
     remove_private_tmp(run_dir)  # an earlier attempt's TMPDIR, even without its run dir
     if out_dir.exists():
         shutil.rmtree(out_dir)
@@ -934,7 +973,7 @@ def _record_error(spec: RunSpec, out_root: Path, work_root: Path, tb: str) -> Ru
     for p in paths.values():
         if not p.exists():
             p.write_text("")
-    workspace = work_root / spec.run_id / "workspace"
+    workspace = run_work_dir(out_root, work_root, spec.run_id) / "workspace"
     result = RunResult(spec.run_id, "error", 0.0, None, None, None, None, "",
                        paths["diff.patch"], paths["transcript.jsonl"], contaminated=None,
                        workspace=workspace if workspace.is_dir() else None, error=tb)

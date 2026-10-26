@@ -5,6 +5,13 @@ from types import SimpleNamespace
 
 import pytest
 
+
+def _wd(root, run_id):
+    """The run's (opaque, R40) work dir under the results dir's default work root."""
+    from bruhsbench.runner import default_work_root, run_work_dir
+
+    return run_work_dir(root, default_work_root(root), run_id)
+
 from results_fixture import make_run, make_task, make_verdict
 
 from bruhsbench import cli
@@ -182,7 +189,7 @@ def _work_dir(root, d, precious):
     to the results dir and to the task dir."""
     from bruhsbench.runner import default_work_root
 
-    ws = default_work_root(root) / d.name / "workspace"
+    ws = _wd(root, d.name) / "workspace"
     (ws / "node_modules" / "pkg").mkdir(parents=True)
     (ws / "node_modules" / "pkg" / "index.js").write_text("x")
     (ws / "to_precious").symlink_to(precious)
@@ -307,7 +314,7 @@ def test_pipeline_captures_grades_then_cleans_each_run(tmp_path, monkeypatch, fa
         (d / "grades" / "capture.json").write_text(json.dumps({"applicable": True}))
 
     def fake_grade(d, task):
-        assert (default_work_root(root) / d.name / "workspace").is_dir()
+        assert (_wd(root, d.name) / "workspace").is_dir()
         events.append(("grade", d.name))
         _all_graded(d)
 
@@ -320,7 +327,7 @@ def test_pipeline_captures_grades_then_cleans_each_run(tmp_path, monkeypatch, fa
                          command_override=ov, post_run=post)
     assert len(results) == 4
     for r in results:
-        assert not (default_work_root(root) / r.run_id).exists()
+        assert not (_wd(root, r.run_id)).exists()
         meta = json.loads((root / r.run_id / "result.json").read_text())
         assert meta["workspace_deleted"] is True
         steps = [e for e, rid in events if rid == r.run_id]
@@ -345,7 +352,7 @@ def test_pipeline_keeps_workspace_when_grading_is_incomplete(tmp_path, monkeypat
     run_matrix([feat], [CLAUDE], ["bare"], 1, root, command_override=override(
         fake_agent(tmp_path, EDIT_AND_REPLY)), post_run=cli._post_processor(root, cli._disk_guard(root), cleanup=True))
     rid = "t-feat__claude__bare__r1"
-    assert (default_work_root(root) / rid / "workspace").is_dir()
+    assert (_wd(root, rid) / "workspace").is_dir()
     assert not json.loads((root / rid / "result.json").read_text())["workspace_deleted"]
 
 
@@ -440,7 +447,7 @@ def test_pipeline_keeps_workspace_after_capture_harness_error(tmp_path, monkeypa
     run_matrix([ui], [CLAUDE], ["bare"], 1, root, command_override=ov, post_run=post)
     rid = "t-ui__claude__bare__r1"
     assert attempts == [rid, rid]  # retried once
-    assert (default_work_root(root) / rid / "workspace").is_dir()
+    assert (_wd(root, rid) / "workspace").is_dir()
     assert "capture failed" in caplog.text
     run_matrix([ui], [CLAUDE], ["bare"], 1, root, command_override=ov, post_run=post)
     assert len(attempts) == 4  # a later pipeline call retries it
@@ -496,7 +503,7 @@ def test_cleanup_only_runs_never_wait_or_take_a_slot(tmp_path, monkeypatch):
     done = make_run(root, t, "claude", "bruhs", 1)      # graded: only cleanup left
     _all_graded(done)
     for d in (busy, done):
-        (default_work_root(root) / d.name / "workspace").mkdir(parents=True)
+        (_wd(root, d.name) / "workspace").mkdir(parents=True)
     in_grade, release = threading.Event(), threading.Event()
 
     def blocking_grade(d, task):
@@ -514,7 +521,7 @@ def test_cleanup_only_runs_never_wait_or_take_a_slot(tmp_path, monkeypatch):
         assert in_grade.wait(10)  # the only slot is taken by a slow grade
         free["gb"] = 1.0          # and the disk is full: cleanup must still go through
         post(_spec(t, arm="bruhs"), None)
-        assert not (default_work_root(root) / done.name).exists()
+        assert not (_wd(root, done.name)).exists()
     finally:
         release.set()
         th.join()
@@ -591,7 +598,7 @@ def test_capture_and_grade_hold_the_active_lock(tmp_path, monkeypatch):
     t = make_task(tmp_path, "t-ui", "ui", pages=["/"])
     root = tmp_path / "res"
     d = make_run(root, t, "claude", "bare", 1)
-    ws = default_work_root(root) / d.name / "workspace"
+    ws = _wd(root, d.name) / "workspace"
     ws.mkdir(parents=True)
     meta = json.loads((d / "result.json").read_text())
     (d / "result.json").write_text(json.dumps({**meta, "workspace": str(ws)}))
@@ -718,7 +725,7 @@ def test_recapture_with_page_errors_regrades_before_cleanup(tmp_path, monkeypatc
             {"applicable": True, "score": 0.5, "items": [], "screens": n}))
 
     def regrade(d, task):
-        events.append(("regrade", (default_work_root(root) / rid / "workspace").is_dir()))
+        events.append(("regrade", (_wd(root, rid) / "workspace").is_dir()))
         (d / "grades" / "checklist.json").write_text(json.dumps(
             {"applicable": True, "score": 1.0, "items": [], "screens": 1}))
 
@@ -729,13 +736,13 @@ def test_recapture_with_page_errors_regrades_before_cleanup(tmp_path, monkeypatc
     post = cli._post_processor(root, cli._disk_guard(root), cleanup=True)
     ov = override(fake_agent(tmp_path, EDIT_AND_REPLY))
     run_matrix([ui], [CLAUDE], ["bare"], 1, root, command_override=ov, post_run=post)
-    assert (default_work_root(root) / rid / "workspace").is_dir()  # harness error: kept
+    assert (_wd(root, rid) / "workspace").is_dir()  # harness error: kept
     assert events == []
 
     outcome["capture"] = {"applicable": True, "page_errors": {"/": "500"}}
     run_matrix([ui], [CLAUDE], ["bare"], 1, root, command_override=ov, post_run=post)
     assert events == [("regrade", True)]  # regraded while the workspace still existed
-    assert not (default_work_root(root) / rid).exists()  # then cleaned
+    assert not (_wd(root, rid)).exists()  # then cleaned
 
 
 # --------------------------------------------------------------------------- freeze
