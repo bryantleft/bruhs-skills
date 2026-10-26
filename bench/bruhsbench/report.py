@@ -304,7 +304,10 @@ def context(summary: Summary, private: bool) -> dict:
     return {
         "private": private,
         "date": date.today().isoformat(),
-        "matrix": {"bruhs_commit": m.get("bruhs_commit", "unknown"),
+        "matrix": {"bruhs_content": m.get("bruhs_content") or "",
+                   "bruhs_commit": (m.get("bruhs_commit")
+                                    or ((m.get("starts") or [{}])[0].get("harness_commit"))
+                                    or "unknown"),
                    "repeats": m.get("repeats"), "seed": m.get("seed"),
                    "cli_versions": m.get("cli_versions", {}),
                    "models": m.get("models") or [asdict(s) for s in MODELS

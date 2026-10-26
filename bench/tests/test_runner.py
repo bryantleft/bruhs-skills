@@ -1,5 +1,7 @@
 import json
 import os
+import shutil
+import subprocess
 import stat
 import time
 from pathlib import Path
@@ -399,7 +401,8 @@ def test_resume_skips_completed(tmp_path):
     assert sorted(r.run_id for r in second) == sorted(r.run_id for r in first)
 
     meta = json.loads((out / "matrix.json").read_text())
-    assert meta["bruhs_commit"] == runner.git_head(runner.BRUHS_REPO)
+    assert meta["bruhs_content"] and "bruhs_commit" not in meta
+    assert meta["starts"][0]["harness_commit"] == runner.git_head(runner.BRUHS_REPO)
     assert meta["repeats"] == 2 and meta["seed"] == 0
     assert meta["models"][0]["model"] == "claude-opus-5-5"
     assert meta["cli_versions"] == {"claude": "claude 0.0-test"}
@@ -944,3 +947,56 @@ def test_matrix_without_pins_is_pinned_by_its_next_start(tmp_path):
     run_matrix([task], [CLAUDE], ["bare"], 1, out, command_override=ov,
                record={"task_hashes": {"t1": "h1"}})
     assert runner.pinned_task_hashes(out) == {"t1": "h1"}
+
+
+# --------------------------------------------------------------------------- R41: pin bruhs
+
+
+def _git(repo, *args):
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c",
+                    "commit.gpgsign=false", *args], cwd=repo, check=True, capture_output=True)
+
+
+@pytest.fixture
+def skill_repo(tmp_path, bruhs_src, monkeypatch):
+    """A git repo laid out like this one (the bruhs skill at the top, bench/ beside it)
+    standing in for BRUHS_REPO."""
+    repo = tmp_path / "repo"
+    shutil.copytree(bruhs_src, repo)
+    (repo / "bench").mkdir()
+    (repo / "bench" / "harness.py").write_text("v1\n")
+    _git(repo, "init", "-q")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "one")
+    monkeypatch.setattr(runner, "BRUHS_REPO", repo)
+    return repo
+
+
+def test_harness_only_commit_does_not_block_resume(tmp_path, skill_repo):
+    task = make_task(tmp_path, "t1")
+    out = tmp_path / "out"
+    ov = override(fake_agent(tmp_path, EDIT_AND_REPLY))
+    run_matrix([task], [CLAUDE], ["bare"], 1, out, command_override=ov)
+    first = json.loads((out / "matrix.json").read_text())
+    (skill_repo / "bench" / "harness.py").write_text("v2\n")  # a harness fix
+    (skill_repo / "docs").mkdir()
+    (skill_repo / "docs" / "notes.md").write_text("x\n")
+    _git(skill_repo, "add", "-A")
+    _git(skill_repo, "commit", "-qm", "harness fix")
+    run_matrix([task], [CLAUDE], ["bare"], 1, out, command_override=ov)
+    meta = json.loads((out / "matrix.json").read_text())
+    assert meta["bruhs_content"] == first["bruhs_content"] and len(meta["starts"]) == 2
+    commits = [s["harness_commit"] for s in meta["starts"]]
+    assert commits[0] != commits[1]  # recorded per start, as information only
+
+
+def test_bruhs_skill_change_blocks_resume(tmp_path, skill_repo):
+    task = make_task(tmp_path, "t1")
+    out = tmp_path / "out"
+    ov = override(fake_agent(tmp_path, EDIT_AND_REPLY))
+    run_matrix([task], [CLAUDE], ["bare"], 1, out, command_override=ov)
+    skill = skill_repo / "SKILL.md"
+    skill.write_text(skill.read_text() + "\nnew rule\n")
+    _git(skill_repo, "commit", "-qam", "change the skill")
+    with pytest.raises(runner.MatrixMismatch, match="bruhs_content"):
+        run_matrix([task], [CLAUDE], ["bare"], 1, out, command_override=ov)

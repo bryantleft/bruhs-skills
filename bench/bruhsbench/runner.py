@@ -61,7 +61,8 @@ from pathlib import Path, PurePath
 from . import untrusted
 from .agents import (agent_finished, build_command, is_auth_failure, parse_output,
                      tool_event_count)
-from .homes import AGENT_TOOL_HOMES, ClaudeAuthMissing, build_home, claude_auth, export_bruhs
+from .homes import (AGENT_TOOL_HOMES, ClaudeAuthMissing, bruhs_content_hash, build_home,
+                    claude_auth, export_bruhs)
 from .sandbox import (check_tmp_base, read_allow, private_tmp, real_home, remove_private_tmp,
                       work_base, wrap)
 from .types import Arm, Cli, ModelSpec, RunResult, RunSpec, Task
@@ -709,21 +710,30 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def _record_matrix(out_root: Path, commit: str, tasks: Sequence[Task],
+def _record_matrix(out_root: Path, content: str, commit: str, tasks: Sequence[Task],
                    models: Sequence[ModelSpec], arms: Sequence[Arm], repeats: int,
                    seed: int, timeout_s: int, record: dict | None = None) -> None:
     """Write (or, on resume, check and extend) matrix.json. ``record`` (the task hashes
     and freeze status) is stored with this start; an ``allow_unfrozen`` start also
     marks the whole matrix ``allow_unfrozen``. The first start's ``task_hashes`` are
     pinned top-level: a resume whose task hashes differ raises :class:`MatrixMismatch`,
-    and graders/judges check against them (:func:`pinned_task_hashes`)."""
+    and graders/judges check against them (:func:`pinned_task_hashes`).
+
+    R41: the skill under test is pinned by ``content`` (:func:`homes.bruhs_content_hash`
+    of the export), not the repo commit, so a harness-only commit never blocks a
+    resume; each start records its ``harness_commit`` as information only."""
     path = out_root / "matrix.json"
     versions = {cli: cli_version(cli) for cli in dict.fromkeys(m.cli for m in models)}
-    start = {"at": _now(), "cli_versions": versions, **(record or {})}
-    pinned = {"bruhs_commit": commit, "seed": seed, "repeats": repeats,
+    start = {"at": _now(), "harness_commit": commit, "cli_versions": versions,
+             **(record or {})}
+    pinned = {"bruhs_content": content, "seed": seed, "repeats": repeats,
               "models": [asdict(m) for m in models], "tasks": sorted(t.id for t in tasks)}
     if path.exists():
         meta = json.loads(path.read_text())
+        if "bruhs_content" not in meta and "bruhs_commit" in meta:
+            # a matrix from before R41 pinned the commit: keep checking that
+            pinned = {"bruhs_commit": commit, **{k: v for k, v in pinned.items()
+                                                  if k != "bruhs_content"}}
         changed = [k for k, v in pinned.items()
                    if (sorted(meta.get(k, [])) if k == "tasks" else meta.get(k)) != v]
         if changed:
@@ -833,8 +843,9 @@ def _run_matrix(tasks, models, arms, repeats, out_root: Path, work_root: Path, *
     guard = disk_guard or DiskGuard([work_root, out_root])
     guard.wait("starting the matrix")  # nothing runs yet: raises DiskLow at once if low
     commit = git_head(BRUHS_REPO, bruhs_commit)
-    _record_matrix(out_root, commit, tasks, models, arms, repeats, seed, timeout_s, record)
     bruhs_src = ensure_bruhs_export(work_root, commit)
+    _record_matrix(out_root, bruhs_content_hash(bruhs_src), commit, tasks, models, arms,
+                   repeats, seed, timeout_s, record)
     kept = _exclude_failed_setup(tasks, out_root, work_root, bruhs_src / "scripts")
 
     specs = matrix_order(kept, models, arms, repeats, seed=seed)

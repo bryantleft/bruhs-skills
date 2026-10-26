@@ -465,3 +465,19 @@ def test_agents_find_the_real_playwright_browsers_and_rust_toolchains(cli, arm, 
 def test_missing_tool_installs_are_not_pointed_at(tmp_path, bruhs_src, real_home):
     env, _ = _build("codex", "bare", tmp_path, bruhs_src, real_home)
     assert "PLAYWRIGHT_BROWSERS_PATH" not in env and "RUSTUP_HOME" not in env
+
+
+def test_bruhs_content_hash_covers_what_is_installed(tmp_path):
+    from bruhsbench.homes import bruhs_content_hash
+
+    src = tmp_path / "bruhs"
+    (src / "commands").mkdir(parents=True)
+    (src / "SKILL.md").write_text("skill\n")
+    (src / "commands" / "cook.md").write_text("cook\n")
+    h = bruhs_content_hash(src)
+    for excluded in ("bench", ".git", "docs", ".superpowers"):  # never installed
+        (src / excluded).mkdir()
+        (src / excluded / "x").write_text("x\n")
+    assert bruhs_content_hash(src) == h
+    (src / "commands" / "cook.md").write_text("cook v2\n")
+    assert bruhs_content_hash(src) != h

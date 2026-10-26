@@ -51,6 +51,7 @@ skills/plugins landed in the home.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -172,6 +173,27 @@ def export_bruhs(repo: Path, commit: str, dest: Path) -> Path:
     subprocess.run(["tar", "-x", "-C", str(dest)], input=archive, check=True,
                    capture_output=True)
     return dest
+
+
+def bruhs_content_hash(bruhs_src: Path) -> str:
+    """SHA-256 of the bruhs tree as it is installed into a home (``bruhs_src`` minus the
+    top-level :data:`BRUHS_EXCLUDE`): every file's relative path and bytes, a symlink's
+    target. Pinned per matrix (R41), so harness-only commits don't change it."""
+    root = Path(bruhs_src)
+    digest = hashlib.sha256()
+    for dirpath, dirnames, filenames in os.walk(root):
+        here = Path(dirpath)
+        if here == root:
+            dirnames[:] = [d for d in dirnames if d not in BRUHS_EXCLUDE]
+            filenames = [f for f in filenames if f not in BRUHS_EXCLUDE]
+        dirnames.sort()
+        for name in sorted(filenames + [d for d in dirnames if (here / d).is_symlink()]):
+            path = here / name
+            rel = path.relative_to(root).as_posix()
+            data = (b"L" + os.readlink(path).encode() if path.is_symlink()
+                    else b"F" + path.read_bytes())
+            digest.update(rel.encode() + b"\0" + hashlib.sha256(data).digest())
+    return digest.hexdigest()
 
 
 def _is_within(path: Path, root: Path) -> bool:

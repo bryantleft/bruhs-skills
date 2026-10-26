@@ -1,6 +1,6 @@
 # Does bruhs help?
 
-Generated {{ date }} · bruhs commit `{{ matrix.bruhs_commit[:12] }}` · {{ matrix.repeats or "?" }} repeats per task, model and arm{% if not private %} · public report{% endif %}
+Generated {{ date }} · bruhs commit `{{ matrix.bruhs_commit[:12] }}`{% if matrix.bruhs_content %} (skill content `{{ matrix.bruhs_content[:12] }}`){% endif %} · {{ matrix.repeats or "?" }} repeats per task, model and arm{% if not private %} · public report{% endif %}
 
 
 Same prompt, model, effort, tools and sandbox in two arms: **bare** (no skill) and **bruhs** (bruhs plus its companions). A task is a bruhs win or loss when its primary metric differs by more than a frozen margin, otherwise a tie. Win rate counts ties as half (50% = no difference). Cost, time and scope creep never decide a task.
