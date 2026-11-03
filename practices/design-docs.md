@@ -43,7 +43,7 @@ Keep a decision in the doc only if it's expensive to get wrong. Ask "what's the 
 | Risks and rollout | Only the cross-cutting concerns that apply: security, privacy, failure modes, observability, migration, rollback, and what happens if the flag is turned off after launch | one line each |
 | Open questions | Each states the question, the options, and the next step. Resolved ones become one-line decisions | as needed |
 
-Detail that only implementers need (PR breakdown, API field lists, migration steps) goes in a collapsed appendix or a linked doc.
+Detail that only implementers need (PR breakdown, API field lists, migration steps) goes in a collapsed appendix or a linked doc. The PR breakdown follows `commands/cook.md` → Step 3 → *PR breakdown*: one row per PR with a rough size, every schema change in its own row ahead of its users, nothing over ~400 lines.
 
 ## The problem section
 

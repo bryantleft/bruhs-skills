@@ -35,7 +35,7 @@ PR description + commit + reviewer-assignment quality is governed by **`practice
 - **PR body and ticket text:** shape and AI-tell scan per **`practices/writing.md`** (sentence case, point first, behavior not diff narration)
 - **PR title:** Conventional Commits format (`feat(scope):`, `fix(scope):`, etc.) — see `_common.md`
 - **UI preview — always for UI changes.** When the diff touches user-visible surface, verify it with `/expect` and capture screenshots + a screen recording, then embed them as a `## UI preview` section in the PR body. Full procedure: **`practices/ui-preview.md`**. A UI PR with no verified preview is incomplete.
-- **PR description template:** *What / Why / How / Test plan / Screenshots* — derived from the diff and Linear ticket context
+- **PR body shape:** point first, behavior bullets, Decisions, Review focus, collapsed Background, Testing (Ran / Mutation-checked / Not tested), and Risks with watch signals, inside the repo's PR template when one exists (Step 8)
 - **Size discipline:** if the diff is > 400 LOC, warn the user and suggest splitting into a [stack](#stacked-prs) (or accept with a justification noted in the PR body)
 - **CODEOWNERS:** if `.github/CODEOWNERS` exists, GitHub auto-requests reviewers; don't manually re-request
 - **Diagram:** for non-trivial architectural changes, suggest `/bruhs:doodle pr` after the PR opens to attach a visualization comment
@@ -112,6 +112,8 @@ Categorize the change type:
 Generate:
 - **Title**: Short description (under 70 chars)
 - **Summary**: What changed and why
+
+**Schema split check.** If the diff touches migrations or a generated schema (`migrations/`, `db/migrate/`, `prisma/migrations/`, `drizzle/`, `alembic/versions/`, `schema.prisma`, a schema snapshot) **and** any application code, stop: every schema change ships in its own PR (migration files plus the generated schema, nothing else), merged before the code that uses it. No size exception. Offer to split: the schema PR first, then the code PR on top (a [stack](#stacked-prs) while both are open).
 
 ### Step 3: Check Linear MCP
 
@@ -273,7 +275,7 @@ AskUserQuestion({
 
 - Never pass `--no-verify` to `git commit` or `git push` to bypass hooks.
 - Never skip this step unless the user explicitly chose "Ship anyway (not recommended)".
-- If the user chose "Ship anyway", append a note to the PR body's **Test plan** section in Step 8 flagging which checks failed and which areas are unvalidated — e.g. `- [ ] ⚠ Shipped with failing typecheck in <file> — reviewer please verify`.
+- If the user chose "Ship anyway", name the failing checks and unvalidated areas on the PR body's **Not tested** line in Step 8, e.g. `**Not tested:** typecheck fails in <file>; shipped anyway at the author's request`.
 
 ### Step 6: Stage and Commit
 
@@ -343,152 +345,95 @@ git diff --name-only origin/<base>...HEAD | grep -Eiq '\.(tsx|jsx|vue|svelte|css
 
 ### Step 8: Create PR
 
-The PR description should be a **historical record** — useful to someone reading `git blame` in 2 years. Lead with *why*, not *what* (the diff already shows what). Scale detail to the size and risk of the change.
+Two readers: a reviewer skimming to decide where to look, and an agent (`/bruhs:peep`, a bot reviewer, someone running `git blame` in two years) checking each claim against the diff. Both want the point first, claims as checkable behavior, and judgment calls in one known place. Fewest words that keep the meaning; never a walkthrough of the diff. Scale to risk: a typo fix gets one sentence.
 
-**Adapt the template by change type:**
-
-#### Feature PRs
+**Repo template first.** If a `pull_request_template.md` exists (`.github/`, `docs/`, or the root), fill its headings in order and put the shape below inside them as bold lead-in labels. Never add, rename, or reorder template headings. Tick only checklist boxes you actually satisfied. With no template, use these headings:
 
 ```bash
-gh pr create --title "<title>" --body "$(cat <<'EOF'
-## Why
-<1-2 sentences: what problem this solves or what capability it adds, and for whom>
+gh pr create --title "<type(scope): description>" --body "$(cat <<'EOF'
+## Summary
 
-## What changed
-- <bullet points of the key changes — high-level, not restating the diff>
+<1–2 sentences: what changes after merge, and why>
 
-## Design decisions
-- <any non-obvious choices: "Used X over Y because Z">
-- <omit this section entirely for straightforward changes>
+- <change, as behavior checkable against the diff>
 
-<!-- Include for UI changes only — produced by Step 7.5 / practices/ui-preview.md -->
+<optional mermaid diagram or table, when it replaces prose>
+
+**Decisions**
+- <deviation from the ticket/design, or a call that looks like a bug: one-line reason>
+
+**Review focus:** <where a bug would hide>
+
+<details><summary>Background</summary>
+
+<history, alternatives, citations, platform mechanics>
+
+</details>
+
+<!-- UI changes only: produced by Step 7.5 / practices/ui-preview.md -->
 ## UI preview
 Verified with `/expect` (chrome-devtools): <1-line result>.
 <before/after screenshots with captions, plus a screen recording of the changed interaction>
-<!-- End UI section -->
 
 ## Linear
 <TICKET-ID>
 
-## Test plan
-- [ ] <verification step 1>
-- [ ] <verification step 2>
+## Testing
+
+**Ran:** <what ran, what it proved>
+**Mutation-checked:** <guard removed, test failed; or `none`>
+**Not tested:** <what never hit the real dependency>
+
+## Risks
+
+- <risk>. Watch: <metric, log query, or error-tracker item>
 EOF
 )"
 ```
 
-#### Bug Fix PRs
+**Rules for each part:**
+
+- **First sentence is the PR.** Mechanics and history go in `<details>` or nowhere.
+- **Behavior, not methods.** Name code only to locate it or state an invariant (unique key, query count).
+- **The summary's lead depends on the type.** Feature: the capability and who gets it. Fix: the broken behavior, then the root cause in one sentence (how it was found goes in Background). Refactor/chore: why now, with proof of no behavior change under Testing.
+- **Decisions** holds every deviation and every intentional oddity. Omit the label if empty; never bury one mid-paragraph.
+- **Review focus:** omit on trivial diffs. On 5+ file PRs it also names where to start reading (see [Reviewer-Friendly PR Body](#reviewer-friendly-pr-body)).
+- **Diagram when it beats prose.** Branching logic, a flow across systems, or a state change → a small mermaid block. A case matrix (input → outcome) → a table. Under ~10 nodes, and drop the prose it replaces. Render it before posting (`npx -y -p @mermaid-js/mermaid-cli mmdc -i d.mmd -o /tmp/d.png`, then look at the PNG); quote labels containing `'`, `,` or `()`.
+- **Testing, never Risks, holds what you verified.** `Not tested` is always filled. Mutation-checked means you removed the guard and watched the test fail; `none` is an honest answer.
+- **Every risk has a watch signal**, or it isn't a risk entry. "No risks" is almost never true.
+- **UI preview**: required for any UI change, and *verified*: run `/expect` first, then embed screenshots **and** a screen recording, each with a caption ("Before: button overflows on mobile. After: wraps."). A bare screenshot of an unverified or static screen does not satisfy this.
+- **Sentence case throughout**, labels included (`practices/writing.md`).
+
+**Read-back gate before `gh pr create` / `gh pr edit`:** give only the body to a fresh subagent and ask what changes, what's riskiest, what deviates from the ticket, and which terms it couldn't define from the body alone. Wrong or "can't tell" means fix the body. The subagent has no team context, so it over-flags: define a term only if a reviewer from another team wouldn't know it. Then cut every word that doesn't change those answers.
+
+**Example (fix PR, no repo template):**
 
 ```bash
-gh pr create --title "<title>" --body "$(cat <<'EOF'
-## Problem
-<what was broken, who was affected, how it manifested>
+gh pr create --title "fix(engine): reshuffle the discard pile when the deck runs out" --body "$(cat <<'EOF'
+## Summary
 
-## Root cause
-<why it was broken — the actual underlying issue, not just "the code was wrong">
+Games past 40 turns no longer crash: drawing from an empty deck now reshuffles the discard pile into a new deck. `drawCard()` popped without checking deck size, so the empty array returned `undefined` and `evaluateHand()` threw.
 
-## Fix
-<what the fix does and why this approach>
+- Drawing from an empty deck reshuffles the discard pile, then draws
+- Drawing with both deck and discard empty throws `DeckExhaustedError` instead of returning `undefined`
 
-## Linear
-<TICKET-ID>
+**Decisions**
+- Reshuffle instead of ending the game, because it matches standard rules and the ticket's repro
 
-## Test plan
-- [ ] <how you verified the fix>
-- [ ] <regression test or edge case coverage>
-EOF
-)"
-```
-
-#### Refactor / Chore PRs
-
-```bash
-gh pr create --title "<title>" --body "$(cat <<'EOF'
-## Why now
-<what motivated this refactor — tech debt, upcoming feature needs it, performance>
-
-## What changed
-- <bullet points>
-
-## Reviewer guide
-- <where to start reading, what to skip (e.g., auto-generated files)>
-- <omit for small/obvious changes>
-
-## Linear
-<TICKET-ID>
-
-## Test plan
-- [ ] <proof of no behavior change, or what was verified>
-EOF
-)"
-```
-
-**Guidelines for writing each section:**
-
-- **Why / Problem**: This is the most important section. A reviewer should understand the motivation before reading a single line of code. Write it for someone with no context.
-- **What changed**: High-level bullets only. Don't restate the diff ("changed line 42 from X to Y"). Focus on *what's different about the system now*.
-- **Design decisions**: Only include when the choice isn't obvious. "Used batch query instead of N+1 loop" — yes. "Created a React component" — no.
-- **UI preview**: Required for any UI change, and must be *verified* — run `/expect` (chrome-devtools) first, then embed screenshots **and** a screen recording of the interaction (see `practices/ui-preview.md`). Always include a caption: "Before: button overflows on mobile. After: wraps correctly." A bare screenshot of an unverified or static screen does not satisfy this.
-- **Reviewer guide**: For PRs touching 5+ files. Tell the reviewer where to start and what to skip. "Start with `schema.ts`, then `handler.ts`. The migration file is auto-generated."
-- **Test plan**: Every PR, every time. Not "added tests" — specific verification steps.
-- **Scale to risk**: A one-line typo fix gets a one-line description. A schema migration gets paragraphs.
-
-**Example — Feature PR:**
-
-```bash
-gh pr create --title "feat: add leaderboard to game page" --body "$(cat <<'EOF'
-## Why
-Players had no way to see how they rank against other agents. The leaderboard gives visibility into top performers and adds a competitive loop to the game page.
-
-## What changed
-- Added `LeaderboardCard` component showing top agents by win rate
-- Integrated leaderboard into game page sidebar
-- Added `getTopAgents` query with pagination support
-
-## UI preview
-Verified with `/expect` (chrome-devtools): leaderboard renders, sorts by win rate, empty state and mobile layout hold up.
-
-**Game page with leaderboard sidebar (desktop 1280×800)**
-![desktop](https://raw.githubusercontent.com/perdixlabs/gambit/bruhs-assets/.bruhs/pr-media/perdix-140-add-leaderboard/desktop.png)
-
-**Mobile (390×844)**
-![mobile](https://raw.githubusercontent.com/perdixlabs/gambit/bruhs-assets/.bruhs/pr-media/perdix-140-add-leaderboard/mobile.png)
-
-**Recording** — opening the game page and the leaderboard updating after a match
-<!-- drag /tmp/bruhs-ui-preview/video/leaderboard.webm here for an inline player -->
-
-## Linear
-PERDIX-140
-
-## Test plan
-- [ ] Verify leaderboard displays on game page with real data
-- [ ] Verify agents are sorted by win rate descending
-- [ ] Verify empty state when no agents exist
-- [ ] Verify loading skeleton renders during fetch
-EOF
-)"
-```
-
-**Example — Bug Fix PR:**
-
-```bash
-gh pr create --title "fix: validate card draw against deck state" --body "$(cat <<'EOF'
-## Problem
-Players could draw cards from an empty deck, causing a crash in the game engine. This happened when a game went past 40 turns.
-
-## Root cause
-`drawCard()` didn't check remaining deck size before popping. The deck array underflowed, returning `undefined`, which cascaded into a type error in `evaluateHand()`.
-
-## Fix
-Added a deck size check in `drawCard()` that triggers a reshuffle from the discard pile when the deck is empty. This matches standard card game rules and prevents the underflow.
+**Review focus:** the reshuffle must not include cards currently in players' hands.
 
 ## Linear
 PERDIX-142
 
-## Test plan
-- [ ] Verify drawing from empty deck triggers reshuffle
-- [ ] Verify game can go past 40 turns without crashing
-- [ ] Added unit test for empty deck edge case
+## Testing
+
+**Ran:** unit tests for empty-deck and both-empty draws; a scripted 120-turn game completes.
+**Mutation-checked:** removed the size check and the empty-deck test failed.
+**Not tested:** concurrent draws in multiplayer rooms.
+
+## Risks
+
+- Reshuffling changes card order mid-game in long games. Watch: `game_error` events with `stage=evaluate` in the error tracker.
 EOF
 )"
 ```
@@ -808,12 +753,10 @@ Apply the same heuristics as `/bruhs:walk` (see that command for the full table)
 
 ### What to add to the PR body
 
-Insert (or replace) a `## Reviewer notes` section in the body between `## What changed` and `## Test plan`:
+Name the start point on the **Review focus** line and add the collapsed mechanical list right after it, still inside the summary section:
 
 ```markdown
-## Reviewer notes
-
-**Where to start:** `apps/web/src/app/api/v1/route.ts` → `packages/sdk/src/client.ts`
+**Review focus:** <where a bug would hide>. Start at `apps/web/src/app/api/v1/route.ts` → `packages/sdk/src/client.ts`
 
 <details>
 <summary>3 mechanical files (lockfiles, generated)</summary>
@@ -845,7 +788,7 @@ Stack when one change is too big to review in one pass but its parts depend on e
 ### Slice by subject
 
 - One subject per PR, in dependency order: schema/storage first, then core logic, then wiring, then UI.
-- Schema or migration changes ship in their own PR ahead of the code that uses them.
+- Schema or migration changes always ship in their own PR ahead of the code that uses them, stacked or not (Step 2 → *Schema split check*).
 - A change to a shared file lands in the PR that owns that subject, not the PR that happened to need it.
 
 ### Create

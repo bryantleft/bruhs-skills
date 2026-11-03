@@ -331,6 +331,17 @@ Planning...
 - [ ] If it launches behind a flag, the flag-off story is stated: what happens to in-flight state when the flag is turned off *after* launch
 - [ ] If it exposes data or actions to a new audience, the authz model and tenant scoping of submitted ids are stated
 
+**PR breakdown** (when the work spans more than one PR): one row = one PR = one ticket, with a dependency column and a **rough size** (estimated net reviewable lines, excluding lockfiles, generated files, and fixtures).
+
+| # | PR | Depends on | Rough size |
+|---|---|---|---|
+| 1 | Schema: add `reward_grants` table | — | ~40 |
+| 2 | Grant rewards on purchase | 1 | ~250 |
+
+- Every schema change is its own row (migration files plus the generated schema, nothing else), ahead of the rows that use it. No size exception: a one-line migration still gets its own PR.
+- Split any row estimated over ~400 lines into thinner vertical slices before filing tickets.
+- **Uncertain design: spike first, then plan.** When you can't see the seams yet, build a throwaway end-to-end spike on a local branch, write the breakdown from what it taught you, and rebuild each PR fresh off main. Never slice the spike branch into PRs: carved-up slices rarely stand alone, and rebuilding a stack under review means force-pushes. Known design: plan small directly.
+
 When multiple meaningful approaches remain, use `AskUserQuestion` for selection:
 
 ```javascript

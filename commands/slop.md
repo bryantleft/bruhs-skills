@@ -57,6 +57,7 @@ Quick mode focuses on the AI-slop patterns that are most likely to be **introduc
 - Backwards-compat shims for code paths that no longer exist
 - Test descriptions that restate the function name (`describe('drawCard', () => it('drawCard', …))`)
 - Comments that explain WHAT the code does (the code already shows that), instead of WHY
+- Comments moved or reworded without first checking whether deleting them leaves the reader wrong
 - Comments citing things that rot: ticket/plan IDs, dates, people, line numbers
 - Subclasses whose body is one preset field plus a check the consumer already makes
 - UI/motion slop in added visible-surface code: `transition: all`,
@@ -516,6 +517,8 @@ if (!user) {
 const user = await db.getUser(id);
 if (!user) throw new Error('User not found');
 ```
+
+**Ask "do we even need it?" first, before writing, keeping, moving, or tightening any comment.** Delete it and reread the code; restore it only if the reader is now wrong. Rewording, shortening, or moving a comment skips the question instead of answering it. When asked to "tighten" or "fix" a comment, deleting it is a valid answer.
 
 Keep a WHY comment only when its absence would leave the reader *wrong*, not merely uninformed. One case that earns it: a branch that bypasses an existing structure (an early return before a `switch` or lookup map that would otherwise handle the value). Name the constraint in one line, or the next author can't tell which one to extend.
 

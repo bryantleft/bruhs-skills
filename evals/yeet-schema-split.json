@@ -1,0 +1,25 @@
+{
+  "skills": [
+    "bruhs"
+  ],
+  "command": "/bruhs:yeet",
+  "query": "/bruhs:yeet",
+  "files": [
+    "prisma/schema.prisma",
+    "prisma/migrations/20261103_add_reward_grants/migration.sql",
+    "src/rewards/grant.ts",
+    "src/rewards/grant.test.ts"
+  ],
+  "context": "Uncommitted diff (~180 lines) adds a one-column reward_grants table via a Prisma migration and the grant-on-purchase logic that writes to it. No open PRs on the branch. The user did not mention splitting.",
+  "expected_behavior": [
+    "Detects that the diff mixes migration/schema files with application code before committing",
+    "Stops and offers to split: a schema PR with only the migration and schema.prisma, then the code PR stacked on it",
+    "Does not waive the split because the diff is small or the migration is one column",
+    "When the user accepts, the schema PR's body says it carries no behavior change and the code PR targets the schema branch"
+  ],
+  "failure_modes": [
+    "Ships one PR because the total diff is under 400 lines",
+    "Splits only when the user asks",
+    "Puts grant.ts or its test in the schema PR"
+  ]
+}

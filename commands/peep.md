@@ -355,6 +355,7 @@ Your job is to find bugs, security issues, logic errors, and performance problem
    - Missing cache headers on cacheable GETs
 4. Missing edge cases (empty input, null, overflow)
 5. API contract violations (breaking backward compat)
+   - Bundled migration: migration or generated-schema files alongside application code is a `must-fix` regardless of size (`tooling-confirmed` by `git diff --name-only <base>...HEAD`). Ask for the schema to move to its own PR, merged first
 6. UI/motion regressions when the file touches visible UI:
    - animation on keyboard/high-frequency actions
    - \`transition: all\`, \`ease-in\` on UI, \`scale(0)\` entrances

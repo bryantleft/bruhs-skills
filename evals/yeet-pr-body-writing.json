@@ -14,11 +14,15 @@
     "Puts the START/STOP/duplicate cases in a list or table, one case per line",
     "Uses sentence case in the body and no em-dash chains, parallel triads, 'this ensures' closings, or chatbot signoffs",
     "Does not cite 'R4' without a link; states the rule instead",
-    "Scans the draft against practices/writing.md before running gh pr create"
+    "Scans the draft against practices/writing.md before running gh pr create",
+    "Puts Ran, Mutation-checked, and Not tested lines under the template's Test plan heading (not a new heading), with Not tested always filled",
+    "Every risk names a watch signal (metric, log query, or error-tracker item)",
+    "Runs the read-back gate with a fresh subagent on the body before gh pr create"
   ],
   "failure_modes": [
     "Narrates the diff ('the handler reads X then calls Y')",
     "Packs the three cases into one comma/semicolon sentence",
-    "Writes the body in lowercase chat style"
+    "Writes the body in lowercase chat style",
+    "Lists verification steps under Risks, or writes 'No risks'"
   ]
 }

@@ -270,7 +270,10 @@ Branch: `<type>/<ticket-id>-<short-description>`
 
 Stacked PRs → `commands/yeet.md` → *Stacked PRs*.
 
+Every schema change ships in its own PR (migration files plus the generated schema, nothing else), merged before the code that uses it. No size exception. Planned PRs carry a rough size; split any over ~400 lines before building.
+
 ### Comments
+- Ask "do we even need it?" before writing, keeping, moving, or tightening one: delete it and reread. Deleting is a valid answer to "tighten this comment" (`commands/slop.md` → 4.1)
 - ✅ WHY (business logic, workarounds, non-obvious decisions)
 - ❌ WHAT (code already says what it does)
 - ❌ Commented-out code
