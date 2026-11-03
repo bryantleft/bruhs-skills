@@ -1,0 +1,11 @@
+schema_version: "1.1"
+name: peep-bundled-migration
+description: |
+  Command under test: /bruhs:peep
+
+  Preconditions: PR #412 has no review comments. Its diff adds drizzle/0007_add_index_orders_status.sql, updates drizzle/meta/_journal.json, and changes src/orders/list.ts to filter by status. Net 60 lines. Tests pass.
+expected_outcome: |
+  - Raises a must-fix finding that the migration is bundled with application code, citing the file list from git diff --name-only as the evidence
+  - Asks for the migration and journal to move to their own PR, merged before the code PR
+  - Keeps the finding even though the PR is small and the migration is only an index
+  - Does not drop the finding in the lint-territory filter

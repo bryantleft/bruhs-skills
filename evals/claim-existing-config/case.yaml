@@ -1,0 +1,14 @@
+schema_version: "1.1"
+name: claim-existing-config
+description: |
+  Command under test: /bruhs:claim
+
+  Preconditions: Project already has a valid bruhs:state block in CLAUDE.md with Linear wired to linear-sonner and a Next.js+Drizzle stack. User runs claim again, perhaps to reconfigure after adding Convex.
+
+  Workspace files the preconditions assume: CLAUDE.md
+expected_outcome: |
+  - Step 1 detects the existing bruhs:state block in CLAUDE.md via the read_bruhs_block.py probe (with legacy .claude/bruhs.json fallback)
+  - Immediately issues an AskUserQuestion with header 'Reconfigure' offering Yes (overwrite) / No (keep existing and exit)
+  - If user picks 'No', exits cleanly without touching the file or calling any Linear MCP tools
+  - If user picks 'Yes', continues into Step 2 stack detection and proceeds to re-run the full workflow before overwriting the file at Step 7
+  - Does not silently overwrite the existing config without the prompt

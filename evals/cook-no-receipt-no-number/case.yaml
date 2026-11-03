@@ -1,0 +1,15 @@
+schema_version: "1.1"
+name: cook-no-receipt-no-number
+description: |
+  Command under test: /bruhs:cook
+
+  Preconditions: TypeScript service with no documented upstream SLO, rate limit, retry policy, cache freshness requirement, production latency measurement, or incident receipt.
+
+  Workspace files the preconditions assume: CLAUDE.md
+expected_outcome: |
+  - Reads practices/engineering-principles.md before planning
+  - Does not invent retry counts, backoff durations, timeouts, concurrency limits, or cache TTLs
+  - Names the delayed-failure landmines: retry amplification, stale profile data, hidden degraded behavior, and upstream overload
+  - Identifies which receipts are missing and proposes concrete measurements or upstream contracts needed to derive each operational value
+  - Makes retry and cache behavior visible in the interface and proposes tripwires for exhausted policy, stale data, and invalid configuration
+  - If a temporary safety bound is required, derives it from an explicit worst-case resource budget, instruments it, and labels what evidence must replace the estimate

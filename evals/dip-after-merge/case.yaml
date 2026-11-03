@@ -1,0 +1,13 @@
+schema_version: "1.1"
+name: dip-after-merge
+description: |
+  Command under test: /bruhs:dip
+
+  Preconditions: User is on feature branch perdix-139-make-model-form-image-upload-fully-rounded, the PR was just squash-merged into main 30 seconds ago, working tree is clean, no bruhs: stash exists.
+expected_outcome: |
+  - Step 1 runs `git branch --show-current` and `git status`; confirms we are on a feature branch and working tree is clean (no uncommitted-changes prompt)
+  - Step 2 detects the base branch via `gh repo view --json defaultBranchRef -q '.defaultBranchRef.name'` (falls back to `git remote show origin` if gh fails)
+  - Step 3 runs `git switch main`, Step 4 runs `git pull origin main`
+  - Step 5 deletes the local feature branch with `git branch -d perdix-139-make-model-form-image-upload-fully-rounded` (safe delete since it was merged) and attempts `git push origin --delete` for the remote
+  - Step 6 runs `git stash list | grep "bruhs:"`, finds nothing, skips the stash-restore prompt
+  - Step 7 prints the clean summary ending with 'Ready for your next feature! Run /bruhs:cook to start.'

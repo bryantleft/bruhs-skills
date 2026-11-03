@@ -177,9 +177,12 @@ Stack-agnostic and stack-specific guidance, loaded conditionally by `cook` and `
 
 ## Evaluations
 
-`evals/` holds JSON scenarios covering happy paths, edge cases, adversarial
-phrasings, and cross-cutting engineering principles. See `evals/README.md` for the
-manual eval workflow.
+`evals/` holds one folder per test case, in the layout `claude plugin eval`
+runs: happy paths, edge cases, adversarial phrasings, and cross-cutting
+engineering principles. The cases are plain Markdown and YAML, so any agent can
+run them, and `scripts/export_evals_json.py` exports them as an agentskills.io
+`evals.json` for runners on other providers. `tests/run_script_tests.sh` covers
+the deterministic scripts and needs no model. See `evals/README.md`.
 
 ## Configuration
 

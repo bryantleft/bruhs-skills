@@ -1,0 +1,13 @@
+schema_version: "1.1"
+name: claim-happy-path
+description: |
+  Command under test: /bruhs:claim
+
+  Preconditions: Existing Next.js app with next.config.ts, tailwind.config.ts, drizzle.config.ts, components/ui/ present, biome.json at root. Git is initialized, no bruhs:state block in CLAUDE.md exists, and a Linear MCP server 'linear-perdix' is configured in ~/.claude.json.
+expected_outcome: |
+  - Runs Step 1 detect-existing-config, confirms bruhs:state block in CLAUDE.md is absent, and proceeds without the reconfigure prompt
+  - Step 2 detects framework=Next.js (from next.config.ts), styling=['Tailwind CSS','shadcn/ui'] (tailwind.config + components/ui/), database=['drizzle-postgres'] (drizzle.config), tooling=['biome']
+  - Step 3 reads ~/.claude.json, finds linear-perdix, sets linearAvailable=true, and Step 4 calls mcp__linear-perdix__linear_get_teams then mcp__linear-perdix__linear_list_projects
+  - Uses AskUserQuestion to pick team then project (one question at a time, options built dynamically from MCP results)
+  - Step 5 prints the detected stack summary and asks for confirmation via AskUserQuestion before writing the file
+  - Step 7 writes the bruhs:state block to CLAUDE.md and AGENTS.md with structure='single', integrations.linear.mcpServer='linear-perdix', the selected team/project IDs and names, and tooling.skills including superpowers, feature-dev, commit-commands, shadcn, and vercel-react-best-practices

@@ -1,0 +1,13 @@
+schema_version: "1.1"
+name: cook-pr-breakdown-sizing
+description: |
+  Command under test: /bruhs:cook
+
+  Preconditions: The repo uses Drizzle. The feature needs two new tables (referrals, referral_payouts), purchase-hook logic, and an admin page. The team has not built anything like it before, and it is unclear whether payouts should be computed at purchase time or by a nightly job.
+
+  Workspace files the preconditions assume: CLAUDE.md
+expected_outcome: |
+  - Produces a PR breakdown table with one row per PR, a dependency column, and a rough size per row
+  - Puts the schema change in its own row (migration plus generated schema only) ahead of the rows that use it
+  - Splits any row estimated over ~400 lines into thinner vertical slices
+  - Because the payout timing is uncertain, recommends a throwaway end-to-end spike first, then rebuilding each PR fresh off main instead of slicing the spike branch

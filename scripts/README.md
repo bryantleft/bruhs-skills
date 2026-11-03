@@ -139,6 +139,26 @@ executable (`chmod +x`).
 Exit codes: `0` every check passed, `1` at least one check failed,
 `2` usage error or no recognized stack found.
 
+### `export_evals_json.py`
+
+Maintainer tool, not called by any command. Checks every case in
+`evals/<case>/` against the rules `claude plugin eval` uses to load a
+case, and exports the suite in the agentskills.io `evals.json` format
+so runners for other agents can use it.
+
+Invocation:
+
+    python3 scripts/export_evals_json.py --check
+    python3 scripts/export_evals_json.py -o /tmp/bruhs-evals.json
+
+Output: with `--check`, a one-line summary. Otherwise the `evals.json`
+document goes to stdout, or to the `-o` path. Don't write the export
+to `evals/evals.json` in this repo: skill-creator would then run every
+case twice.
+
+Exit codes: `0` every case is valid, `1` at least one case is invalid
+(each problem printed to stderr), `2` usage error.
+
 ## Notes
 
 - JSON output is pretty-printed so callers can pipe through `jq` or

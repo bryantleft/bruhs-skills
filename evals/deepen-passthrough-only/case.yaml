@@ -1,0 +1,12 @@
+schema_version: "1.1"
+name: deepen-passthrough-only
+description: |
+  Command under test: /bruhs:deepen
+
+  Preconditions: TypeScript codebase. src/utils contains 14 files: formatDate.ts (one-liner wrapping date-fns.format), capitalize.ts (str[0].toUpperCase()+str.slice(1)), clamp.ts (Math.min/Math.max), 8 more one-liners, plus three files that each only re-export from another package. There are no domain modules in src/utils — every file is a pass-through to a library or a string/number operator. Tests for src/utils import the lib directly and ignore the wrappers.
+expected_outcome: |
+  - Phase 1: applies the deletion test (deepen.md L89 / practices L73) to each pass-through file and confirms that deleting any of them moves complexity to ONE call site (or zero), not to N — the 'or vanishes' branch of the deletion test
+  - Phase 2: produces FEW or ZERO deepening candidates here — pass-through modules are deletion candidates per L89 ('if it vanishes → the module was a pass-through and a candidate for elimination/merging'), not interface-design candidates
+  - Names the anti-pattern explicitly: pass-through modules without behavior to hide are not deepening candidates. Cites the deletion test as the basis
+  - Does not invent a domain to wrap these utilities in (no 'TextFormattingModule' or 'NumberUtils' speculative module) — invented domain vocabulary violates the 'use domain vocabulary' rule when no shared invariants exist
+  - If src/utils has no deepening candidates after the deletion test, Phase 2 is honest about it and refuses to fabricate entries

@@ -1,0 +1,11 @@
+schema_version: "1.1"
+name: claim-no-linear-mcp
+description: |
+  Command under test: /bruhs:claim
+
+  Preconditions: TypeScript Hono API project, git initialized, biome.json present. ~/.claude.json has no entries whose name starts with 'linear'.
+expected_outcome: |
+  - Step 3 reads ~/.claude.json and finds zero Linear servers, sets linearAvailable=false, and logs the hint about adding mcp-server-linear
+  - Skips Step 4 entirely — does not call any mcp__linear-* tools, does not issue workspace/team/project AskUserQuestions
+  - Continues to Step 5 stack detection and Step 7 write, omitting the integrations.linear section from the final bruhs:state block
+  - Final summary in Step 8 does not list a Linear integration line, and tells the user how to add Linear later

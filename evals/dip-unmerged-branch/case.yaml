@@ -1,0 +1,13 @@
+schema_version: "1.1"
+name: dip-unmerged-branch
+description: |
+  Command under test: /bruhs:dip
+
+  Preconditions: User is on feature branch feat/experimental. The branch has commits that are NOT in origin/main — it was never merged. Working tree is clean.
+expected_outcome: |
+  - Steps 1-4 switch to main and pull latest
+  - Step 5 tries `git branch -d feat/experimental`, which git refuses because the branch isn't fully merged
+  - On detecting the unmerged state, fires AskUserQuestion with header 'Unmerged' asking 'Branch feat/experimental is not fully merged. Delete anyway?' with options Yes (force delete with git branch -D) / No (keep the branch)
+  - If user picks No, keeps the branch and prints 'Keeping branch feat/experimental.' before the summary
+  - If user picks Yes, runs `git branch -D feat/experimental` and also attempts `git push origin --delete feat/experimental`
+  - Never silently force-deletes without explicit confirmation

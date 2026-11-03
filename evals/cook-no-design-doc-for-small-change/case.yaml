@@ -1,0 +1,11 @@
+schema_version: "1.1"
+name: cook-no-design-doc-for-small-change
+description: |
+  Command under test: /bruhs:cook
+
+  Preconditions: Single component change, no backend, no other consumers, trivially reversible.
+
+  Workspace files the preconditions assume: CLAUDE.md
+expected_outcome: |
+  - Checks the design-doc triggers in practices/design-docs.md and finds none apply
+  - Plans in chat and proceeds without writing a design doc

@@ -1,0 +1,13 @@
+schema_version: "1.1"
+name: cook-opensrc-dep-source
+description: |
+  Command under test: /bruhs:cook
+
+  Preconditions: package.json pins react-day-picker@9.x — a major the agent likely hasn't memorized (v9 renamed several props vs v8). bruhs:state has the project stack. `opensrc` is available on PATH and react-day-picker is installed in node_modules.
+
+  Workspace files the preconditions assume: CLAUDE.md, package.json
+expected_outcome: |
+  - During Step 2 (Explore) or Step 5 (Build), the agent resolves react-day-picker's real API from source rather than memory — reads the installed copy in node_modules at the locked v9, or runs `opensrc path react-day-picker` and greps/reads its exports/types — per practices/source-ground-truth.md
+  - The DayPicker usage it writes matches the v9 source (correct prop names/types for the installed version), not a remembered v8 signature
+  - When docs/memory and the source disagree, the agent treats the installed source as ground truth and pins to the lockfile version, not `latest`
+  - Cites what it read (file path + symbol from the source) when explaining the API it coded against

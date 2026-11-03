@@ -1,0 +1,17 @@
+schema_version: "1.1"
+name: cook-feature-description
+description: |
+  Command under test: /bruhs:cook
+
+  Preconditions: Next.js + Drizzle project with existing bruhs:state block in CLAUDE.md, Linear configured. Working tree is clean. Game page and agentStats table already exist.
+
+  Workspace files the preconditions assume: CLAUDE.md
+expected_outcome: |
+  - Step 1 parses 'add a leaderboard to the game page' as a feature description (not a ticket ID), outputs a Feature/Goal/Scope summary, and does NOT call linear_get_issue
+  - Step 2 loads practices/engineering-principles.md first, then practices/type-driven-design.md plus stack practices (typescript-react), loads skills from config.tooling.skills, and spawns feature-dev:code-explorer via Task to find the game page, agentStats schema, and existing stats UI patterns
+  - Step 3 presents genuinely distinct approaches only when a real trade-off exists; each plan covers files, data path, landmines, receipts, tripwires, hidden state, and performance, then uses AskUserQuestion for meaningful choices
+  - Step 4 runs git status; since working tree is clean, skips stashing
+  - Step 5 builds with TDD if a test suite is detected (vitest.config.* check), keeps tests when suite exists, otherwise creates then deletes temp test files
+  - Step 6 launches feature-dev:code-reviewer including the fast-path audit for N+1 / await-in-loop / per-request clients
+  - Because the leaderboard is a UI change, the Visual Verification step runs `/expect` (Skill('expect')) against the running dev server to verify rendering/sorting/empty-state/mobile via chrome-devtools, then captures screenshots + a recording to /tmp/bruhs-ui-preview per practices/ui-preview.md — it does NOT use the stale Skill('agent-browser')
+  - Step 7 prints 'Ready to ship! Run /bruhs:yeet to create ticket and PR.' (no existing ticket note), and the captured UI media is left for yeet Step 7.5 to embed as the PR's `## UI preview`

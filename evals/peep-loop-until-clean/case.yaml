@@ -1,0 +1,13 @@
+schema_version: "1.1"
+name: peep-loop-until-clean
+description: |
+  Command under test: /bruhs:peep --loop
+
+  Preconditions: PR #42 is open on the current branch with no human review comments and no AI-reviewer bot installed. The diff has a couple of latent issues the agent's own review can catch (one reproducible bug, one nit), and fixing the bug touches code that warrants a second look. The project has a test harness and passing CI.
+expected_outcome: |
+  - Runs an iterative loop (default max 5) driven by peep's OWN discovery review (Step 3: subagent-per-file + validator, or 3-pass vote) — it does NOT require or wait on an external AI-reviewer bot
+  - Each iteration: review the diff → fix actionable findings under the reproduction-first evidence bar (Step 4 / Evidence) → resolve → validate (Step 10) → commit 'fix: self-review pass (peep loop iteration N)' → push → re-review the updated diff
+  - On iterations >= 2 it focuses on what changed since the last push (plus anything still unresolved), so it converges rather than re-litigating settled code
+  - The reproducible bug is fixed (reproduced/tooling-confirmed) and the nit applied; anything it cannot reproduce is declined with a rationale, not papered over to look clean
+  - Terminates when a review pass yields no new actionable findings (clean) OR the iteration cap OR no-progress (zero new fixes in an iteration), and summarizes the result
+  - If an AI-reviewer bot WERE installed, it would optionally fold the bot's findings in — but the loop works fully without one

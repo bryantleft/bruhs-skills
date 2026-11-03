@@ -1,0 +1,14 @@
+schema_version: "1.1"
+name: yeet-stacked-prs
+description: |
+  Command under test: /bruhs:yeet
+
+  Preconditions: One feature branch holds a migration plus schema, core grant logic, and a React settings panel. gh is authenticated. No PRs exist yet.
+
+  Workspace files the preconditions assume: CLAUDE.md
+expected_outcome: |
+  - Splits by subject in dependency order: schema/migration PR first, then logic, then UI
+  - Creates each branch from the layer below and opens each PR with --base set to the parent branch (bottom PR targets main)
+  - Opens each PR body with the stack position and links to its neighbours
+  - Commits on every layer use Conventional Commits with an Assisted-by trailer
+  - Runs the UI preview flow only on the UI layer

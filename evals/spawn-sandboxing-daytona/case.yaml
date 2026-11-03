@@ -1,0 +1,11 @@
+schema_version: "1.1"
+name: spawn-sandboxing-daytona
+description: |
+  Command under test: /bruhs:spawn
+
+  Preconditions: Fresh project (not a monorepo). The whole job of the API is running AI-generated / untrusted user code, so a sandbox is squarely in scope. Linear is configured.
+expected_outcome: |
+  - During Step 2e stack selection, spawn presents the Sandboxing question (header 'Sandboxing') offering Daytona, because the project is an API that runs AI-generated / untrusted code
+  - If Daytona is selected, the written bruhs:state stack includes "sandboxing": ["Daytona"] (the selected value)
+  - derive_stack_rules.py emits the Daytona rules block into bruhs:rules — run AI/untrusted code inside a sandbox, reuse-vs-per-call, delete + idle auto-stop, secrets via env, bounded concurrency
+  - Both the bruhs:state and bruhs:rules blocks are written to CLAUDE.md and AGENTS.md via the sync helpers

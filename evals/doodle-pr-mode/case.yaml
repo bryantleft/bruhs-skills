@@ -1,0 +1,14 @@
+schema_version: "1.1"
+name: doodle-pr-mode
+description: |
+  Command under test: /bruhs:doodle
+
+  Preconditions: User is on branch perdix-140-add-leaderboard which has an open PR #42 on GitHub. A tldraw MCP is installed exposing mcp__tldraw__create_diagram. gh CLI is authenticated.
+expected_outcome: |
+  - Step 1 verifies the tldraw MCP via ToolSearch('select:mcp__tldraw__create_diagram') and does NOT abort
+  - PR pipeline step 1 resolves the PR from the current branch via gh, finds PR #42
+  - Runs `gh api .../pulls/42/files` (paginated) to get the changed-file list with status, and `gh pr diff 42` for patch content
+  - Groups files into modules (workspace member > layer dir > top-level src/ > extension fallback), parses imports old vs new to compute added/removed/preserved edges
+  - Builds tldraw shapes — frames for modules, geo boxes for files (green=added, yellow=modified, red/dashed=deleted), solid/dashed arrows per edge change
+  - Calls mcp__tldraw__create_diagram with shapes, format='png', width=1920, height=1080; receives {path, format}
+  - Default upload for pr mode: uploads image to a gist via `gh gist create` and posts a PR comment on #42 via `gh pr comment 42 --body` containing the image and a legend in <details>

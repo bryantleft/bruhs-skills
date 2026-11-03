@@ -1,0 +1,16 @@
+schema_version: "1.1"
+name: spawn-into-monorepo
+description: |
+  Command under test: /bruhs:spawn
+
+  Preconditions: Existing Turborepo monorepo 'gambit' with apps/web (Next.js) already in it. User wants to add a new Hono API package as apps/api. Linear is configured.
+
+  Workspace files the preconditions assume: turbo.json, pnpm-workspace.yaml
+expected_outcome: |
+  - Step 1 detects turbo.json and pnpm-workspace.yaml, fires AskUserQuestion with header 'Add to repo' offering New app / New package / New project (outside)
+  - User picks 'New app', then Step 2b selects Type (API), Step 2c Language (TypeScript), Step 2d Framework (Hono)
+  - Step 2e asks stack additions relevant to API (database, auth, libraries, tooling) via AskUserQuestion
+  - Step 5 creates a single Linear ticket for the api setup (not the full 3-ticket bootstrap used for greenfield projects)
+  - Step 6 scaffolds via `pnpm create hono@latest apps/api` from the monorepo root
+  - Updates turbo.json pipeline to include the new app, and extends pnpm-workspace.yaml if necessary
+  - Step 8 updates the existing bruhs:state block in CLAUDE.md and AGENTS.md to add the new framework to stack.frameworks (monorepo uses the frameworks ARRAY form, not framework string) rather than overwriting the existing block

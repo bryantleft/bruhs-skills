@@ -1,0 +1,15 @@
+schema_version: "1.1"
+name: cook-from-ticket-id
+description: |
+  Command under test: /bruhs:cook
+
+  Preconditions: Next.js + Drizzle project with a bruhs:state block in CLAUDE.md where integrations.linear.mcpServer='linear-perdix'. PERDIX-145 exists in Linear and is titled 'Add dark mode toggle to settings page'.
+
+  Workspace files the preconditions assume: CLAUDE.md
+expected_outcome: |
+  - Step 0 confirms bruhs:state block in CLAUDE.md exists and reads it to extract linearConfig.mcpServer='linear-perdix'
+  - Step 1 recognizes PERDIX-145 as a ticket ID, runs ToolSearch for mcp__linear-perdix__linear_get_issue, then calls it with id='PERDIX-145'
+  - Stores ticketContext with id, identifier='PERDIX-145', title, description, and branchName from issue.gitBranchName — this context must be available to yeet later in the same session
+  - Step 2 launches feature-dev:code-explorer subagent(s) via Task to map settings page and theme hook; loads skills listed in config.tooling.skills
+  - Step 3 presents genuinely distinct approaches when real trade-offs exist, includes landmines / receipts / tripwires / hidden state, and uses AskUserQuestion only when a meaningful choice remains
+  - Step 7 ends with 'Ready to ship! Run /bruhs:yeet to create PR.' and '📋 Using existing ticket: PERDIX-145' so the user knows yeet will reuse the ticket

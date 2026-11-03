@@ -1,0 +1,15 @@
+schema_version: "1.1"
+name: slop-landmine-tripwire
+description: |
+  Command under test: /bruhs:slop
+
+  Preconditions: The client uses timeout=5000, retries=3, concurrency=20, catches every upstream error, logs it, and returns an empty profile. A comment says the upstream always returns a user id, but the response is cast without validation.
+
+  Workspace files the preconditions assume: CLAUDE.md, src/profile-client.ts
+expected_outcome: |
+  - Flags each operational number as missing a receipt and does not suggest replacement magic values
+  - Names retry amplification and downstream saturation as landmines, including the delayed failure each creates
+  - Flags the empty-profile fallback as false success and hidden degraded state
+  - Flags the unchecked user-id assumption as missing a boundary-validation tripwire
+  - Recommends an actionable error or explicit degraded result that states the failed operation, upstream cause, violated policy or assumption, and recovery action
+  - Requests measurements, quotas, or capacity math needed to derive the timeout, retry, and concurrency policy
