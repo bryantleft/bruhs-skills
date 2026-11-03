@@ -2,8 +2,8 @@
 """export_evals_json.py — Validate the eval case folders and export them as evals.json.
 
 Usage:
-    export_evals_json.py [--evals-dir DIR] [--check] [-o PATH]
-    export_evals_json.py --help
+    tests/export_evals_json.py [--evals-dir DIR] [--check] [-o PATH]
+    tests/export_evals_json.py --help
 
 The source of truth is evals/<case>/ (prompt.md + case.yaml + graders/*.md),
 the layout `claude plugin eval` reads. Runners for other agents (Codex, Cursor,
@@ -35,7 +35,7 @@ import re
 import sys
 from pathlib import Path
 
-PLUGIN_DIR = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parent.parent
 SKILL_NAME = "bruhs"
 
 CASE_NAME_RE = re.compile(r"^[a-z][a-z0-9-]*$")
@@ -152,7 +152,7 @@ def load_case(case_dir: Path) -> tuple[dict, list[str]]:
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--evals-dir", type=Path, default=PLUGIN_DIR / "evals")
+    parser.add_argument("--evals-dir", type=Path, default=REPO_ROOT / "evals")
     parser.add_argument("--check", action="store_true", help="validate only")
     parser.add_argument("-o", "--output", type=Path, help="write evals.json here (default: stdout)")
     args = parser.parse_args(argv)

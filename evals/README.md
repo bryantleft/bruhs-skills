@@ -74,8 +74,8 @@ which is roughly 350 agent runs, plus 3 judge calls per grader per run. Filter w
 
 ### Any other agent
 
-1. Open a fresh session with bruhs installed. Point the agent at this repo's
-   `SKILL.md`, or install it however your agent loads Agent Skills.
+1. Open a fresh session with bruhs installed. Point the agent at
+   `skills/bruhs/SKILL.md`, or install it however your agent loads Agent Skills.
 2. Set up a scratch repo that matches the preconditions in `case.yaml`.
 3. Send the body of `prompt.md` as the user message.
 4. Grade the transcript against each file in `graders/`, recording pass/fail with
@@ -86,7 +86,7 @@ For runners that read the agentskills.io format (a single `evals/evals.json`),
 generate one:
 
 ```bash
-python3 scripts/export_evals_json.py -o /tmp/bruhs-evals.json
+python3 tests/export_evals_json.py -o /tmp/bruhs-evals.json
 ```
 
 Each case becomes one entry, with `prompt`, `expected_output`, `assertions` (one
@@ -104,7 +104,7 @@ because skill-creator would then run every case twice.
    them.
 3. Write one grader per observable behavior, plus one for the failure modes you
    expect. Several short graders give a steadier signal than one long one.
-4. Run `python3 scripts/export_evals_json.py --check`. It applies the rules that
+4. Run `python3 tests/export_evals_json.py --check`. It applies the rules that
    would make `claude plugin eval` refuse to load a case, costs nothing, and also
    runs as part of `tests/run_script_tests.sh`.
 

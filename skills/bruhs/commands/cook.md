@@ -4,6 +4,8 @@ description: Plan and build a feature end-to-end — fetch Linear ticket, explor
 
 # cook - Plan + Build Features
 
+> `<SKILL_DIR>` is the bruhs skill directory: the folder that holds `SKILL.md`, one level above this file's `commands/` folder.
+
 Combined planning and building workflow. Wraps brainstorming and feature development patterns into a single end-to-end flow.
 
 ## Contents
@@ -90,7 +92,7 @@ For TypeScript + React, key highlights:
 
 ```bash
 # Try the new marker-block first, falling back to legacy bruhs.json
-CONFIG_JSON=$(python3 <PLUGIN_DIR>/scripts/read_bruhs_block.py --kind state --root . 2>/dev/null)
+CONFIG_JSON=$(python3 <SKILL_DIR>/scripts/read_bruhs_block.py --kind state --root . 2>/dev/null)
 ```
 
 If no config found (empty `CONFIG_JSON`), use `AskUserQuestion`:
@@ -122,7 +124,7 @@ Clarify what we're building:
 
 ```javascript
 // Get Linear config from the bruhs:state block (CLAUDE.md > AGENTS.md > legacy bruhs.json)
-config = JSON.parse(Bash(`python3 <PLUGIN_DIR>/scripts/read_bruhs_block.py --kind state --root .`))
+config = JSON.parse(Bash(`python3 <SKILL_DIR>/scripts/read_bruhs_block.py --kind state --root .`))
 linearConfig = config.integrations?.linear
 
 if (!linearConfig?.mcpServer) {
@@ -182,7 +184,7 @@ Scope: <what's included/excluded>
 
 ```javascript
 // Load bruhs:state for stack info
-config = JSON.parse(Bash(`python3 <PLUGIN_DIR>/scripts/read_bruhs_block.py --kind state --root .`))
+config = JSON.parse(Bash(`python3 <SKILL_DIR>/scripts/read_bruhs_block.py --kind state --root .`))
 
 // Governing and primary practices are always loaded
 engineeringPrinciples = Read('practices/engineering-principles.md')
@@ -251,9 +253,9 @@ if (newSkills.length > 0) {
 
   const json = JSON.stringify(config)
   // Re-sync the state block (atomic, mirrored to CLAUDE.md + AGENTS.md)
-  Bash(`echo '${json}' | python3 <PLUGIN_DIR>/scripts/sync_bruhs_block.py --kind state --root .`)
+  Bash(`echo '${json}' | python3 <SKILL_DIR>/scripts/sync_bruhs_block.py --kind state --root .`)
   // Re-derive the rules block in case new skills changed the rule set
-  Bash(`echo '${json}' | python3 <PLUGIN_DIR>/scripts/derive_stack_rules.py | python3 <PLUGIN_DIR>/scripts/sync_bruhs_block.py --kind rules --root .`)
+  Bash(`echo '${json}' | python3 <SKILL_DIR>/scripts/derive_stack_rules.py | python3 <SKILL_DIR>/scripts/sync_bruhs_block.py --kind rules --root .`)
   console.log(`✓ Added ${newSkills.join(", ")} to bruhs:state (CLAUDE.md + AGENTS.md)`)
 }
 ```

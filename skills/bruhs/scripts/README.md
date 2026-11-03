@@ -22,7 +22,7 @@ tsconfig.json, Cargo.toml, pyproject.toml, go.mod, Rojo, etc.). Used by
 
 Invocation from bruhs commands:
 
-    python3 <PLUGIN_DIR>/scripts/detect_stack.py <PROJECT_ROOT>
+    python3 <SKILL_DIR>/scripts/detect_stack.py <PROJECT_ROOT>
 
 Output: pretty-printed JSON to stdout with keys `root`, `structure`,
 `monorepo_tool`, `languages`, `frameworks`, `styling`, `database`,
@@ -37,8 +37,8 @@ List installed MCP servers from `~/.claude.json`, grouped into
 
 Invocation:
 
-    python3 <PLUGIN_DIR>/scripts/detect_mcp_servers.py
-    python3 <PLUGIN_DIR>/scripts/detect_mcp_servers.py --config <PATH>
+    python3 <SKILL_DIR>/scripts/detect_mcp_servers.py
+    python3 <SKILL_DIR>/scripts/detect_mcp_servers.py --config <PATH>
 
 Output: JSON object with four array-valued keys. Missing config file is
 treated as empty (exit 0).
@@ -56,10 +56,10 @@ persistence).
 Invocation:
 
     # State block (validated JSON)
-    cat state.json | python3 <PLUGIN_DIR>/scripts/sync_bruhs_block.py --kind state --root <PROJECT_ROOT>
+    cat state.json | python3 <SKILL_DIR>/scripts/sync_bruhs_block.py --kind state --root <PROJECT_ROOT>
 
     # Rules block (pre-rendered markdown — usually piped from derive_stack_rules.py)
-    cat rules.md  | python3 <PLUGIN_DIR>/scripts/sync_bruhs_block.py --kind rules --root <PROJECT_ROOT>
+    cat rules.md  | python3 <SKILL_DIR>/scripts/sync_bruhs_block.py --kind rules --root <PROJECT_ROOT>
 
     # Flags
     --files CLAUDE.md,AGENTS.md   files to sync (default: both)
@@ -81,8 +81,8 @@ Read a marker block back out and print its body to stdout. Used by
 
 Invocation:
 
-    python3 <PLUGIN_DIR>/scripts/read_bruhs_block.py --kind state --root <PROJECT_ROOT>
-    python3 <PLUGIN_DIR>/scripts/read_bruhs_block.py --kind rules --root <PROJECT_ROOT>
+    python3 <SKILL_DIR>/scripts/read_bruhs_block.py --kind state --root <PROJECT_ROOT>
+    python3 <SKILL_DIR>/scripts/read_bruhs_block.py --kind rules --root <PROJECT_ROOT>
 
 For `--kind state`, the JSON inside the ` ```json ` fence is printed
 (suitable for piping into `jq` or `JSON.parse`). For `--kind rules`,
@@ -103,8 +103,8 @@ markdown on stdout. Pipe the output into
 
 Invocation:
 
-    cat state.json | python3 <PLUGIN_DIR>/scripts/derive_stack_rules.py
-    cat state.json | python3 <PLUGIN_DIR>/scripts/derive_stack_rules.py --json   # debug
+    cat state.json | python3 <SKILL_DIR>/scripts/derive_stack_rules.py
+    cat state.json | python3 <SKILL_DIR>/scripts/derive_stack_rules.py --json   # debug
 
 The rules are short, high-signal, and **only** stack-derived. Universal
 behavioral rules should be hand-written by the user, outside the bruhs
@@ -127,9 +127,9 @@ tests) for every detected stack. Used by `yeet`, `peep`, and `cook`.
 
 Invocation:
 
-    bash <PLUGIN_DIR>/scripts/validate_pr_ready.sh
-    bash <PLUGIN_DIR>/scripts/validate_pr_ready.sh --stack node
-    bash <PLUGIN_DIR>/scripts/validate_pr_ready.sh --skip tests
+    bash <SKILL_DIR>/scripts/validate_pr_ready.sh
+    bash <SKILL_DIR>/scripts/validate_pr_ready.sh --stack node
+    bash <SKILL_DIR>/scripts/validate_pr_ready.sh --skip tests
 
 Auto-detects stacks from `package.json`, `Cargo.toml`, `pyproject.toml`,
 `go.mod` in the current directory. Each check prints `[PASS] <label>`
@@ -138,26 +138,6 @@ executable (`chmod +x`).
 
 Exit codes: `0` every check passed, `1` at least one check failed,
 `2` usage error or no recognized stack found.
-
-### `export_evals_json.py`
-
-Maintainer tool, not called by any command. Checks every case in
-`evals/<case>/` against the rules `claude plugin eval` uses to load a
-case, and exports the suite in the agentskills.io `evals.json` format
-so runners for other agents can use it.
-
-Invocation:
-
-    python3 scripts/export_evals_json.py --check
-    python3 scripts/export_evals_json.py -o /tmp/bruhs-evals.json
-
-Output: with `--check`, a one-line summary. Otherwise the `evals.json`
-document goes to stdout, or to the `-o` path. Don't write the export
-to `evals/evals.json` in this repo: skill-creator would then run every
-case twice.
-
-Exit codes: `0` every case is valid, `1` at least one case is invalid
-(each problem printed to stderr), `2` usage error.
 
 ## Notes
 

@@ -4,6 +4,8 @@ description: Ship staged work — categorize the diff, create or reuse a Linear 
 
 # yeet - Ship Workflow
 
+> `<SKILL_DIR>` is the bruhs skill directory: the folder that holds `SKILL.md`, one level above this file's `commands/` folder.
+
 Ship code that's ready to go. Creates Linear ticket, commits, pushes, and opens PR.
 
 ## Contents
@@ -55,7 +57,7 @@ PR description + commit + reviewer-assignment quality is governed by **`practice
 
 ```bash
 # Try the new marker-block first, falling back to legacy bruhs.json
-CONFIG_JSON=$(python3 <PLUGIN_DIR>/scripts/read_bruhs_block.py --kind state --root . 2>/dev/null)
+CONFIG_JSON=$(python3 <SKILL_DIR>/scripts/read_bruhs_block.py --kind state --root . 2>/dev/null)
 ```
 
 If no config found (empty `CONFIG_JSON`), use `AskUserQuestion`:
@@ -119,7 +121,7 @@ Generate:
 
 ```javascript
 // Read Linear config from bruhs:state (CLAUDE.md > AGENTS.md > legacy bruhs.json)
-config = JSON.parse(Bash(`python3 <PLUGIN_DIR>/scripts/read_bruhs_block.py --kind state --root .`))
+config = JSON.parse(Bash(`python3 <SKILL_DIR>/scripts/read_bruhs_block.py --kind state --root .`))
 linearConfig = config.integrations?.linear
 
 if (!linearConfig?.mcpServer) {

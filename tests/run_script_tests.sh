@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run_script_tests.sh — executable test harness for the scripts in scripts/.
+# run_script_tests.sh — executable test harness for the scripts in skills/bruhs/scripts/.
 #
 # The JSON files in tests/specs/ are specs (prose). This script runs concrete
 # assertions that exercise the same behaviors. One PASS/FAIL line per
@@ -25,7 +25,8 @@
 set -u
 
 PLUGIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SCRIPTS="$PLUGIN_DIR/scripts"
+SCRIPTS="$PLUGIN_DIR/skills/bruhs/scripts"
+TESTS="$PLUGIN_DIR/tests"
 WORK="$(mktemp -d -t bruhs-eval-XXXXXX)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -421,8 +422,8 @@ heading "export_evals_json.py"
 #─────────────────────────────────────────────────────────────────────────────
 
 case_count=$(find "$PLUGIN_DIR/evals" -mindepth 2 -maxdepth 2 \( -name prompt.md -o -name case.yaml \) -exec dirname {} \; | sort -u | wc -l | tr -d ' ')
-assert "every eval case passes --check" python3 "$SCRIPTS/export_evals_json.py" --check
-out=$(python3 "$SCRIPTS/export_evals_json.py" 2>/dev/null)
+assert "every eval case passes --check" python3 "$TESTS/export_evals_json.py" --check
+out=$(python3 "$TESTS/export_evals_json.py" 2>/dev/null)
 assert "export prints valid JSON" python3 -c "import json,sys; json.loads(sys.argv[1])" "$out"
 exported=$(python3 -c "import json,sys; d=json.loads(sys.argv[1]); print(len(d['evals']))" "$out" 2>/dev/null)
 assert_eq "export holds one entry per case folder" "$case_count" "$exported"
@@ -431,7 +432,7 @@ assert "every exported case has a prompt and assertions" python3 -c "import json
 bad_evals="$WORK/bad-evals"
 mkdir -p "$bad_evals/broken-case/graders"
 printf -- '---\nmax_turns: 5\nbogus_key: 1\n---\n\nhello\n' > "$bad_evals/broken-case/prompt.md"
-python3 "$SCRIPTS/export_evals_json.py" --evals-dir "$bad_evals" --check >/dev/null 2>&1
+python3 "$TESTS/export_evals_json.py" --evals-dir "$bad_evals" --check >/dev/null 2>&1
 assert_eq "--check exits 1 on an unknown frontmatter key and no grader" "1" "$?"
 
 #─────────────────────────────────────────────────────────────────────────────

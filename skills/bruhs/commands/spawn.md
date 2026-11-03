@@ -4,6 +4,8 @@ description: Create a new project or add an app/package to a monorepo — select
 
 # spawn - Project Scaffolding
 
+> `<SKILL_DIR>` is the bruhs skill directory: the folder that holds `SKILL.md`, one level above this file's `commands/` folder.
+
 Create a new project from scratch or add an app/package to an existing monorepo.
 
 ## Contents
@@ -802,7 +804,7 @@ State lives in marker-bounded blocks inside `CLAUDE.md` **and** `AGENTS.md` (mir
 Read the existing state block, merge the new package's config, and write back:
 
 ```javascript
-const raw = Bash(`python3 <PLUGIN_DIR>/scripts/read_bruhs_block.py --kind state --root .`);
+const raw = Bash(`python3 <SKILL_DIR>/scripts/read_bruhs_block.py --kind state --root .`);
 const existing = JSON.parse(raw);
 const detected = /* config assembled from user selections for the new package */;
 
@@ -830,9 +832,9 @@ const merged = {
 
 const json = JSON.stringify(merged);
 // State block (validated, atomic, mirrored)
-Bash(`echo '${json}' | python3 <PLUGIN_DIR>/scripts/sync_bruhs_block.py --kind state --root .`);
+Bash(`echo '${json}' | python3 <SKILL_DIR>/scripts/sync_bruhs_block.py --kind state --root .`);
 // Rules block (re-derived against merged stack)
-Bash(`echo '${json}' | python3 <PLUGIN_DIR>/scripts/derive_stack_rules.py | python3 <PLUGIN_DIR>/scripts/sync_bruhs_block.py --kind rules --root .`);
+Bash(`echo '${json}' | python3 <SKILL_DIR>/scripts/derive_stack_rules.py | python3 <SKILL_DIR>/scripts/sync_bruhs_block.py --kind rules --root .`);
 ```
 
 Otherwise (fresh project), assemble the state and write both blocks:

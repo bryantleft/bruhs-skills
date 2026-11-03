@@ -4,6 +4,8 @@ description: Deep codebase audit — types, security, performance, errors, archi
 
 # slop - Clean Up AI Slop
 
+> `<SKILL_DIR>` is the bruhs skill directory: the folder that holds `SKILL.md`, one level above this file's `commands/` folder.
+
 Thoroughly analyze the entire codebase and clean up AI-generated code patterns. Acts as a local senior engineer with extreme attention to detail.
 
 ## Contents
@@ -893,7 +895,7 @@ Prefer a smaller number of high-conviction comments over a long list of cosmetic
 
 ```bash
 # Read bruhs:state from CLAUDE.md (fallback AGENTS.md, then legacy .claude/bruhs.json)
-python3 <PLUGIN_DIR>/scripts/read_bruhs_block.py --kind state --root .
+python3 <SKILL_DIR>/scripts/read_bruhs_block.py --kind state --root .
 ```
 
 Understand the stack to apply relevant rules:

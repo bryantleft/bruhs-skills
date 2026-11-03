@@ -4,6 +4,8 @@ description: Address PR review comments with isolated subagents and reproduction
 
 # peep - Address PR Review Comments
 
+> `<SKILL_DIR>` is the bruhs skill directory: the folder that holds `SKILL.md`, one level above this file's `commands/` folder.
+
 Review and address PR feedback, push fixes, and optionally merge when ready.
 
 Uses **isolated subagents** per comment thread to prevent context bleed. Each comment is analyzed independently — findings from one thread never influence analysis of another.
@@ -1406,7 +1408,7 @@ Never hand-resolve lockfiles. Regenerate them via the package manager:
 After resolution, run the project's typecheck + lint + tests (same harness as Step 5.5 of `yeet`):
 
 ```bash
-bash "<PLUGIN_DIR>/scripts/validate_pr_ready.sh"
+bash "<SKILL_DIR>/scripts/validate_pr_ready.sh"
 ```
 
 If validation fails, **do not** stage. Surface the failure to the user — the conflict resolution was wrong, not just lint-noisy.

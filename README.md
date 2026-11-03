@@ -18,9 +18,34 @@ masquerade as success.
 
 ## Installation
 
+Claude Code, as a plugin (adds the `/bruhs:*` commands):
+
+```bash
+/plugin install bruhs --marketplace bryantleft/bruhs-skills
+```
+
+Any agent that reads Agent Skills (Codex, Cursor, Gemini CLI, Claude Code and others):
+
 ```bash
 npx skills add bryantleft/bruhs-skills
 ```
+
+On an agent without slash commands, ask for the command by name ("run bruhs cook for PERDIX-145"). The skill routes to `commands/<name>.md`.
+
+## Repository layout
+
+```
+.claude-plugin/        plugin + marketplace manifests (commands path points into the skill)
+skills/bruhs/          the skill, self-contained per the Agent Skills spec
+  SKILL.md             entry point and router
+  commands/            one workflow per command (also the /bruhs:* slash commands)
+  practices/           engineering and stack guidance the commands load
+  scripts/             deterministic helpers the commands shell out to
+evals/                 model-in-the-loop eval cases (claude plugin eval layout)
+tests/                 script tests and the eval exporter; no model needed
+```
+
+Paths in the sections below are relative to `skills/bruhs/`.
 
 ## Usage
 
@@ -180,7 +205,7 @@ Stack-agnostic and stack-specific guidance, loaded conditionally by `cook` and `
 `evals/` holds one folder per test case, in the layout `claude plugin eval`
 runs: happy paths, edge cases, adversarial phrasings, and cross-cutting
 engineering principles. The cases are plain Markdown and YAML, so any agent can
-run them, and `scripts/export_evals_json.py` exports them as an agentskills.io
+run them, and `tests/export_evals_json.py` exports them as an agentskills.io
 `evals.json` for runners on other providers. `tests/run_script_tests.sh` covers
 the deterministic scripts and needs no model. See `evals/README.md`.
 

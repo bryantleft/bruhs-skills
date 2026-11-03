@@ -9,6 +9,7 @@ description: End-to-end development lifecycle for AI coding agents — scaffold 
 |commands|spawn,claim,cook,verify,yeet,walk,land,peep,dip,slop,doodle,deepen,drill,recap
 |practices|engineering-principles,type-driven-design,architecture-deepening,testing-infrastructure,source-ground-truth,_common,writing,design-docs,pr-review,typescript-react,typescript-hono,python,python-fastapi,effect-ts,effect-*,rust,rust-*,ui-design,design-engineering
 |config|CLAUDE.md + AGENTS.md (`bruhs:state` and `bruhs:rules` blocks)
+|paths|relative to this file's folder, `<SKILL_DIR>`: `commands/`, `practices/`, `scripts/`
 
 ## Commands Quick Reference
 |spawn|Create project or add to monorepo|commands/spawn.md

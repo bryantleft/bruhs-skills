@@ -4,6 +4,8 @@ description: Initialize bruhs config for an existing project — auto-detect sta
 
 # claim - Claim Existing Project
 
+> `<SKILL_DIR>` is the bruhs skill directory: the folder that holds `SKILL.md`, one level above this file's `commands/` folder.
+
 Set up bruhs for an existing project by writing the `bruhs:state` and `bruhs:rules` marker blocks into `CLAUDE.md` and `AGENTS.md` (mirrored). Use this when you have a project that wasn't created with `/bruhs:spawn`.
 
 If a legacy `.claude/bruhs.json` is present, this command migrates it into the marker blocks and prompts before deleting the old file.
@@ -35,7 +37,7 @@ Check for both the new marker-block format and the legacy JSON file:
 
 ```bash
 # Try the marker block first (new format)
-python3 <PLUGIN_DIR>/scripts/read_bruhs_block.py --kind state --root . 2>/dev/null
+python3 <SKILL_DIR>/scripts/read_bruhs_block.py --kind state --root . 2>/dev/null
 
 # Then check for legacy file
 ls .claude/bruhs.json 2>/dev/null
@@ -83,8 +85,8 @@ AskUserQuestion({
 
 - If **Migrate**:
   1. Read the legacy JSON: `LEGACY=$(cat .claude/bruhs.json)`.
-  2. Write the state block: `echo "$LEGACY" | python3 <PLUGIN_DIR>/scripts/sync_bruhs_block.py --kind state --root .`
-  3. Derive and write the rules block: `echo "$LEGACY" | python3 <PLUGIN_DIR>/scripts/derive_stack_rules.py | python3 <PLUGIN_DIR>/scripts/sync_bruhs_block.py --kind rules --root .`
+  2. Write the state block: `echo "$LEGACY" | python3 <SKILL_DIR>/scripts/sync_bruhs_block.py --kind state --root .`
+  3. Derive and write the rules block: `echo "$LEGACY" | python3 <SKILL_DIR>/scripts/derive_stack_rules.py | python3 <SKILL_DIR>/scripts/sync_bruhs_block.py --kind rules --root .`
   4. Prompt before deleting:
      ```javascript
      AskUserQuestion({
@@ -368,12 +370,12 @@ Build the state JSON in memory, then pipe it through the two helper scripts to w
 STATE_JSON='<the JSON object above>'
 
 # 1. State block (validated, atomic, mirrored to CLAUDE.md + AGENTS.md)
-echo "$STATE_JSON" | python3 <PLUGIN_DIR>/scripts/sync_bruhs_block.py --kind state --root .
+echo "$STATE_JSON" | python3 <SKILL_DIR>/scripts/sync_bruhs_block.py --kind state --root .
 
 # 2. Rules block (derived from state, mirrored to both files)
 echo "$STATE_JSON" \
-  | python3 <PLUGIN_DIR>/scripts/derive_stack_rules.py \
-  | python3 <PLUGIN_DIR>/scripts/sync_bruhs_block.py --kind rules --root .
+  | python3 <SKILL_DIR>/scripts/derive_stack_rules.py \
+  | python3 <SKILL_DIR>/scripts/sync_bruhs_block.py --kind rules --root .
 ```
 
 If `CLAUDE.md` or `AGENTS.md` does not exist, the sync script creates it with a minimal header. Hand-written content outside the markers is **never** touched.
