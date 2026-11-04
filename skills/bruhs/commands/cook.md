@@ -95,7 +95,7 @@ For TypeScript + React, key highlights:
 CONFIG_JSON=$(python3 <SKILL_DIR>/scripts/read_bruhs_block.py --kind state --root . 2>/dev/null)
 ```
 
-If no config found (empty `CONFIG_JSON`), use `AskUserQuestion`:
+If no config found (empty `CONFIG_JSON`), ask the user:
 
 ```javascript
 AskUserQuestion({
@@ -344,7 +344,7 @@ Planning...
 - Split any row estimated over ~400 lines into thinner vertical slices before filing tickets.
 - **Uncertain design: spike first, then plan.** When you can't see the seams yet, build a throwaway end-to-end spike on a local branch, write the breakdown from what it taught you, and rebuild each PR fresh off main. Never slice the spike branch into PRs: carved-up slices rarely stand alone, and rebuilding a stack under review means force-pushes. Known design: plan small directly.
 
-When multiple meaningful approaches remain, use `AskUserQuestion` for selection:
+When multiple meaningful approaches remain, ask the user to pick one:
 
 ```javascript
 AskUserQuestion({
@@ -378,7 +378,7 @@ git diff --stat
 
 Identify files that are outside the feature scope (i.e., uncommitted changes unrelated to the feature about to be built).
 
-**If any unrelated changes are detected, offer the stash via `AskUserQuestion` — do not stash unconditionally:**
+**If any unrelated changes are detected, ask the user whether to stash them — do not stash unconditionally:**
 
 ```javascript
 AskUserQuestion({
@@ -494,7 +494,7 @@ See `practices/ui-design.md` for the full skill map and selection heuristic.
 //    Use this for genuinely new UI surfaces, not for tweaks to existing components.
 const paperAvailable = ToolSearch("select:mcp__paper__create_artboard");
 if (paperAvailable && featureIsNewUiSurface) {
-  AskUserQuestion: "Prototype this UI in paper.design first? (generates HTML/CSS shell to iterate on visually before bringing into the codebase)"
+  Ask the user: "Prototype this UI in paper.design first? (generates HTML/CSS shell to iterate on visually before bringing into the codebase)"
   if (yes) {
     // Create artboard, get_jsx, screenshot for review
     mcp__paper__create_artboard({ name: featureName });
@@ -508,7 +508,7 @@ if (paperAvailable && featureIsNewUiSurface) {
 
 // 1. Check for design context (one-time project setup)
 if (!CLAUDE_MD.includes('## Design Context')) {
-  AskUserQuestion: "No Design Context in CLAUDE.md. Run /teach-impeccable?"
+  Ask the user: "No Design Context in CLAUDE.md. Run /teach-impeccable?"
   if (yes) Skill("teach-impeccable")
 }
 
@@ -550,7 +550,7 @@ First, check if dev server is running (for UI changes):
 lsof -i :<detected-port> | grep LISTEN
 ```
 
-If not running, use `AskUserQuestion`:
+If not running, ask the user:
 
 ```javascript
 AskUserQuestion({

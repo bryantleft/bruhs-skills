@@ -60,7 +60,7 @@ PR description + commit + reviewer-assignment quality is governed by **`practice
 CONFIG_JSON=$(python3 <SKILL_DIR>/scripts/read_bruhs_block.py --kind state --root . 2>/dev/null)
 ```
 
-If no config found (empty `CONFIG_JSON`), use `AskUserQuestion`:
+If no config found (empty `CONFIG_JSON`), ask the user:
 
 ```javascript
 AskUserQuestion({
@@ -139,7 +139,7 @@ if (!linearConfig?.mcpServer) {
   } catch {
     console.log("Linear MCP not connected.")
 
-    // Ask user with AskUserQuestion
+    // Ask the user
     AskUserQuestion({
       questions: [{
         question: "Linear MCP not connected. Continue without Linear?",
@@ -255,7 +255,7 @@ bash scripts/validate_pr_ready.sh
 **Interpret the output:**
 
 - **All passed** → continue to Step 6 silently.
-- **Anything failed** → STOP. Do not commit. Use `AskUserQuestion`:
+- **Anything failed** → STOP. Do not commit. Ask the user:
 
 ```javascript
 AskUserQuestion({
@@ -660,7 +660,7 @@ When you get review feedback, run /bruhs:peep to address comments.
 
 ### Multiple Changes (Interactive)
 
-If changes span multiple logical units, use `AskUserQuestion`:
+If changes span multiple logical units, ask the user:
 
 ```
 > /bruhs:yeet
@@ -684,7 +684,7 @@ AskUserQuestion({
 })
 ```
 
-If interactive mode selected, use `AskUserQuestion` with `multiSelect: true` for file selection:
+If interactive mode selected, ask the user which files to include, allowing several picks (`multiSelect: true`):
 
 ```javascript
 // Build file options from changed files

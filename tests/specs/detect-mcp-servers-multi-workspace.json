@@ -24,7 +24,7 @@
     "Parses TOML with tomllib on Python 3.11+ and falls back to scanning [mcp_servers.*] table headers on older Pythons"
   ],
   "failure_modes": [
-    "Returns only one of the two Linear entries — fails to detect multi-workspace setup, breaks claim's workspace-picker AskUserQuestion",
+    "Returns only one of the two Linear entries — fails to detect multi-workspace setup, breaks claim's workspace-picker question",
     "Groups 'linear-perdix' under 'other' because the name doesn't match exactly 'linear'",
     "Exits 2 when ~/.claude.json is missing instead of returning empty arrays",
     "Crashes on entries without a full env block — assumes shape that not all MCPs have",

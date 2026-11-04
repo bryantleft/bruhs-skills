@@ -97,7 +97,7 @@ For UI-only changes where TDD isn't feasible, the Build step offers an explicit 
 
 ### `/bruhs:yeet`
 
-Ship staged work. Runs the project's full verification suite before committing — failures surface an `AskUserQuestion` with Show / Fix / Ship-anyway / Abort; "Ship anyway" injects a warning into the PR body's Test plan.
+Ship staged work. Runs the project's full verification suite before committing — failures stop and ask you to pick Show / Fix / Ship anyway / Abort; "Ship anyway" injects a warning into the PR body's Test plan.
 
 **Workflow:** analyze diff → categorize (feat/fix/chore/refactor) → **validate pre-ship** → create Linear ticket (or reuse cook's context) → branch via Linear's `gitBranchName` → commit with `Fixes TICKET-ID` → push → `gh pr create` → update Linear to In Review.
 

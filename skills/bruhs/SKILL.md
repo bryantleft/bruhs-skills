@@ -10,7 +10,7 @@ description: End-to-end development lifecycle for AI coding agents — scaffold 
 |practices|engineering-principles,type-driven-design,architecture-deepening,testing-infrastructure,source-ground-truth,_common,writing,design-docs,pr-review,typescript-react,typescript-hono,python,python-fastapi,effect-ts,effect-*,rust,rust-*,ui-design,design-engineering
 |config|CLAUDE.md + AGENTS.md (`bruhs:state` and `bruhs:rules` blocks)
 |paths|relative to this file's folder, `<SKILL_DIR>`: `commands/`, `practices/`, `scripts/`, `references/`
-|harness|tool names in commands are Claude Code's; on any other agent use `references/harness-tools.md` (questions, subagents, MCP names, config files)
+|harness|tool names and `AskUserQuestion({...})` question blocks in commands are Claude Code's; on any other agent use `references/harness-tools.md` (questions, subagents, MCP names, config files)
 
 ## Commands Quick Reference
 |spawn|Create project or add to monorepo|commands/spawn.md
@@ -58,7 +58,7 @@ Out-of-band, any time:
 - `recap` — status update for standup or retro
 
 ## Invocation
-- `/bruhs` → Interactive menu (AskUserQuestion)
+- `/bruhs` → Interactive menu (asks which command to run)
 - `/bruhs:<command>` → Direct to command
 - `/bruhs:cook <feature>` or `/bruhs:cook TICKET-123` → With argument
 - `/bruhs:verify [claim | PR#] [--keep-artifacts]` → Falsifiable verification
@@ -376,7 +376,7 @@ Each command's full workflow lives in its own file. Read the specific file when 
 
 ## Interactive Menu
 
-When `/bruhs` is invoked without arguments, present the command list via `AskUserQuestion` and route to the selected command's file. Options: spawn, claim, cook, yeet, peep, doodle, dip, deepen, drill. `slop` is intentionally excluded from the menu — invoke directly with `/bruhs:slop`.
+When `/bruhs` is invoked without arguments, ask the user which command to run and route to the selected command's file. Options: spawn, claim, cook, yeet, peep, doodle, dip, deepen, drill. `slop` is intentionally excluded from the menu — invoke directly with `/bruhs:slop`.
 
 ---
 

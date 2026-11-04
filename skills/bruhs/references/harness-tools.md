@@ -19,6 +19,23 @@ equivalent at all, use the fallback in the last column and say so in your reply.
 | `mcp__<server>__<tool>` | An MCP tool, in Claude Code's naming | The same tool on the same server, under that agent's naming. Match on server name plus tool name (`linear-perdix` + `linear_get_issue`) | The server isn't installed: take the step's "not configured" path |
 | `/bruhs:<command>` | A slash command | Ask for it by name: "bruhs cook PERDIX-145". `SKILL.md` routes to `commands/<command>.md` | — |
 
+### Question blocks
+
+Steps that say "ask the user" are followed by a block written as Claude Code's
+`AskUserQuestion` call. On Claude Code, make that call. Anywhere else, read the
+block as the spec of the question:
+
+- `question` is what to ask, and `header` is a short label you can drop.
+- Each option's `label` is a choice and its `description` the one line under it.
+  List them in that order, numbered, and keep any "(Recommended)" marker.
+- `multiSelect: true` means the user may pick several. Say so ("pick any").
+- Several entries in `questions` are separate questions in one message.
+- Comments and `${...}` values in the block are filled in from the step, as in
+  any other code block.
+
+Then stop and wait for the answer. The 4-option limit is Claude Code's; keep it
+anyway so the lists stay short.
+
 ## Subagents
 
 Some steps hand a brief to a subagent with a role. Use the first option your

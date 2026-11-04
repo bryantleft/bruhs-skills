@@ -63,7 +63,7 @@ AskUserQuestion({
   }]
 })
 ```
-- If **Yes**: proceed into Step 2 and re-run the full detection + prompt flow. If a legacy `.claude/bruhs.json` was also present, fire the delete-prompt AskUserQuestion after Step 7 (same prompt as the Migrate / Re-detect paths).
+- If **Yes**: proceed into Step 2 and re-run the full detection + prompt flow. If a legacy `.claude/bruhs.json` was also present, ask the delete-legacy-file question after Step 7 (same prompt as the Migrate / Re-detect paths).
 - If **No**: exit with `Kept existing bruhs:state block.` Any dormant legacy file stays in place.
 
 **Case B — Legacy `.claude/bruhs.json` found, no marker block yet (MIGRATION PATH):**
@@ -231,7 +231,7 @@ AskUserQuestion({
 
 ### Step 5: Confirm Stack Detection
 
-Present detected stack and use `AskUserQuestion` for confirmation:
+Present the detected stack and ask the user to confirm it:
 
 First, output the detected stack:
 ```

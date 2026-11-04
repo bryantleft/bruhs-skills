@@ -34,7 +34,7 @@ Check if we're in a monorepo:
 ls turbo.json pnpm-workspace.yaml 2>/dev/null
 ```
 
-If monorepo detected, use `AskUserQuestion`:
+If monorepo detected, ask the user:
 
 ```javascript
 AskUserQuestion({
@@ -60,7 +60,7 @@ Structure → Project Type → Language → Framework → Stack Additions
 
 #### 2a: Structure (if new project)
 
-Use `AskUserQuestion`:
+Ask the user:
 
 ```javascript
 AskUserQuestion({
@@ -77,7 +77,7 @@ AskUserQuestion({
 
 #### 2b: Project Type
 
-Use `AskUserQuestion` (split into two questions due to 4-option limit):
+Ask the user (two questions, because a question holds at most 4 options):
 
 ```javascript
 AskUserQuestion({
@@ -145,7 +145,7 @@ AskUserQuestion({
 
 #### 2e: Stack Additions (filtered by project type)
 
-Use `AskUserQuestion` with `multiSelect: true` for each category. Present only relevant categories based on project type.
+Ask the user for each category, allowing several picks (`multiSelect: true`). Present only relevant categories based on project type.
 
 **For Web/Desktop/Mobile - Styling & State:**
 
@@ -922,7 +922,7 @@ for (item of selectedStack) {
 }
 ```
 
-Present skill recommendations using `AskUserQuestion` with `multiSelect: true`:
+Ask the user which recommended skills to install, allowing several picks (`multiSelect: true`):
 
 ```javascript
 // Build options dynamically from find-skills results
@@ -931,7 +931,7 @@ const skillOptions = foundSkills.map(skill => ({
   description: `${skill.description} (${skill.installs} installs)`
 }));
 
-// Present in batches of 4 (AskUserQuestion limit)
+// Present in batches of 4 (a question holds at most 4 options)
 AskUserQuestion({
   questions: [{
     question: "Which skills do you want to install?",

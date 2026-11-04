@@ -131,7 +131,7 @@ if (featureInvolvesUI) {
   // Check for design context
   if (!CLAUDE_MD.includes('## Design Context')) {
     // Suggest one-time setup
-    AskUserQuestion: "No Design Context in CLAUDE.md. Run /teach-impeccable?"
+    Ask the user: "No Design Context in CLAUDE.md. Run /teach-impeccable?"
   }
 }
 ```

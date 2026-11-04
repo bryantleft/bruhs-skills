@@ -1190,7 +1190,7 @@ async function fetchUser(id: string): Promise<User> {
 ```
 ```
 
-Then use `AskUserQuestion`:
+Then ask the user:
 
 ```javascript
 AskUserQuestion({
@@ -1366,7 +1366,7 @@ Deep analysis in progress...
 ...
 ```
 
-Then use `AskUserQuestion`:
+Then ask the user:
 
 ```javascript
 AskUserQuestion({
@@ -1397,7 +1397,7 @@ Scanning src/components/ (45 files)...
 ...
 ```
 
-Then use `AskUserQuestion`:
+Then ask the user:
 
 ```javascript
 AskUserQuestion({
@@ -1425,7 +1425,7 @@ Auto-fixing safe issues...
 Interactive fixes remaining: 28
 ```
 
-Then use `AskUserQuestion`:
+Then ask the user:
 
 ```javascript
 AskUserQuestion({

@@ -31,7 +31,7 @@ Render architectural diagrams from your codebase: PR changes, module dependency 
 
 | Form | Mode | Behavior |
 |------|------|----------|
-| `/bruhs:doodle` | interactive | AskUserQuestion → pick mode |
+| `/bruhs:doodle` | interactive | asks the user to pick a mode |
 | `/bruhs:doodle pr [PR# \| TICKET-ID \| URL]` | **pr** | Diagram a PR's changed files + dependency edges |
 | `/bruhs:doodle module <path>` | **module** | Internal structure of a module/package |
 | `/bruhs:doodle deps <file>` | **deps** | What this file imports (transitive depth N) |
@@ -266,7 +266,7 @@ Natural language → diagram. No source-code introspection. Useful for ad-hoc sk
 
 ### Step 0: Resolve mode
 
-If no mode arg, dispatch via `AskUserQuestion`:
+If no mode arg, ask the user to pick one:
 
 ```javascript
 AskUserQuestion({

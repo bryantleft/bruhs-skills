@@ -47,7 +47,7 @@ If uncommitted changes exist:
   - components/foo.tsx (modified)
 ```
 
-Then use `AskUserQuestion`:
+Then ask the user:
 
 ```javascript
 AskUserQuestion({
@@ -112,7 +112,7 @@ git branch -d <featureBranch>
 git push origin --delete <featureBranch>
 ```
 
-If branch wasn't merged, use `AskUserQuestion`:
+If branch wasn't merged, ask the user:
 
 ```javascript
 AskUserQuestion({
@@ -140,7 +140,7 @@ If stash exists from cook:
    stash@{0}: On main: bruhs: stashed before add-leaderboard
 ```
 
-Then use `AskUserQuestion`:
+Then ask the user:
 
 ```javascript
 AskUserQuestion({

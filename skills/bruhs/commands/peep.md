@@ -164,7 +164,7 @@ Safety rules enforced by subagents:
 pr=$(gh pr view --json number,headRefName,url,state,reviewDecision,title 2>/dev/null)
 ```
 
-If no PR found, use `AskUserQuestion`:
+If no PR found, ask the user:
 
 ```javascript
 AskUserQuestion({
@@ -773,7 +773,7 @@ Unconfirmed — reasoning only (no reproduction/tooling evidence):
 Legend: ✓ reproduced (RED→GREEN test demonstrates the bug and its fix) · ◆ tooling-confirmed (tool error on current code) · ⚙ fix-validated (fix builds + tests pass; bug NOT independently reproduced) · ✗ unverified (reasoning only — never auto-applied)
 ```
 
-Then use `AskUserQuestion`:
+Then ask the user:
 
 ```javascript
 AskUserQuestion({
@@ -839,7 +839,7 @@ If the reproduction could NOT be produced, the finding is surfaced under **"Unco
 
 A `fix-validated`/`unverified` bug claim is NOT dropped automatically — the user may still want it — but it is shown without a ✓, kept out of the Confirmed list, and excluded from auto-apply. The user always sees which claims were demonstrated and which are reasoning.
 
-Then use `AskUserQuestion`:
+Then ask the user:
 
 ```javascript
 AskUserQuestion({
@@ -871,7 +871,7 @@ Diff:
 + return db.select().from(agentStats).orderBy(desc(agentStats.winRate)).limit(limit);
 ```
 
-Then use `AskUserQuestion`:
+Then ask the user:
 
 ```javascript
 AskUserQuestion({
@@ -925,7 +925,7 @@ Subagent analysis:
   + const topAgents = agents.slice(0, LEADERBOARD_LIMIT);
 ```
 
-Then use `AskUserQuestion`:
+Then ask the user:
 
 ```javascript
 AskUserQuestion({
@@ -952,7 +952,7 @@ Suggested response (Conventional Comments format):
 the limit, so a constant would be over-abstraction."
 ```
 
-Then use `AskUserQuestion`:
+Then ask the user:
 
 ```javascript
 AskUserQuestion({
@@ -989,7 +989,7 @@ Subagent analysis:
   during active games the leaderboard changes as matches complete."
 ```
 
-Then use `AskUserQuestion`:
+Then ask the user:
 
 ```javascript
 AskUserQuestion({
@@ -1079,7 +1079,7 @@ Commit message:
 - Extract LEADERBOARD_LIMIT constant"
 ```
 
-Then use `AskUserQuestion`:
+Then ask the user:
 
 ```javascript
 AskUserQuestion({
@@ -1121,7 +1121,7 @@ gh api graphql -f query='
 ' -f threadId="$threadId"
 ```
 
-Then use `AskUserQuestion`:
+Then ask the user:
 
 ```javascript
 AskUserQuestion({
@@ -1161,7 +1161,7 @@ Evaluate:
 ✓ No merge conflicts
 ```
 
-Then use `AskUserQuestion`:
+Then ask the user:
 
 ```javascript
 AskUserQuestion({
@@ -1191,7 +1191,7 @@ AskUserQuestion({
 Waiting for @reviewer1 to re-review after your fixes.
 ```
 
-Then use `AskUserQuestion`:
+Then ask the user:
 
 ```javascript
 AskUserQuestion({
