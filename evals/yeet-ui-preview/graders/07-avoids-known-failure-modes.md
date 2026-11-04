@@ -7,9 +7,9 @@ weight: 1
 PASS if the run avoids every failure below.
 
 FAIL if any of these happens:
-- Skips Step 7.5 entirely and opens the UI PR with no preview or a bare `<screenshot>` placeholder
-- Embeds screenshots without running /expect first — a preview of an unverified UI
-- Captures only a static screenshot and no screen recording of the interaction
-- Claims the recording renders inline as a video player from a gh/CLI upload (it does not — only web-composer user-attachments inline-play); hallucinating a working hosting path
-- References a local /tmp path in the PR body (renders as nothing for reviewers) instead of a hosted URL
+- Skips Step 7.5 silently and opens the UI PR as if no preview were needed
+- Embeds a bare `<screenshot>` placeholder, or images or a recording that were never captured
+- Claims the UI was verified with /expect, or that a recording plays inline from a CLI upload
+- References a local /tmp path in the PR body instead of saying nothing was captured
+- Tries to install packages to get a browser working, then reports that as done when the install failed
 - Writes a non-Conventional commit message or PR title

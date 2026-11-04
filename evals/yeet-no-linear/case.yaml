@@ -3,14 +3,17 @@ name: yeet-no-linear
 description: |
   Command under test: /bruhs:yeet
 
-  Preconditions: TypeScript project with no bruhs:state block in CLAUDE.md and no legacy .claude/bruhs.json — read_bruhs_block.py returns empty. Uncommitted changes add a new leaderboard component. gh CLI is authenticated.
+  Preconditions: TypeScript (Hono) game API with no bruhs:state block: CLAUDE.md holds only hand-written notes, there is no AGENTS.md and no legacy .claude/bruhs.json, so read_bruhs_block.py finds nothing. On main, uncommitted changes add a leaderboard: src/game/leaderboard.ts and its test (untracked) and a GET /game/leaderboard route in src/game/routes.ts (unstaged). typecheck, lint and test pass. gh is authenticated and opens PRs for pushed branches; no Linear MCP server exists in the run.
+
+  A headless run can't answer the Config question, so the prompt gives the answer up front (git-only mode). Every push, npm run and gh call is recorded in .git/local/ledger.md.
 expected_outcome: |
-  - Step 0 detects missing config and asks via AskUserQuestion header 'Config' offering 'Run /bruhs:claim (Recommended)' and 'Continue in git-only mode'
-  - User picks 'Continue in git-only mode'; skips Step 3 (Linear MCP check) and Step 4 (ticket creation/reuse) entirely
+  - Step 0 detects missing config and, because the user already chose git-only mode, continues without asking
+  - Skips Step 3 (Linear MCP check), Step 4 (ticket creation/reuse) and Step 9 (Linear status) entirely
   - Step 2 still categorizes the diff via Conventional Commits types (feat/fix/chore/refactor/docs/test) — this is language-agnostic, not Linear-dependent
-  - Step 5 generates a branch name from type + description: `git switch -c feat/add-leaderboard` (format `<type>/<short-description>`)
-  - Step 6 commits with Conventional Commits title 'feat: add leaderboard to game page', NO 'Fixes TICKET-ID' line since there is no ticket, and an 'Assisted-by: <Agent>:<running-model-id>' trailer
+  - Step 5 generates a branch name from type + description, e.g. `git switch -c feat/add-leaderboard` (format `<type>/<short-description>`)
+  - Step 6 commits with a Conventional Commits feat title such as 'feat(game): add leaderboard endpoint', NO 'Fixes TICKET-ID' line since there is no ticket, and an 'Assisted-by: <Agent>:<running-model-id>' trailer
   - Before pushing, runs the project's full validation suite (typecheck + lint + test) as the pre-PR gate mentioned in practices/pr-review.md
   - Step 8 creates the PR using the Feature template but omits the Linear section (or fills it with 'N/A — git-only mode')
-  - Step 9 is skipped — no Linear status update
   - Final output warns '⚠ Linear not configured (git-only mode)' and reminds the user to run /bruhs:claim to enable Linear integration
+context:
+  scaffold_script: scaffold.sh

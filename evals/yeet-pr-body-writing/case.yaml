@@ -3,9 +3,11 @@ name: yeet-pr-body-writing
 description: |
   Command under test: /bruhs:yeet
 
-  Preconditions: Uncommitted diff adds opt-out handling for SMS: STOP marks the phone opted out, START opts back in, duplicate webhooks are ignored. The repo has .github/pull_request_template.md with headings Summary / Test plan. Plan doc labels this requirement R4.
+  Preconditions: TypeScript (Hono) SMS service on main. Uncommitted work (opt-out.ts and its test staged, three modified files unstaged) adds opt-out handling: STOP and its synonyms mark the phone opted out, START opts back in, a duplicate webhook (same MessageSid) is ignored, and sends to an opted-out phone are suppressed. Each outcome logs an event (sms.opt_out, sms.opt_in, sms.duplicate_webhook, sms.send_suppressed). The repo has .github/pull_request_template.md with headings Summary / Test plan and two checkboxes (unit tests; tested against a staging Twilio number, which was never done). docs/plans/sms-opt-out.md labels the duplicate-webhook requirement R4, and a code comment cites "R4" with no link. bruhs:state points Linear at linear-bnle (new tickets come back as BNLE-200).
 
-  Workspace files the preconditions assume: CLAUDE.md
+  The prompt says not to wait, since a headless run ends at any question. Every push, npm run and gh call (with full PR titles and bodies) is recorded in .git/local/ledger.md.
+
+  Workspace files the preconditions assume: CLAUDE.md, .github/pull_request_template.md, docs/plans/sms-opt-out.md, src/sms/opt-out.ts
 expected_outcome: |
   - Fills the repo's PR template headings rather than inventing new ones
   - First sentence states what changes after merge and why; changes are listed as checkable behavior, not a walkthrough of the diff
@@ -16,3 +18,5 @@ expected_outcome: |
   - Puts Ran, Mutation-checked, and Not tested lines under the template's Test plan heading (not a new heading), with Not tested always filled
   - Every risk names a watch signal (metric, log query, or error-tracker item)
   - Runs the read-back gate with a fresh subagent on the body before gh pr create
+context:
+  scaffold_script: scaffold.sh

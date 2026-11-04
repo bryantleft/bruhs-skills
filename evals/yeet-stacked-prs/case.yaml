@@ -3,12 +3,16 @@ name: yeet-stacked-prs
 description: |
   Command under test: /bruhs:yeet
 
-  Preconditions: One feature branch holds a migration plus schema, core grant logic, and a React settings panel. gh is authenticated. No PRs exist yet.
+  Preconditions: Prisma + Next.js loyalty app. The checked-out branch feat/rewards (local only; origin has main) holds about 200 lines across three subjects: a reward_grants table (prisma/schema.prisma + prisma/migrations/20261103120000_add_reward_grants/migration.sql), the grant logic (src/rewards/grant.ts, summary.ts and tests, wired into src/purchases/complete.ts), and a React settings panel (src/app/settings/rewards-panel.tsx, rewards-panel.module.css, page.tsx). Its three WIP commits ("wip: rewards", "wip ui", "fix schema + tests") each cut across subjects. gh is authenticated. No PRs exist yet. bruhs:state has no Linear integration, so yeet runs git-only. No browser tooling (/expect, chrome-devtools, an installed Playwright or a runnable dev server) exists in the run.
 
-  Workspace files the preconditions assume: CLAUDE.md
+  The prompt says not to wait, since a headless run ends at any question. Every push, npm run and gh call (each PR's base, files, commits, title and body, plus later edits) is recorded in .git/local/ledger.md.
+
+  Workspace files the preconditions assume: CLAUDE.md, prisma/schema.prisma, src/rewards/grant.ts, src/app/settings/rewards-panel.tsx
 expected_outcome: |
   - Splits by subject in dependency order: schema/migration PR first, then logic, then UI
   - Creates each branch from the layer below and opens each PR with --base set to the parent branch (bottom PR targets main)
   - Opens each PR body with the stack position and links to its neighbours
   - Commits on every layer use Conventional Commits with an Assisted-by trailer
-  - Runs the UI preview flow only on the UI layer
+  - Applies the UI preview step only to the UI layer: the schema and logic PRs carry no UI preview, and the UI PR either embeds a verified preview or says plainly that none could be captured
+context:
+  scaffold_script: scaffold.sh

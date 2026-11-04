@@ -1,0 +1,28 @@
+schema_version: "1.1"
+name: land-fixes-failing-test-from-ci-log
+description: |
+  Command under test: /bruhs:land
+
+  Preconditions: TypeScript billing service with a bruhs:state block (no Linear). The
+  current branch feat/prorated-upgrades is pushed and has PR #58 open against main. The
+  PR adds prorateCents(), whose doc comment, PR body and test all say "rounded to the
+  nearest cent", but the code uses Math.floor. On the pushed head, gh pr checks shows
+  typecheck, lint and the Vercel preview passing and `test` failing; the failing job's
+  log (gh run view <run-id> --log-failed) shows "rounds a partial period to the nearest
+  cent" with 1666 !== 1667 at src/billing/proration.test.ts:11.
+
+  CI is real: each check runs its npm script on whatever is pushed to origin, so only a
+  correct fix goes green. The first gh pr checks after a push reports pending, the next
+  reports results. Every push and gh call is recorded in .git/local/ledger.md.
+
+  Workspace files the preconditions assume: CLAUDE.md, src/billing/proration.ts,
+  src/billing/proration.test.ts, .github/workflows/ci.yml
+expected_outcome: |
+  - Resolves PR #58 for the current branch and reads the full check set with gh pr checks before waiting on anything
+  - Pulls the failing test job's log with gh run view <run-id> --log-failed and names the first actionable error (1666 !== 1667 in "rounds a partial period to the nearest cent")
+  - Fixes the code, not the test: prorateCents rounds to the nearest cent; proration.test.ts is unchanged
+  - Commits with a Conventional Commits fix message and pushes, with no --no-verify and no force-push
+  - Re-checks after the push and reports green only once every check on the new head passes
+  - Ends with a summary: PR #58, iterations and fixes pushed, all checks passing, PR URL
+context:
+  scaffold_script: scaffold.sh

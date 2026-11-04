@@ -3,13 +3,18 @@ name: yeet-stacked-prs-update-and-merge
 description: |
   Command under test: /bruhs:yeet
 
-  Preconditions: Stack: feat/a-schema (#101, base main) <- feat/b-logic (#102) <- feat/c-ui (#103). A reviewer is mid-review on #102. The fix touches only feat/a-schema. Later #101 is squash-merged and its remote branch auto-deleted; GitHub retargeted #102 to main.
+  Preconditions: Prisma + Next.js loyalty app with a pushed stack, checked out at feat/c-ui: feat/a-schema (#101, base main, the reward_grants table) <- feat/b-logic (#102, grant logic) <- feat/c-ui (#103, settings panel), one commit each. alex left a changes-requested review on #101 with an inline comment on the migration (add CHECK ("points" > 0) and an index on user_id, plus @@index([userId]) in schema.prisma); the fix touches only feat/a-schema. mira commented on #102 that she is partway through reviewing it. bruhs:state has no Linear integration.
 
-  Workspace files the preconditions assume: CLAUDE.md
+  The world reacts like a teammate: once feat/a-schema moves on origin, the next gh call finds #101 squash-merged by alex into main, the remote feat/a-schema deleted, and #102 retargeted to main. So one run covers both the lower-layer fix and the post-merge rebase. Every push (commits added, dropped, and left on top of main; whether the tree changed), npm run and gh call is recorded in .git/local/ledger.md.
+
+  Workspace files the preconditions assume: CLAUDE.md, prisma/migrations/20261103120000_add_reward_grants/migration.sql, prisma/schema.prisma
 expected_outcome: |
-  - Rebases with `git rebase --update-refs` from the top of the stack so intermediate branches move together
+  - Reads alex's inline comment and fixes it with a commit on feat/a-schema only
+  - Moves the upper layers together (`git rebase --update-refs` from the top of the stack, or rebasing feat/c-ui onto the rebuilt feat/b-logic) so no branch is left on a stale parent
   - Before pushing, diffs each branch against its origin tip and pushes only branches whose content changed, using --force-with-lease
   - Tells the mid-review reviewer on #102 what is coming before pushing to it
   - After the squash merge, checks #101's state with gh before touching branches, and does not push to the deleted feat/a-schema branch
   - Drops the parent's original commits from feat/b-logic with `git rebase --onto origin/main <old-parent-tip> feat/b-logic`
   - Runs the tree-identity check on the child's own diff before force-pushing
+context:
+  scaffold_script: scaffold.sh

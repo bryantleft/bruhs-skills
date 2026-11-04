@@ -1,0 +1,22 @@
+{
+  "id": "7d1c2e4a-0000-4000-b000-000000000145",
+  "identifier": "PERDIX-145",
+  "title": "Add dark mode toggle to settings page",
+  "description": "Users want a dark mode. Add a toggle on /settings that switches the theme, persists the choice, and respects the system preference until the user picks one.",
+  "state": {
+    "name": "Todo"
+  },
+  "priority": 3,
+  "url": "https://linear.app/acme/issue/PERDIX-145",
+  "gitBranchName": "perdix-145-add-dark-mode-toggle-to-settings-page",
+  "team": {
+    "key": "PERDIX",
+    "name": "Perdix"
+  },
+  "labels": [
+    {
+      "name": "Feature"
+    }
+  ],
+  "comments": []
+}

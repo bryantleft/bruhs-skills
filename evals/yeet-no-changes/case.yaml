@@ -3,7 +3,9 @@ name: yeet-no-changes
 description: |
   Command under test: /bruhs:yeet
 
-  Preconditions: User runs yeet but `git status` shows a clean working tree and `git diff --stat` is empty. They are on main. There are no staged or unstaged changes.
+  Preconditions: User runs yeet but `git status` shows a clean working tree and `git diff --stat` is empty. They are on main, up to date with origin. There are no staged, unstaged or untracked changes; only ignored files (dist/, .env) sit on disk. bruhs:state configures Linear (linear-perdix).
+
+  Every push and gh call is recorded in .git/local/ledger.md.
 
   Workspace files the preconditions assume: CLAUDE.md
 expected_outcome: |
@@ -12,3 +14,5 @@ expected_outcome: |
   - Does NOT create a branch, does NOT call linear_create_issue, does NOT attempt `git push`, does NOT call `gh pr create`
   - Does not run the full-suite validation gate (typecheck/lint/test) — there is nothing to validate and no PR to open
   - Leaves the working tree and branch exactly as it found them
+context:
+  scaffold_script: scaffold.sh

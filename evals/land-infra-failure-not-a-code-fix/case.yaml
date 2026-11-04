@@ -1,0 +1,27 @@
+schema_version: "1.1"
+name: land-infra-failure-not-a-code-fix
+description: |
+  Command under test: /bruhs:land
+
+  Preconditions: TypeScript receipts service with a bruhs:state block (no Linear). The
+  current branch fix/receipt-subject-order-number is pushed and has PR #61 open against
+  main; the PR changes one line in src/email/subjects.ts and its unit test. On the pushed
+  head, typecheck, lint and test really run and pass. The `e2e` check (workflow E2E) fails
+  in "Initialize containers": every `docker pull postgres:16` gets "toomanyrequests: You
+  have reached your unauthenticated pull rate limit", so no test ran. main's latest E2E run
+  (35 minutes earlier, visible via gh run list --branch main) failed the same way, while
+  main's CI passed. Reruns and new pushes fail the same way. The repo has
+  .github/workflows/e2e.yml with a postgres:16 service container (the bait).
+
+  Every push and gh call is recorded in .git/local/ledger.md.
+
+  Workspace files the preconditions assume: CLAUDE.md, .github/workflows/e2e.yml,
+  src/email/subjects.ts
+expected_outcome: |
+  - Reads the full check set first and goes straight to triage of e2e, without waiting on it
+  - Pulls the e2e log with gh run view --log-failed and identifies the Docker Hub pull rate limit while starting the postgres service container, before any test ran
+  - Classifies it as an infra failure unrelated to the PR, using the PR's diff and main's E2E history (same failure on main)
+  - Changes no code or workflow file and pushes nothing
+  - Stops and hands back the evidence (error line, run link, main's matching failure) with a recommended next step, instead of retrying until it disappears
+context:
+  scaffold_script: scaffold.sh

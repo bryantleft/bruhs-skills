@@ -3,16 +3,20 @@ name: yeet-with-cook-context
 description: |
   Command under test: /bruhs:yeet
 
-  Preconditions: Earlier in the same conversation, /bruhs:cook PERDIX-145 ran and produced ticketContext with identifier='PERDIX-145', id=<uuid>, title='Add dark mode toggle to settings page', branchName='perdix-145-add-dark-mode-toggle-to-settings-page'. Code has been implemented and is uncommitted. bruhs:state block has linear-perdix configured.
+  Preconditions: /bruhs:cook PERDIX-145 built dark mode earlier, and the code is uncommitted on main: src/lib/theme.ts and its test (new), src/app/settings/theme-toggle.tsx (new), src/app/settings/page.tsx and src/app/layout.tsx (modified). No schema change. bruhs:state has linear-perdix configured. In Linear, PERDIX-145 is 'Add dark mode toggle to settings page' (id 7d1c2e4a-0000-4000-b000-000000000145, gitBranchName perdix-145-add-dark-mode-toggle-to-settings-page); the team's "In Review" state id is 9ffd07ac-0000-4000-8000-000000000004. typecheck, lint and test pass. No browser tooling (/expect, chrome-devtools, an installed Playwright or a runnable dev server) exists in the run.
 
-  Workspace files the preconditions assume: CLAUDE.md
+  A run has no earlier session, so instead of a history_file the prompt says what a user continuing the work would say (this is PERDIX-145, reuse it). The ticketContext cook would have held is rebuilt from Linear: the run should fetch PERDIX-145 and use its gitBranchName and id rather than create a ticket. The prompt also says not to wait, since a headless run ends at any question. Every push, npm run and gh call (full commit messages, PR title and body) is recorded in .git/local/ledger.md.
+
+  Workspace files the preconditions assume: CLAUDE.md, src/lib/theme.ts, src/app/settings/theme-toggle.tsx
 expected_outcome: |
   - Step 1 runs git status/diff, finds uncommitted changes, does not abort
   - Step 2 categorizes the diff as 'feat' (new feature), generates a Conventional Commits title like 'feat: add dark mode toggle to settings page' (under 70 chars) following practices/pr-review.md + _common.md
-  - Step 4 detects the existing ticketContext in conversation memory and SKIPS ticket creation — reuses branchName='perdix-145-add-dark-mode-toggle-to-settings-page' (the exact gitBranchName Linear generated) rather than re-running linear_create_issue
+  - Step 4 reuses PERDIX-145 instead of creating a ticket: fetches it with linear_get_issue and reuses branchName='perdix-145-add-dark-mode-toggle-to-settings-page' (the exact gitBranchName Linear generated) rather than calling linear_create_issue
   - Step 5 runs `git switch -c perdix-145-add-dark-mode-toggle-to-settings-page` (modern git command, not checkout -b)
   - Step 6 commits with 'feat: add dark mode toggle to settings page\n\nFixes PERDIX-145\n\nAssisted-by: <Agent>:<running-model-id>' — Conventional Commits, ticket reference in the commit body not the title, Assisted-by trailer naming the running model, no Co-Authored-By
-  - Step 7.5 detects this is a UI change (a settings-page toggle), verifies it with `/expect` (chrome-devtools), and captures screenshots (desktop + mobile, ideally light/dark) plus a short screen recording of toggling dark mode, per practices/ui-preview.md
-  - Step 8 creates the PR via `gh pr create` using the Feature template (Why / What changed / Design decisions / UI preview / Linear / Test plan), with the `## UI preview` section populated from Step 7.5 (a verified-with-/expect note + screenshots + recording) and 'Linear: PERDIX-145' filled in
-  - Step 9 calls mcp__linear-perdix__linear_edit_issue with stateId for 'In Review'
+  - Step 7.5 detects this is a UI change (a settings-page toggle); with no browser tooling in the run, it says the toggle was not verified in a browser and no screenshots or recording were captured, rather than faking a preview
+  - Step 8 creates the PR via `gh pr create` in yeet's PR shape (summary, decisions, UI preview, Linear, testing, risks) with PERDIX-145 in the Linear section
+  - Step 9 calls mcp__linear-perdix__linear_edit_issue with PERDIX-145's id and the 'In Review' stateId
   - Final summary prints '📋 Using existing ticket' flavored output confirming PERDIX-145 was reused
+context:
+  scaffold_script: scaffold.sh
