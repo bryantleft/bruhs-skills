@@ -19,6 +19,7 @@
 #     validate_pr_ready.sh    → validate-pr-ready-node.json
 #     write_bruhs_config.py   → write-bruhs-config-shim.json
 #     export_evals_json.py    → every evals/<case>/ loads; export is valid JSON
+#     evals/*/scaffold.sh     → each builds its workspace offline; mocks in sync
 #
 # All work is done in $TMPDIR/bruhs-eval-<pid>; cleaned up on exit.
 
@@ -167,6 +168,15 @@ mkdir -p "$fresh"
 echo "$STATE_JSON" | python3 "$SCRIPTS/sync_bruhs_block.py" --kind state --root "$fresh" >/dev/null 2>&1
 assert "creates CLAUDE.md when missing" test -f "$fresh/CLAUDE.md"
 assert "creates AGENTS.md when missing" test -f "$fresh/AGENTS.md"
+
+# Empty rules input (a stack derive_stack_rules has no rules for) writes the placeholder
+empty_root="$WORK/sync-empty-rules"
+mkdir -p "$empty_root"
+printf '' | python3 "$SCRIPTS/sync_bruhs_block.py" --kind rules --root "$empty_root" >/dev/null 2>&1
+assert_eq "empty rules input exits 0" "0" "$?"
+assert "empty rules input writes the placeholder" grep -q "No stack-specific rules detected" "$empty_root/CLAUDE.md"
+printf '' | python3 "$SCRIPTS/sync_bruhs_block.py" --kind state --root "$empty_root" >/dev/null 2>&1
+assert_eq "empty state input still exits 2" "2" "$?"
 
 #─────────────────────────────────────────────────────────────────────────────
 heading "read_bruhs_block.py — legacy fallback, not-found, kind isolation"
@@ -461,6 +471,27 @@ mkdir -p "$bad_evals/broken-case/graders"
 printf -- '---\nmax_turns: 5\nbogus_key: 1\n---\n\nhello\n' > "$bad_evals/broken-case/prompt.md"
 python3 "$TESTS/export_evals_json.py" --evals-dir "$bad_evals" --check >/dev/null 2>&1
 assert_eq "--check exits 1 on an unknown frontmatter key and no grader" "1" "$?"
+
+#─────────────────────────────────────────────────────────────────────────────
+heading "eval scaffolds — every case builds its workspace offline, under 120s"
+#─────────────────────────────────────────────────────────────────────────────
+
+assert "Linear mocks match each scaffold's mcpServer" python3 "$TESTS/sync_eval_mocks.py" --check
+for scaffold in "$PLUGIN_DIR"/evals/*/scaffold.sh; do
+    case_name="$(basename "$(dirname "$scaffold")")"
+    run_home="$WORK/scaffold-$case_name"
+    mkdir -p "$run_home/cwd"
+    start=$(date +%s)
+    # The same bare environment claude plugin eval gives a scaffold: PATH, HOME, TMPDIR.
+    (cd "$run_home/cwd" && env -i PATH="$PATH" HOME="$run_home" TMPDIR="${TMPDIR:-/tmp}" TERM=dumb \
+        bash "$scaffold" >"$run_home/out.log" 2>&1)
+    ec=$?
+    elapsed=$(( $(date +%s) - start ))
+    assert_eq "$case_name: scaffold exits 0" "0" "$ec"
+    [ "$ec" -ne 0 ] && sed 's/^/      /' "$run_home/out.log" | tail -5
+    assert "$case_name: scaffold leaves a git repo" test -d "$run_home/cwd/.git"
+    assert "$case_name: scaffold finishes under 120s (took ${elapsed}s)" test "$elapsed" -lt 120
+done
 
 #─────────────────────────────────────────────────────────────────────────────
 heading "Summary"

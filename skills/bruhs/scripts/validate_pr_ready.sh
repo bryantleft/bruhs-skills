@@ -231,16 +231,23 @@ detect_and_run() {
     esac
     return
   fi
-  [ -f package.json ] && run_node
-  [ -f Cargo.toml ] && run_rust
-  [ -f pyproject.toml ] && run_python
-  [ -f go.mod ] && run_go
+  if [ -f package.json ]; then MARKERS="$MARKERS package.json"; run_node; fi
+  if [ -f Cargo.toml ]; then MARKERS="$MARKERS Cargo.toml"; run_rust; fi
+  if [ -f pyproject.toml ]; then MARKERS="$MARKERS pyproject.toml"; run_python; fi
+  if [ -f go.mod ]; then MARKERS="$MARKERS go.mod"; run_go; fi
 }
 
+MARKERS=""
 detect_and_run
 
 if [ "$RAN_ANY" -eq 0 ]; then
-  printf 'error: no recognized project markers found (try --stack)\n' >&2
+  if [ -n "$MARKERS" ] || [ -n "$STACK_FORCE" ]; then
+    # A project was found but none of its checkers are installed (e.g. a Python
+    # repo with no uv, ruff, mypy or pytest on PATH). Nothing was validated.
+    printf 'error: found%s but no checker for it is installed; nothing was validated\n' "${MARKERS:- --stack $STACK_FORCE}" >&2
+  else
+    printf 'error: no recognized project markers found (try --stack)\n' >&2
+  fi
   exit 2
 fi
 

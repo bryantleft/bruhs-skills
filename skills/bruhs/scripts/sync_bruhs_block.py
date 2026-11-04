@@ -165,7 +165,10 @@ def main(argv: list[str]) -> int:
     args = parser.parse_args(argv[1:])
 
     raw = sys.stdin.read()
-    if not raw.strip():
+    # Empty rules are normal: derive_stack_rules.py prints nothing for a stack
+    # it has no rules for (Hono, plain TypeScript, ...), and render_rules_body
+    # writes the placeholder. Only an empty state is an error.
+    if not raw.strip() and args.kind == "state":
         print("error: no content received on stdin", file=sys.stderr)
         return 2
 

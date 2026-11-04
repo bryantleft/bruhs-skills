@@ -293,7 +293,7 @@ AskUserQuestion({
 const renderTool = ToolSearch("select:mcp__tldraw__create_diagram")
               || ToolSearch("select:mcp__tldraw-render__create_diagram");
 if (!renderTool) {
-  abort("No tldraw render MCP found. Install: claude mcp add --scope user --transport stdio tldraw -- npx -y tldraw-render");
+  abort("No tldraw render MCP found. Install: claude mcp add --scope user --transport stdio tldraw -- npx -y tldraw-mcp (or tldraw-render as a drop-in alternative)");
 }
 ```
 

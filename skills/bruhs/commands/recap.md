@@ -97,7 +97,7 @@ Use one of the [Output Templates](#output-templates). Always include the resolve
 | User input | Resolution |
 |---|---|
 | (empty) | `7 days ago` → `now` |
-| `yesterday` | `2 days ago 00:00` → `1 day ago 23:59` |
+| `yesterday` | `1 day ago 00:00` → `1 day ago 23:59` (one calendar day) |
 | `today` | `today 00:00` → `now` |
 | `last N days` | `N+1 days ago` → `now` |
 | `last week` | `8 days ago` → `1 day ago` (excludes today) |
@@ -148,7 +148,7 @@ Classification:
 
 ## Examples
 
-### Default — yesterday
+### Yesterday
 
 ```
 > /bruhs:recap yesterday
