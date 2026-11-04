@@ -443,12 +443,17 @@ EOF
 ### Step 9: Update Linear Status (if available)
 
 ```javascript
-// Load and call edit_issue
+// edit_issue takes a state UUID, so look up the team's "In Review" state first
+ToolSearch(`select:mcp__${mcpName}__linear_get_teams`)
 ToolSearch(`select:mcp__${mcpName}__linear_edit_issue`)
 
+const inReviewStateId = call(`mcp__${mcpName}__linear_get_teams`, {})
+  .find(t => t.id === config.integrations.linear.team)
+  .states.find(s => s.name === "In Review").id
+
 call(`mcp__${mcpName}__linear_edit_issue`, {
-  issueId: issue.id,
-  stateId: "in-review"  // Or find the "In Review" state ID
+  issueId: issue.id,   // the issue UUID, not the PERDIX-145 identifier
+  stateId: inReviewStateId
 })
 ```
 

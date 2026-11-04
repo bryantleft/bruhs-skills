@@ -4,7 +4,7 @@ focus: trace
 weight: 1
 ---
 
-PASS if the run shows this behavior: Step 1 recognizes PERDIX-145 as a ticket ID, runs ToolSearch for mcp__linear-perdix__linear_get_issue, then calls it with id='PERDIX-145'
+PASS if the run shows this behavior: Step 1 recognizes PERDIX-145 as a ticket ID, runs ToolSearch for mcp__linear-perdix__linear_get_issue, then calls it with identifier='PERDIX-145'
 
 FAIL if it does not, or if the run never reached the step this describes.
 

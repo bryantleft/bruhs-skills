@@ -197,10 +197,12 @@ fi
 **If Linear ticket ID provided:**
 
 ```javascript
-ToolSearch("select:mcp__linear__get_issue")
+// Linear server from the bruhs:state block, as in cook (e.g. "linear-perdix")
+const mcpName = config.integrations?.linear?.mcpServer
+ToolSearch(`select:mcp__${mcpName}__linear_get_issue`)
 
 // Get issue details
-issue = mcp__linear__get_issue({ identifier: "PERDIX-145" })
+issue = call(`mcp__${mcpName}__linear_get_issue`, { identifier: "PERDIX-145" })
 
 // Search for PR with ticket reference in title or body
 pr=$(gh pr list --search "PERDIX-145" --json number,headRefName --jq '.[0]')
@@ -1252,12 +1254,18 @@ Ready for your next feature! Run /bruhs:cook to start.
 If Linear MCP is configured and PR was merged:
 
 ```javascript
-ToolSearch("select:mcp__linear__update_issue")
+const mcpName = config.integrations?.linear?.mcpServer
+ToolSearch(`select:mcp__${mcpName}__linear_get_teams`)
+ToolSearch(`select:mcp__${mcpName}__linear_edit_issue`)
 
-// Find the Done/Completed state
-mcp__linear__update_issue({
-  issueId: issueId,
-  stateId: "done"  // Or find the "Done" state ID
+// Find the team's Done state ID; edit_issue takes a state UUID, not a name
+const doneStateId = call(`mcp__${mcpName}__linear_get_teams`, {})
+  .find(t => t.id === config.integrations.linear.team)
+  .states.find(s => s.name === "Done").id
+
+call(`mcp__${mcpName}__linear_edit_issue`, {
+  issueId: issue.id,   // the issue UUID, not the PERDIX-140 identifier
+  stateId: doneStateId
 })
 ```
 

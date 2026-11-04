@@ -137,7 +137,7 @@ if (!linearConfig?.mcpServer) {
   // Tool format: mcp__<server-name>__linear_<method>
   ToolSearch(`select:mcp__${mcpName}__linear_get_issue`)
 
-  issue = call(`mcp__${mcpName}__linear_get_issue`, { id: ticketId })
+  issue = call(`mcp__${mcpName}__linear_get_issue`, { identifier: ticketId })
 
   // Store ticket context for yeet
   ticketContext = {
