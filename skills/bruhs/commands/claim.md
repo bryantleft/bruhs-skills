@@ -4,7 +4,7 @@ description: Initialize bruhs config for an existing project — auto-detect sta
 
 # claim - Claim Existing Project
 
-> `<SKILL_DIR>` is the bruhs skill directory: the folder that holds `SKILL.md`, one level above this file's `commands/` folder.
+> `<SKILL_DIR>` is the bruhs skill directory: the folder that holds `SKILL.md`, one level above this file's `commands/` folder. In Claude Code it is `${CLAUDE_PLUGIN_ROOT}/skills/bruhs`.
 
 Set up bruhs for an existing project by writing the `bruhs:state` and `bruhs:rules` marker blocks into `CLAUDE.md` and `AGENTS.md` (mirrored). Use this when you have a project that wasn't created with `/bruhs:spawn`.
 

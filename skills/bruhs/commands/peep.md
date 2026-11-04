@@ -4,7 +4,7 @@ description: Address PR review comments with isolated subagents and reproduction
 
 # peep - Address PR Review Comments
 
-> `<SKILL_DIR>` is the bruhs skill directory: the folder that holds `SKILL.md`, one level above this file's `commands/` folder.
+> `<SKILL_DIR>` is the bruhs skill directory: the folder that holds `SKILL.md`, one level above this file's `commands/` folder. In Claude Code it is `${CLAUDE_PLUGIN_ROOT}/skills/bruhs`.
 
 Review and address PR feedback, push fixes, and optionally merge when ready.
 

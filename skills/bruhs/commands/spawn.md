@@ -4,7 +4,7 @@ description: Create a new project or add an app/package to a monorepo — select
 
 # spawn - Project Scaffolding
 
-> `<SKILL_DIR>` is the bruhs skill directory: the folder that holds `SKILL.md`, one level above this file's `commands/` folder.
+> `<SKILL_DIR>` is the bruhs skill directory: the folder that holds `SKILL.md`, one level above this file's `commands/` folder. In Claude Code it is `${CLAUDE_PLUGIN_ROOT}/skills/bruhs`.
 
 Create a new project from scratch or add an app/package to an existing monorepo.
 

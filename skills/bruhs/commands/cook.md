@@ -4,7 +4,7 @@ description: Plan and build a feature end-to-end — fetch Linear ticket, explor
 
 # cook - Plan + Build Features
 
-> `<SKILL_DIR>` is the bruhs skill directory: the folder that holds `SKILL.md`, one level above this file's `commands/` folder.
+> `<SKILL_DIR>` is the bruhs skill directory: the folder that holds `SKILL.md`, one level above this file's `commands/` folder. In Claude Code it is `${CLAUDE_PLUGIN_ROOT}/skills/bruhs`.
 
 Combined planning and building workflow. Wraps brainstorming and feature development patterns into a single end-to-end flow.
 

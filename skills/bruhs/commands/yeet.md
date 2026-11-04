@@ -4,7 +4,7 @@ description: Ship staged work — categorize the diff, create or reuse a Linear 
 
 # yeet - Ship Workflow
 
-> `<SKILL_DIR>` is the bruhs skill directory: the folder that holds `SKILL.md`, one level above this file's `commands/` folder.
+> `<SKILL_DIR>` is the bruhs skill directory: the folder that holds `SKILL.md`, one level above this file's `commands/` folder. In Claude Code it is `${CLAUDE_PLUGIN_ROOT}/skills/bruhs`.
 
 Ship code that's ready to go. Creates Linear ticket, commits, pushes, and opens PR.
 
