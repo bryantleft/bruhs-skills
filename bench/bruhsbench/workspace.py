@@ -12,7 +12,11 @@ from pathlib import Path
 from .sandbox import check_tmp_base
 from .types import Arm, Task
 
-DEFAULT_SCRIPTS_DIR = Path(__file__).resolve().parents[2] / "scripts"
+from .homes import bruhs_skill_dir
+
+# bruhs's own scripts (detect_stack.py, sync_bruhs_block.py, ...) sit next to its
+# SKILL.md: skills/bruhs/scripts/ since 1.7.0, scripts/ at the repo root before.
+DEFAULT_SCRIPTS_DIR = bruhs_skill_dir(Path(__file__).resolve().parents[2]) / "scripts"
 SETUP_TIMEOUT_S = 15 * 60
 # R42: everything an agent can see in the workspace's git is neutral (no benchmark, no
 # arm): the identity, the commit messages and the tag the graders diff against.

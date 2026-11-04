@@ -63,8 +63,8 @@ from pathlib import Path, PurePath
 from . import untrusted
 from .agents import (agent_finished, build_command, is_auth_failure, parse_output,
                      tool_event_count)
-from .homes import (AGENT_TOOL_HOMES, ClaudeAuthMissing, bruhs_content_hash, build_home,
-                    claude_auth, export_bruhs)
+from .homes import (AGENT_TOOL_HOMES, ClaudeAuthMissing, bruhs_content_hash, bruhs_scripts_dir,
+                    build_home, claude_auth, export_bruhs)
 from .sandbox import (PLAYWRIGHT_BROWSER_RE, PLAYWRIGHT_CACHE, check_tmp_base, read_allow, private_tmp, real_home, remove_private_tmp,
                       work_base, wrap)
 from .types import Arm, Cli, ModelSpec, RunResult, RunSpec, Task
@@ -679,7 +679,7 @@ def run_one(
                      free_gb_at_start=round(free_gb_at_start, 1))
 
     try:
-        prepare_workspace(spec.task, spec.arm, workspace, scripts_dir=bruhs_src / "scripts")
+        prepare_workspace(spec.task, spec.arm, workspace, scripts_dir=bruhs_scripts_dir(bruhs_src))
     except SetupFailed as exc:
         (out_dir / "stderr.txt").write_text(f"{exc}\n")
         for p in (transcript, diff_path, out_dir / "final.txt"):
@@ -924,7 +924,7 @@ def _run_matrix(tasks, models, arms, repeats, out_root: Path, work_root: Path, *
     bruhs_src = ensure_bruhs_export(work_root, commit)
     _record_matrix(out_root, bruhs_content_hash(bruhs_src), commit, tasks, models, arms,
                    repeats, seed, timeout_s, record)
-    kept = _exclude_failed_setup(tasks, out_root, work_root, bruhs_src / "scripts")
+    kept = _exclude_failed_setup(tasks, out_root, work_root, bruhs_scripts_dir(bruhs_src))
 
     specs = matrix_order(kept, models, arms, repeats, seed=seed)
     results: dict[str, RunResult] = {}

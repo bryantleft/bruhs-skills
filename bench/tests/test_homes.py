@@ -154,6 +154,55 @@ def test_build_home_bruhs_installs_bruhs_and_expect(cli, tmp_path, bruhs_src, re
     assert not (bruhs_dir / "docs").exists()
 
 
+@pytest.fixture
+def bruhs_src_skills_layout(tmp_path: Path) -> Path:
+    """A bruhs tree in the 1.7.0+ layout: the skill under skills/bruhs/, plugin and
+    eval files at the repo root."""
+    src = tmp_path / "src-skills" / "bruhs"
+    (src / ".claude-plugin").mkdir(parents=True)
+    (src / ".claude-plugin" / "plugin.json").write_text(
+        '{"name": "bruhs", "commands": "./skills/bruhs/commands/"}')
+    skill = src / "skills" / "bruhs"
+    (skill / "commands").mkdir(parents=True)
+    (skill / "SKILL.md").write_text("---\nname: bruhs\n---\nbruhs\n")
+    (skill / "commands" / "cook.md").write_text("cook\n")
+    (src / "evals" / "cook-case").mkdir(parents=True)
+    (src / "evals" / "cook-case" / "prompt.md").write_text("cook it\n")
+    return src
+
+
+@pytest.mark.parametrize("cli", CLIS)
+def test_build_home_installs_the_skill_folder_from_the_skills_layout(
+        cli, tmp_path, bruhs_src_skills_layout, real_home):
+    _needs_grok(cli)
+    _, home = _build(cli, "bruhs", tmp_path, bruhs_src_skills_layout, real_home)
+    if cli == "claude":
+        # the plugin is the whole repo; its manifest points at the skill's commands
+        plugin = home / "plugins" / "bruhs"
+        assert (plugin / ".claude-plugin" / "plugin.json").is_file()
+        assert (plugin / "skills" / "bruhs" / "SKILL.md").is_file()
+        return
+    skills = home / (".agents" if cli == "codex" else ".grok") / "skills"
+    bruhs_dir = skills / "bruhs"
+    assert (bruhs_dir / "SKILL.md").is_file()
+    assert (bruhs_dir / "commands" / "cook.md").is_file()
+    # only the skill folder: no plugin manifest, evals or nested skills/ tree
+    assert sorted(p.name for p in bruhs_dir.iterdir()) == ["SKILL.md", "commands"]
+
+
+def test_bruhs_skill_dir_needs_a_skill_md(tmp_path):
+    from bruhsbench.homes import bruhs_skill_dir
+
+    root = tmp_path / "bruhs"
+    (root / "skills" / "bruhs").mkdir(parents=True)
+    with pytest.raises(FileNotFoundError, match="no SKILL.md"):
+        bruhs_skill_dir(root)
+    (root / "SKILL.md").write_text("old layout\n")
+    assert bruhs_skill_dir(root) == root
+    (root / "skills" / "bruhs" / "SKILL.md").write_text("new layout\n")
+    assert bruhs_skill_dir(root) == root / "skills" / "bruhs"
+
+
 def test_sanitized_path_drops_bench_venv_and_repo(tmp_path):
     venv = tmp_path / "venv"
     repo = tmp_path / "repo"
@@ -481,3 +530,14 @@ def test_bruhs_content_hash_covers_what_is_installed(tmp_path):
     assert bruhs_content_hash(src) == h
     (src / "commands" / "cook.md").write_text("cook v2\n")
     assert bruhs_content_hash(src) != h
+
+
+def test_bruhs_scripts_dir_follows_the_skill_and_tolerates_none(tmp_path):
+    from bruhsbench.homes import bruhs_scripts_dir
+
+    root = tmp_path / "bruhs"
+    root.mkdir()
+    assert bruhs_scripts_dir(root) == root / "scripts"  # no skill: bare-arm placeholder
+    (root / "skills" / "bruhs").mkdir(parents=True)
+    (root / "skills" / "bruhs" / "SKILL.md").write_text("x\n")
+    assert bruhs_scripts_dir(root) == root / "skills" / "bruhs" / "scripts"

@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from bruhsbench import runner, sandbox
+from bruhsbench.homes import bruhs_skill_dir
 from bruhsbench.runner import AuthAbort, DiskGuard, DiskLow, matrix_order, run_matrix, run_one, scan_contamination
 from bruhsbench.tasks import load_task
 from bruhsbench.types import ModelSpec, RunSpec
@@ -1028,7 +1029,7 @@ def test_skill_content_change_blocks_resume(tmp_path, skill_repo):
     out = tmp_path / "out"
     ov = override(fake_agent(tmp_path, EDIT_AND_REPLY))
     run_matrix([task], [CLAUDE], ["bare"], 1, out, command_override=ov)
-    skill = skill_repo / "SKILL.md"
+    skill = bruhs_skill_dir(skill_repo) / "SKILL.md"
     skill.write_text(skill.read_text() + "\nnew rule\n")
     _git(skill_repo, "commit", "-qam", "change the skill")
     with pytest.raises(runner.MatrixMismatch, match="bruhs_content"):

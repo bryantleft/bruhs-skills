@@ -26,7 +26,9 @@ codex
     account connectors), ``plugins`` and ``remote_plugin`` (left on, the
     account's remote plugins -- linear, github, gmail, vercel, ... -- were
     downloaded into the fresh home during the run). bruhs arm adds bruhs + expect in
-    ``<home>/.agents/skills/`` and ``[mcp_servers.chrome-devtools]``.
+    ``<home>/.agents/skills/`` and ``[mcp_servers.chrome-devtools]``. The bruhs skill
+    installed there is the folder holding ``SKILL.md`` (:func:`bruhs_skill_dir`), not
+    the whole repo, the way ``npx skills add`` installs it.
 grok
     No GROK_HOME exists; ``HOME`` override is enough. ``<home>/.grok`` holds a
     copy of ``auth.json``; bruhs arm adds bruhs + expect in
@@ -74,6 +76,9 @@ PASSTHROUGH_VARS = ("PATH", "LANG", "TERM", "USER", "LOGNAME", "TMPDIR")
 AGENT_TOOL_HOMES = {"PLAYWRIGHT_BROWSERS_PATH": "Library/Caches/ms-playwright",
                     "RUSTUP_HOME": ".rustup"}
 BRUHS_EXCLUDE = ("bench", "docs", ".git", ".superpowers")
+# Where SKILL.md lives in the bruhs repo: skills/bruhs/ since 1.7.0 (the Agent Skills
+# layout), the repo root before. Claude loads the whole repo as a plugin either way.
+SKILL_DIRS = (Path("skills") / "bruhs", Path("."))
 EXPORT_EXCLUDE = ("bench", "docs")
 # Account-synced claude.ai skills/plugins download asynchronously into a fresh home, so
 # they appear in some runs and not others; turn the sync off in both arms.
@@ -217,9 +222,28 @@ def _copy_bruhs(bruhs_src: Path, dest: Path) -> None:
     shutil.copytree(bruhs_src, dest, ignore=ignore, symlinks=True)
 
 
+def bruhs_skill_dir(bruhs_src: Path) -> Path:
+    """The folder in ``bruhs_src`` that holds bruhs's ``SKILL.md`` (:data:`SKILL_DIRS`),
+    so a pinned commit from either layout installs as a skill."""
+    for rel in SKILL_DIRS:
+        if (bruhs_src / rel / "SKILL.md").is_file():
+            return bruhs_src / rel
+    raise FileNotFoundError(f"no SKILL.md in {bruhs_src} or {bruhs_src / SKILL_DIRS[0]}")
+
+
+def bruhs_scripts_dir(bruhs_src: Path) -> Path:
+    """bruhs's ``scripts/`` (next to its ``SKILL.md``). Without a ``SKILL.md`` it falls
+    back to ``bruhs_src/scripts`` and leaves the error to whoever runs a script there:
+    bare-arm runs never do."""
+    try:
+        return bruhs_skill_dir(bruhs_src) / "scripts"
+    except FileNotFoundError:
+        return bruhs_src / "scripts"
+
+
 def _install_skills(skills_dir: Path, bruhs_src: Path, expect_src: Path) -> None:
     skills_dir.mkdir(parents=True, exist_ok=True)
-    _copy_bruhs(bruhs_src, skills_dir / "bruhs")
+    _copy_bruhs(bruhs_skill_dir(bruhs_src), skills_dir / "bruhs")
     shutil.copytree(expect_src.resolve(), skills_dir / "expect")
 
 
