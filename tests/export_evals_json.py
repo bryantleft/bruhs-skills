@@ -19,6 +19,11 @@ The export is generated, not committed. Don't write it to evals/evals.json
 inside this repo: skill-creator would then run every case twice, once from the
 folder and once from the file.
 
+Each exported entry carries two fields beyond the agentskills.io ones:
+"context" (the preconditions, for people) and "setup" (the case's scaffold
+script: run it in an empty directory to build the workspace the prompt
+expects, then start the agent there).
+
 Exit codes:
     0 — every case is valid (and the export, if any, was written)
     1 — one or more cases are invalid (errors on stderr)
@@ -114,6 +119,14 @@ def load_case(case_dir: Path) -> tuple[dict, list[str]]:
             errors.append('case.yaml: schema_version must be the quoted string "1.1"')
         if case_yaml.get("name") != name:
             errors.append(f"case.yaml: name {case_yaml.get('name')!r} must match the folder name {name!r}")
+    context = parse_case_yaml(case_yaml.get("context", ""))
+    scaffold = context.get("scaffold_script", "")
+    if not scaffold:
+        errors.append("case.yaml: no context.scaffold_script; every case builds its preconditions")
+    elif not (case_dir / scaffold).is_file():
+        errors.append(f"case.yaml: scaffold_script {scaffold!r} does not exist")
+    elif not (case_dir / scaffold).stat().st_mode & 0o111:
+        errors.append(f"{scaffold} is not executable (chmod +x)")
     if not prompt.strip():
         errors.append("prompt.md is missing or has an empty prompt body")
 
@@ -144,6 +157,7 @@ def load_case(case_dir: Path) -> tuple[dict, list[str]]:
         "prompt": prompt.strip(),
         "expected_output": case_yaml.get("expected_outcome", ""),
         "context": case_yaml.get("description", ""),
+        "setup": f"evals/{name}/{scaffold}" if scaffold else "",
         "files": [],
         "assertions": assertions,
     }

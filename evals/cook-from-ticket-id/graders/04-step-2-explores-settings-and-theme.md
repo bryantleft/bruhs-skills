@@ -4,7 +4,7 @@ focus: trace
 weight: 1
 ---
 
-PASS if the run shows this behavior: Step 2 launches feature-dev:code-explorer subagent(s) via Task to map settings page and theme hook; loads skills listed in config.tooling.skills
+PASS if the run shows this behavior: Step 2 maps the settings page, the preferences module and where theme state would live, through an explorer subagent (references/harness-tools.md: feature-dev:code-explorer, Explore or general-purpose in Claude Code) or by exploring inline when no subagent is available; and it loads the skills listed in config.tooling.skills, or says none are listed
 
 FAIL if it does not, or if the run never reached the step this describes.
 

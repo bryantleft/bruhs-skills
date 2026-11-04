@@ -4,7 +4,7 @@ focus: trace
 weight: 1
 ---
 
-PASS if the run shows this behavior: Step 3 presents genuinely distinct approaches when real trade-offs exist, includes landmines / receipts / tripwires / hidden state, and uses AskUserQuestion only when a meaningful choice remains
+PASS if the run shows this behavior: Step 3 presents genuinely distinct approaches when real trade-offs exist, includes landmines / receipts / tripwires / hidden state, and, where a meaningful choice remains, states its recommendation and proceeds with it because the user said not to wait
 
 FAIL if it does not, or if the run never reached the step this describes.
 

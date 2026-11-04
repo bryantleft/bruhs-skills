@@ -6,6 +6,10 @@ description: |
   Preconditions: Next.js + Drizzle project with a bruhs:state block in CLAUDE.md where integrations.linear.mcpServer='linear-perdix'. PERDIX-145 exists in Linear and is titled 'Add dark mode toggle to settings page'.
 
   Workspace files the preconditions assume: CLAUDE.md
+
+  The prompt pre-answers decisions because a headless run ends at the first
+  question; scaffold.sh builds the repo and evals/cook-from-ticket-id/mocks/
+  serves PERDIX-145.
 expected_outcome: |
   - Step 0 confirms bruhs:state block in CLAUDE.md exists and reads it to extract linearConfig.mcpServer='linear-perdix'
   - Step 1 recognizes PERDIX-145 as a ticket ID, runs ToolSearch for mcp__linear-perdix__linear_get_issue, then calls it with identifier='PERDIX-145'
@@ -13,3 +17,5 @@ expected_outcome: |
   - Step 2 launches feature-dev:code-explorer subagent(s) via Task to map settings page and theme hook; loads skills listed in config.tooling.skills
   - Step 3 presents genuinely distinct approaches when real trade-offs exist, includes landmines / receipts / tripwires / hidden state, and uses AskUserQuestion only when a meaningful choice remains
   - Step 7 ends with 'Ready to ship! Run /bruhs:yeet to create PR.' and '📋 Using existing ticket: PERDIX-145' so the user knows yeet will reuse the ticket
+context:
+  scaffold_script: scaffold.sh
