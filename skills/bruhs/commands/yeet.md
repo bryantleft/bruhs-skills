@@ -512,7 +512,7 @@ Reads the `bruhs:state` block in `CLAUDE.md` (fallback `AGENTS.md`, then legacy 
 {
   "integrations": {
     "linear": {
-      "mcpServer": "linear-sonner",     // MCP server name from ~/.claude.json
+      "mcpServer": "linear-sonner",     // MCP server name from the agent's MCP config
       "team": "<team-id>",
       "teamName": "Sonner",
       "project": "<project-id>",

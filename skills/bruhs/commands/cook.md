@@ -269,7 +269,7 @@ Exploring codebase...
 - Pattern: <existing pattern that applies>
 ```
 
-Use the Task tool with `subagent_type: "feature-dev:code-explorer"` to:
+Dispatch an **explorer** subagent (`references/harness-tools.md` → *Subagents* says which agent type to use on each harness, and what to do without one) to:
 - Find related code
 - Understand existing patterns
 - Map dependencies
@@ -650,7 +650,7 @@ Building...
 
 Launch code-reviewer agents to check the implementation:
 
-Use the Task tool with `subagent_type: "feature-dev:code-reviewer"` to:
+Dispatch a **reviewer** subagent (`references/harness-tools.md` → *Subagents*) to:
 - Check for bugs
 - Verify logic
 - Look for security issues

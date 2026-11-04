@@ -30,7 +30,7 @@ Any agent that reads Agent Skills (Codex, Cursor, Gemini CLI, Claude Code and ot
 npx skills add bryantleft/bruhs-skills
 ```
 
-On an agent without slash commands, ask for the command by name ("run bruhs cook for PERDIX-145"). The skill routes to `commands/<name>.md`.
+On an agent without slash commands, ask for the command by name ("run bruhs cook for PERDIX-145"). The skill routes to `commands/<name>.md`. `skills/bruhs/references/harness-tools.md` maps the Claude Code tool names the commands use (questions, subagents, MCP tool names, config files) to their equivalents elsewhere.
 
 ## Repository layout
 
@@ -41,6 +41,7 @@ skills/bruhs/          the skill, self-contained per the Agent Skills spec
   commands/            one workflow per command (also the /bruhs:* slash commands)
   practices/           engineering and stack guidance the commands load
   scripts/             deterministic helpers the commands shell out to
+  references/          harness tool mapping for agents other than Claude Code
 evals/                 model-in-the-loop eval cases (claude plugin eval layout)
 tests/                 script tests and the eval exporter; no model needed
 ```
@@ -193,7 +194,7 @@ Stack-agnostic and stack-specific guidance, loaded conditionally by `cook` and `
 `scripts/` contains deterministic helpers that commands shell out to:
 
 - `detect_stack.py` — read `package.json`/`Cargo.toml`/`pyproject.toml`/etc., output JSON with detected languages, frameworks, styling, DB, auth, testing, tooling.
-- `detect_mcp_servers.py` — list MCP servers from `~/.claude.json`, grouped by category.
+- `detect_mcp_servers.py` — list MCP servers from every agent's config (Claude Code, Codex, Grok CLI, Cursor, Gemini CLI, VS Code, Windsurf), grouped by category.
 - `sync_bruhs_block.py` — atomic writer for the `bruhs:state` and `bruhs:rules` blocks inside `CLAUDE.md` and `AGENTS.md`, with schema validation for state.
 - `read_bruhs_block.py` — read a marker block back to stdout; falls back to legacy `.claude/bruhs.json` for `--kind state` during the transition.
 - `derive_stack_rules.py` — emit stack-specific behavioral rules as markdown given state JSON on stdin.

@@ -32,19 +32,24 @@ Exit codes: `0` on success, `2` on usage error.
 
 ### `detect_mcp_servers.py`
 
-List installed MCP servers from `~/.claude.json`, grouped into
-`linear`, `notion`, `github`, and `other`. Used by `claim`.
+List installed MCP servers, grouped into `linear`, `notion`, `github`,
+and `other`, from every agent's MCP config: Claude Code, Codex, Grok
+CLI, Cursor, Gemini CLI, VS Code and Windsurf, at user level and for
+the project at `--root`. Used by `claim` and `spawn`.
 
 Invocation:
 
-    python3 <SKILL_DIR>/scripts/detect_mcp_servers.py
-    python3 <SKILL_DIR>/scripts/detect_mcp_servers.py --config <PATH>
+    python3 <SKILL_DIR>/scripts/detect_mcp_servers.py --root <PROJECT_ROOT>
+    python3 <SKILL_DIR>/scripts/detect_mcp_servers.py --config <PATH> [--config <PATH>]
 
-Output: JSON object with four array-valued keys. Missing config file is
-treated as empty (exit 0).
+Output: JSON object with the four array-valued keys plus `sources`,
+mapping each server name to the configs it was found in. Missing files
+are skipped. In the default scan an invalid file is reported on stderr
+and skipped; TOML is parsed with `tomllib` on Python 3.11+ and with a
+table-header scan before that.
 
-Exit codes: `0` on success or missing file, `2` on invalid JSON / IO
-error.
+Exit codes: `0` on success, `2` when a file named with `--config` is
+invalid JSON/TOML or unreadable.
 
 ### `sync_bruhs_block.py`
 

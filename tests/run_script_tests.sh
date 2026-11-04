@@ -350,6 +350,33 @@ out_a=$(python3 "$SCRIPTS/detect_mcp_servers.py" --config "$mcp_cfg" 2>/dev/null
 out_b=$(python3 "$SCRIPTS/detect_mcp_servers.py" --config "$mcp_cfg" 2>/dev/null)
 assert_eq "detect_mcp_servers stable across two consecutive calls" "$out_a" "$out_b"
 
+# Other agents' formats: Codex/Grok TOML, Cursor/Gemini JSON, VS Code "servers"
+mcp_home="$WORK/mcp-home"; mcp_proj="$WORK/mcp-proj"
+mkdir -p "$mcp_home/.codex" "$mcp_home/.grok" "$mcp_proj/.cursor" "$mcp_proj/.vscode" "$mcp_proj/.gemini"
+printf '[mcp_servers.linear-bnle]\ncommand = "npx"\n\n[mcp_servers."notion-work".env]\nKEY = "x"\n' > "$mcp_home/.codex/config.toml"
+printf '[mcp_servers.github]\nurl = "https://example.invalid"\n' > "$mcp_home/.grok/config.toml"
+echo '{"mcpServers": {"linear-perdix": {}}}' > "$mcp_proj/.cursor/mcp.json"
+echo '{"servers": {"shadcn": {}}}' > "$mcp_proj/.vscode/mcp.json"
+echo '{"mcpServers": {"context7": {}}}' > "$mcp_proj/.gemini/settings.json"
+echo '{"mcpServers": {"linear-perdix": {}}}' > "$mcp_proj/.mcp.json"
+out=$(HOME="$mcp_home" python3 "$SCRIPTS/detect_mcp_servers.py" --root "$mcp_proj" 2>/dev/null)
+ec=$?
+assert_eq "default scan exits 0" "0" "$ec"
+scan=$(printf '%s' "$out" | python3 -c "import json,sys; d=json.load(sys.stdin); print(' '.join(d['linear']+d['notion']+d['github']+d['other']))")
+assert_eq "default scan finds every agent's servers" "linear-bnle linear-perdix notion-work github context7 shadcn" "$scan"
+srcs=$(printf '%s' "$out" | python3 -c "import json,sys; print(' '.join(json.load(sys.stdin)['sources']['linear-perdix']))")
+assert_contains "sources lists the cursor config" "cursor:" "$srcs"
+assert_contains "sources lists the project .mcp.json" "claude-code:" "$srcs"
+fallback=$(python3 -B -c "import sys; sys.modules['tomllib']=None; sys.path.insert(0, sys.argv[1]); import detect_mcp_servers as d; print(sorted(d.names_from_toml(open(sys.argv[2]).read())))" "$SCRIPTS" "$mcp_home/.codex/config.toml" 2>&1)
+assert_eq "TOML fallback without tomllib finds both tables" "['linear-bnle', 'notion-work']" "$fallback"
+
+# A broken file: explicit --config fails, the default scan skips it
+echo '{not json' > "$mcp_proj/.cursor/mcp.json"
+HOME="$mcp_home" python3 "$SCRIPTS/detect_mcp_servers.py" --root "$mcp_proj" >/dev/null 2>&1
+assert_eq "default scan skips an invalid file" "0" "$?"
+python3 "$SCRIPTS/detect_mcp_servers.py" --config "$mcp_proj/.cursor/mcp.json" >/dev/null 2>&1
+assert_eq "explicit invalid --config exits 2" "2" "$?"
+
 #─────────────────────────────────────────────────────────────────────────────
 heading "validate_pr_ready.sh — node stack, partial failure"
 #─────────────────────────────────────────────────────────────────────────────

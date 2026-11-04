@@ -1,5 +1,7 @@
 {
-  "skills": ["bruhs"],
+  "skills": [
+    "bruhs"
+  ],
   "command": "scripts/detect_mcp_servers.py",
   "query": "python3 <PLUGIN_DIR>/scripts/detect_mcp_servers.py --config <PATH>",
   "files": [],
@@ -15,7 +17,11 @@
     "Missing ~/.claude.json (or empty mcpServers) returns all four arrays as empty, exit 0 — NOT exit 2",
     "Invalid JSON in the config file exits 2 with stderr error message",
     "--config <PATH> overrides the default location and reads that file instead",
-    "Errors go to stderr; stdout is always parseable JSON or empty"
+    "Errors go to stderr; stdout is always parseable JSON or empty",
+    "With no --config, scans every agent's MCP config at user level and under --root: Claude Code (~/.claude.json, .mcp.json), Codex and Grok CLI (config.toml [mcp_servers.<name>]), Cursor, Gemini CLI, VS Code (servers) and Windsurf",
+    "Adds a 'sources' object mapping each server name to the agent:path entries it was found in",
+    "In the default scan an invalid file is reported on stderr and skipped (exit 0); a file named with --config that is invalid exits 2",
+    "Parses TOML with tomllib on Python 3.11+ and falls back to scanning [mcp_servers.*] table headers on older Pythons"
   ],
   "failure_modes": [
     "Returns only one of the two Linear entries — fails to detect multi-workspace setup, breaks claim's workspace-picker AskUserQuestion",

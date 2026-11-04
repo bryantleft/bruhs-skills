@@ -424,15 +424,18 @@ AskUserQuestion({
 Detect all available Linear MCP servers (supports multiple workspaces via `mcp-server-linear`):
 
 ```javascript
-// Read MCP server config to find all Linear instances
 // Servers are named like: linear-perdix, linear-bnle, linear-sonner
-// Tool names are: mcp__<server-name>__linear_<method>
-const mcpConfig = JSON.parse(Bash("cat ~/.claude.json")).mcpServers
-const linearServers = Object.keys(mcpConfig).filter(name => name.startsWith('linear'))
+// Claude Code tool names are: mcp__<server-name>__linear_<method>
+// Find every Linear workspace server, whichever agent configured it
+// (Claude Code, Codex, Grok CLI, Cursor, Gemini CLI, VS Code, Windsurf)
+const mcp = JSON.parse(Bash(`python3 <SKILL_DIR>/scripts/detect_mcp_servers.py --root .`))
+// Add any server whose linear_* tools this session already exposes but no
+// config file lists (e.g. registered by a plugin or a managed config)
+const linearServers = [...new Set([...mcp.linear, ...serversExposingLinearTools()])]
 
 if (linearServers.length === 0) {
   console.log("No Linear MCP configured.")
-  console.log("Add a workspace: edit ~/.claude.json mcpServers and add:")
+  console.log("Add a workspace to your agent's MCP config. JSON configs (Claude Code ~/.claude.json, Cursor, Gemini CLI):")
   console.log(`
     "linear-myworkspace": {
       "type": "stdio",
@@ -552,8 +555,10 @@ if (createNewProject) {
 
 **Setting up multiple Linear workspaces:**
 
-Uses `mcp-server-linear` npm package. Each workspace gets its own MCP server entry.
-Edit `~/.claude.json` (the MCP config file):
+Uses `mcp-server-linear` npm package. Each workspace gets its own MCP server entry
+in your agent's MCP config. Claude Code keeps it in `~/.claude.json`; Cursor
+(`~/.cursor/mcp.json`) and Gemini CLI (`~/.gemini/settings.json`) use the same
+`mcpServers` shape:
 
 ```json
 {
@@ -576,11 +581,23 @@ Edit `~/.claude.json` (the MCP config file):
     }
   }
 }
+```
 
-**Tool naming:** Tools are always `mcp__<server-name>__linear_<method>`, e.g.:
+**Tool naming:** In Claude Code, tools are `mcp__<server-name>__linear_<method>`, e.g.:
 - `mcp__linear-sonner__linear_get_teams`
 - `mcp__linear-perdix__linear_create_issue`
+
+Codex (`~/.codex/config.toml`) and Grok CLI (`~/.grok/config.toml`) use TOML:
+
+```toml
+[mcp_servers.linear-perdix]
+command = "npx"
+args = ["-y", "mcp-server-linear"]
+env = { LINEAR_ACCESS_TOKEN = "lin_api_xxx" }
 ```
+
+Other agents name the tools their own way; match on server name plus
+`linear_<method>` (see `references/harness-tools.md`).
 
 **Get your Linear API key:**
 1. Go to Linear → Settings → API → Personal API Keys
@@ -885,8 +902,8 @@ Then pipe it through the two helpers — `sync_bruhs_block.py --kind state` writ
 
 ```bash
 # Read user's current setup
-cat ~/.claude/settings.json | jq '.mcpServers | keys'      # Installed MCPs
-cat ~/.claude/settings.json | jq '.enabledPlugins | keys'  # Enabled plugins
+python3 <SKILL_DIR>/scripts/detect_mcp_servers.py --root .   # Installed MCPs, every agent
+jq '.enabledPlugins | keys' ~/.claude/settings.json 2>/dev/null  # Enabled plugins (Claude Code only)
 ```
 
 The `tooling` section stores what's recommended for this project. New devs can compare against their setup and install missing ones.

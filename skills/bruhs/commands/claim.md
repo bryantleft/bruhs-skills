@@ -145,14 +145,16 @@ Auto-detect what's possible:
 ### Step 3: Detect Linear MCP Servers
 
 ```javascript
-// Read MCP server config to find all Linear instances
-// Config is in ~/.claude.json (the MCP config file)
-const mcpConfig = JSON.parse(Bash("cat ~/.claude.json")).mcpServers
-const linearServers = Object.keys(mcpConfig).filter(name => name.startsWith('linear'))
+// Find every Linear workspace server, whichever agent configured it
+// (Claude Code, Codex, Grok CLI, Cursor, Gemini CLI, VS Code, Windsurf)
+const mcp = JSON.parse(Bash(`python3 <SKILL_DIR>/scripts/detect_mcp_servers.py --root .`))
+// Add any server whose linear_* tools this session already exposes but no
+// config file lists (e.g. registered by a plugin or a managed config)
+const linearServers = [...new Set([...mcp.linear, ...serversExposingLinearTools()])]
 
 if (linearServers.length === 0) {
   console.log("No Linear MCP configured (optional).")
-  console.log("To add: edit ~/.claude.json mcpServers with mcp-server-linear")
+  console.log("To add: register mcp-server-linear in your agent's MCP config (see references/harness-tools.md → MCP config files)")
   linearAvailable = false
 } else {
   linearAvailable = true
@@ -260,12 +262,12 @@ AskUserQuestion({
 ### Step 6: Detect Installed Tooling
 
 ```bash
-# Check the agent's MCP config for installed MCPs (Claude Code: ~/.claude.json)
-cat ~/.claude.json 2>/dev/null
+# Every MCP server any installed agent has configured, grouped by category
+python3 <SKILL_DIR>/scripts/detect_mcp_servers.py --root .
 ```
 
 Extract:
-- Installed MCP servers
+- Installed MCP servers (all categories; `sources` says which agent's config each came from)
 
 ### Step 6b: Detect Relevant Skills
 

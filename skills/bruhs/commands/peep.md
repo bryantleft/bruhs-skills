@@ -311,7 +311,7 @@ AskUserQuestion({
 
 **If "Yes - full review":**
 
-Get the list of changed files, then spawn one `feature-dev:code-reviewer` subagent per file, all in parallel:
+Get the list of changed files, then spawn one **reviewer** subagent per file, all in parallel. `references/harness-tools.md` → *Subagents* says which agent type `REVIEWER` is on each harness; without subagents, review the files one at a time with the same brief:
 
 ```bash
 # Get changed files
@@ -321,7 +321,7 @@ gh pr diff <number> --name-only
 ```javascript
 // For each changed file, spawn in parallel:
 Agent({
-  subagent_type: "feature-dev:code-reviewer",
+  subagent_type: REVIEWER,
   description: `Review ${file}`,
   prompt: `
 You are reviewing a single file from PR #${number}: "${pr.title}".
@@ -431,7 +431,7 @@ Discovery-mode findings come from a single reviewer per file with no second opin
 ```javascript
 // For each proposed issue from Step 3 reviewers, spawn in parallel:
 Agent({
-  subagent_type: "feature-dev:code-reviewer",
+  subagent_type: REVIEWER,
   description: `Validate ${issue.file}:${issue.line}`,
   prompt: `
 You are a skeptical validator. Another reviewer claims this is a bug. Your job is to falsify the claim — with execution, not opinion.
@@ -503,7 +503,7 @@ const orderings = [
 // Spawn all 3 in a single tool-call message:
 for (const order of orderings) {
   Agent({
-    subagent_type: "feature-dev:code-reviewer",
+    subagent_type: REVIEWER,
     description: `Quick scan PR diff (pass ${i})`,
     prompt: `
 Quick review of PR #${number}: "${pr.title}".
@@ -563,7 +563,7 @@ Each subagent receives a self-contained prompt with:
 ```javascript
 // For each unresolved thread, spawn in parallel:
 Agent({
-  subagent_type: "feature-dev:code-reviewer",
+  subagent_type: REVIEWER,
   description: `Review ${thread.path}:${thread.line}`,
   prompt: `
 You are analyzing a single PR review comment in isolation. Do NOT search for or analyze other comments.
