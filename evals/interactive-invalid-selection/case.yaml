@@ -9,7 +9,7 @@ description: |
   case.
 expected_outcome: |
   - Recognizes that 'foo' is not a valid bruhs subcommand and does not try to execute a command file that doesn't exist
-  - Lists the valid subcommands from SKILL.md (at least spawn, claim, cook, yeet, peep, dip, doodle, deepen, drill) so the user can see what is available
+  - Lists the valid subcommands from SKILL.md (at least the 13 menu commands: spawn, claim, cook, verify, yeet, walk, land, peep, dip, recap, doodle, deepen, drill) so the user can see what is available
   - Falls back to the interactive AskUserQuestion menu or asks the user to clarify which command they meant
   - Does not create files, change git state, or call Linear MCP tools while resolving the ambiguity
 context:

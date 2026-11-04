@@ -9,7 +9,7 @@ description: |
   and that the working tree is untouched; what yeet or cook would do after a
   pick is not reachable in one turn.
 expected_outcome: |
-  - Presents the interactive menu (spawn, claim, cook, yeet, peep, doodle, dip, deepen, drill) without auto-selecting yeet or cook based on the dirty working tree
+  - Presents the interactive menu (spawn, claim, cook, verify, yeet, walk, land, peep, dip, recap, doodle, deepen, drill) without auto-selecting yeet or cook based on the dirty working tree
   - Does not stash, stage, commit or modify the working tree before the user picks a command
   - Makes no Linear calls before the pick
   - (Not reachable in one headless turn: what yeet or cook would do after the pick)

@@ -9,7 +9,7 @@ description: |
   that nothing happened before it; routing after a pick (e.g. cook's Step 0)
   is not reachable in one turn.
 expected_outcome: |
-  - Presents the menu listing the bruhs commands SKILL.md names for it (spawn, claim, cook, yeet, peep, doodle, dip, deepen, drill) without including slop
+  - Presents the menu listing the bruhs commands SKILL.md names for it (spawn, claim, cook, verify, yeet, walk, land, peep, dip, recap, doodle, deepen, drill) without including slop
   - Ends at the menu, waiting for the user's selection, without picking or starting a command
   - Performs no file writes, git state changes, or Linear calls before the selection
   - (Not reachable in one headless turn: routing to cook after the pick)

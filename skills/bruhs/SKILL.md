@@ -376,7 +376,38 @@ Each command's full workflow lives in its own file. Read the specific file when 
 
 ## Interactive Menu
 
-When `/bruhs` is invoked without arguments, ask the user which command to run and route to the selected command's file. Options: spawn, claim, cook, yeet, peep, doodle, dip, deepen, drill. `slop` is intentionally excluded from the menu — invoke directly with `/bruhs:slop`.
+When `/bruhs` is invoked without arguments, ask the user which command to run, wait, and route to the selected command's file. Don't pick one yourself, even when the working tree suggests one. `slop` is intentionally excluded from the menu — invoke directly with `/bruhs:slop`.
+
+The 13 menu commands, in four groups:
+
+| Group | Commands |
+|---|---|
+| Start or build | spawn, claim, cook, verify |
+| Ship a PR | yeet, walk, land, peep |
+| After merge | dip, recap |
+| Investigate | doodle, deepen, drill |
+
+A question holds at most 4 options, so ask in two steps. First the group, with each option's description naming its commands:
+
+```javascript
+AskUserQuestion({
+  questions: [{
+    question: "What do you want to do?",
+    header: "bruhs",
+    multiSelect: false,
+    options: [
+      { label: "Start or build", description: "spawn a project, claim an existing repo, cook a feature, verify a claim" },
+      { label: "Ship a PR", description: "yeet staged work into a PR, walk reviewers through it, land it through CI, peep at review comments" },
+      { label: "After merge", description: "dip back to the base branch, recap what you shipped" },
+      { label: "Investigate", description: "doodle a diagram, deepen shallow modules, drill into test-suite gaps" },
+    ]
+  }]
+})
+```
+
+Then the command within that group: one option per command, labelled with its name and described by its line in the Commands Quick Reference.
+
+Without a structured question tool, skip the first step: list all 13 in one message under the four group headings, numbered, each with its one-line description, and ask which one to run.
 
 ---
 
