@@ -19,7 +19,9 @@ evals/
 ├── _lib/                         # shared by every scaffold (not a case)
 │   ├── helpers.sh                # eval_repo, eval_state, eval_origin, eval_gh, ...
 │   ├── gh_pr_fixtures.sh         # PR/review/checks answers for peep and dip
-│   └── gh_world.py               # stateful fake GitHub + CI for yeet and land
+│   ├── gh_world.py               # stateful fake GitHub + CI for yeet and land
+│   ├── walk_pr.sh                # gh answers for one PR, built from the real diff (walk)
+│   └── recap_dates.sh            # commits at dates relative to today (recap)
 └── cook-from-ticket-id/          # case name: what the test checks
     ├── scaffold.sh               # builds the workspace the prompt expects
     ├── prompt.md                 # run settings, then the user's message verbatim
