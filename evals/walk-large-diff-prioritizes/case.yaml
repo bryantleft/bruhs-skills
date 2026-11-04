@@ -1,0 +1,33 @@
+schema_version: "1.1"
+name: walk-large-diff-prioritizes
+description: |
+  Command under test: /bruhs:walk <PR#> (default markdown mode) on a wide PR
+
+  Preconditions: shop-api checked out on feat/upstream-retries, open as PR #57
+  "feat(http): retry upstream calls with backoff" against main (+147 / -28
+  across 26 files). The only real logic is the new src/lib/retryClient.ts
+  (~80 lines: retry loop, capped exponential backoff with jitter, per-attempt
+  timeout, Retry-After, retryable-status set) plus src/lib/http.ts routing
+  getJson and postJson through it, and src/lib/retryClient.test.ts.
+  tsconfig.json gains an "@/*" path alias, and all 22 src/services/*.ts files
+  change only their import line ("../lib/http.ts" to "@/lib/http.ts"). The
+  landmine: postJson now retries too, so createCharge in
+  src/services/payments.ts (no idempotency key) can create a second charge
+  after a timeout or 5xx. No review comments.
+
+  Workspace files the preconditions assume: src/lib/retryClient.ts,
+  src/lib/http.ts, src/lib/retryClient.test.ts, src/services/*.ts (22),
+  tsconfig.json
+
+  scaffold.sh builds the repo and a stub gh that answers `gh pr view`,
+  `gh pr diff`, `gh repo view` and the REST pulls/57, pulls/57/files and
+  pulls/57/comments calls (with --jq) from fixtures generated off the real diff.
+expected_outcome: |
+  - Fetches PR #57 and its 26 file patches
+  - Collapses the 22 import-only src/services/*.ts files into the mechanical section as one group instead of walking them one by one
+  - "Where to start" leads with src/lib/retryClient.ts and src/lib/http.ts
+  - Summarizes src/lib/retryClient.ts as plain-English pseudocode, with the full patch kept in a <details> block
+  - Risk callouts flag that postJson now retries non-idempotent POSTs such as createCharge in src/services/payments.ts
+  - Stays in markdown mode: the file count alone is no reason to switch to canvas
+context:
+  scaffold_script: scaffold.sh

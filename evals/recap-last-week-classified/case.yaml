@@ -1,0 +1,34 @@
+schema_version: "1.1"
+name: recap-last-week-classified
+description: |
+  Command under test: /bruhs:recap "last week" (long template with classification)
+
+  Preconditions: a storefront repo on main whose commit dates are set relative
+  to when the scaffold runs. git user.email is jordan@example.com (Jordan Lee).
+  "last week" resolves to 8 days ago → 1 day ago (today excluded). Inside that
+  window the user has 8 non-merge commits:
+    - 7, 6 and 6 days ago: feat(search) fuzzy product search, rank fuzzy
+      matches by edit distance, test(search) ranking ties (all SHOP-210;
+      new file src/search/fuzzy.ts) → one net-new unit of work
+    - 5 days ago: fix(cart) keep quantity on re-add (SHOP-214), and
+      "fix: typo in cart error message"
+    - 4 days ago: chore(deps) bump zod to 3.23.8
+    - 3 days ago: refactor(orders) split orders.ts into queries and mutations
+    - 2 days ago: fix(checkout) round tax per line item (SHOP-219)
+  Not in the recap: the user's commit 12 days ago (SHOP-190 support
+  impersonation), the user's commit at 00:00 today (SHOP-225 saved
+  searches), and two commits by teammate Alice Chen (alice@example.com)
+  inside the window (invoice PDF export, token refresh fix).
+
+  Workspace files the preconditions assume: src/search/fuzzy.ts, src/cart.ts,
+  src/checkout.ts, src/orders/*.ts, package.json
+
+  scaffold.sh builds the repo. No Linear or gh data is needed.
+expected_outcome: |
+  - Echoes the resolved absolute date range (8 days before the run date → 1 day before)
+  - Collects only jordan@example.com's non-merge commits in that range: nothing from Alice Chen, nothing from 12 days ago, nothing from today
+  - Collapses the 8 commits into 2-5 functional bullets; the three SHOP-210 commits become one fuzzy-search bullet and the typo fix is dropped or rolled up
+  - Uses the long template: header with commit/file/LOC counts, ticket IDs beside bullets, and a Classification paragraph
+  - Classifies fuzzy search as net-new, the cart and tax fixes as bugfix, and the zod bump and orders split as tech debt
+context:
+  scaffold_script: scaffold.sh

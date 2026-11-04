@@ -1,0 +1,34 @@
+schema_version: "1.1"
+name: walk-current-branch-pr
+description: |
+  Command under test: /bruhs:walk (default markdown mode, PR resolved from the current branch)
+
+  Preconditions: a Node HTTP API (shop-api) checked out on feat/api-rate-limit,
+  which is open as PR #42 "feat(api): rate-limit /v1/search per client"
+  against main (+74 / -9 across 8 files). The PR adds an in-memory
+  fixed-window limiter (src/middleware/rateLimit.ts) wired into /v1/search in
+  src/server.ts, moves clientKey() verbatim from src/server.ts to
+  src/lib/clientKey.ts, adds config.searchRateLimit (receipt: the quota in
+  docs/api.md), a limiter test, the regenerated src/api.gen.ts, and a version
+  bump in package.json + package-lock.json. deploy/app.yaml runs 3 replicas,
+  and the limiter's Map is per process and never evicts. One open review
+  comment from maya-r on rateLimit.ts:11 asks how it behaves on more than one
+  instance.
+
+  Workspace files the preconditions assume: src/middleware/rateLimit.ts,
+  src/lib/clientKey.ts, src/server.ts, src/config.ts, src/api.gen.ts,
+  package-lock.json, deploy/app.yaml, docs/api.md
+
+  scaffold.sh builds the repo and a stub gh that answers `gh pr view`,
+  `gh pr diff`, `gh repo view` and the REST pulls/42, pulls/42/files and
+  pulls/42/comments calls (with --jq) from fixtures generated off the real diff.
+expected_outcome: |
+  - Resolves PR #42 from the current branch and reads its file patches and review comments
+  - Prints a markdown walkthrough in the doc's template (title line, Author/Base/Size, TL;DR, Where to start, Core changes, Moved code, Mechanical changes in <details>, Risk callouts, Test plan)
+  - Reading order starts with the limiter (src/middleware/rateLimit.ts) or its wiring in src/server.ts, not the lockfile or generated code
+  - package-lock.json and src/api.gen.ts are listed as mechanical and collapsed; the test file is treated as test evidence
+  - clientKey() is reported as moved from src/server.ts to src/lib/clientKey.ts, not as new logic
+  - Risk callouts name the per-process limiter state against the 3 replicas and surface maya-r's open thread
+  - Delivers in chat only: no PR comment posted, no canvas
+context:
+  scaffold_script: scaffold.sh

@@ -1,0 +1,25 @@
+schema_version: "1.1"
+name: verify-leap-year-fix-holds
+description: |
+  Command under test: /bruhs:verify
+
+  Preconditions: a TypeScript date library (node:test, offline npm scripts).
+  main has src/dates.ts with parseDate() and an isLeapYear() that forgets the
+  400-year rule, so parseDate("2000-02-29") throws a RangeError. The checked-out
+  branch fix/leap-year-400 has one commit on top of main that fixes the rule
+  and adds tests for 2000-02-29 and 1900-02-29. The claim is true: the parent
+  commit rejects 2000-02-29 and HEAD accepts it; both reject 1900-02-29 and
+  2023-02-29. origin exists with main and the fix branch pushed.
+
+  Workspace files the preconditions assume: src/dates.ts, src/dates.test.ts,
+  src/signup.ts, package.json
+
+  scaffold.sh builds the repo. No Linear or gh data is needed.
+expected_outcome: |
+  - Restates "handles leap years" as a falsifiable claim with concrete inputs (2000-02-29 accepted, 1900-02-29 and a common-year Feb 29 rejected) before running anything
+  - Captures a baseline on the pre-fix state (HEAD~1 or the merge-base with main) showing parseDate("2000-02-29") throws
+  - Captures the treatment on HEAD with the same command, showing it returns { year: 2000, month: 2, day: 29 }
+  - Returns VERIFIED in the doc's output format (verdict, Claim, Evidence with baseline/treatment, Reasoning, Artifacts)
+  - Leaves the repo on fix/leap-year-400 with a clean tree and no leftover stash
+context:
+  scaffold_script: scaffold.sh

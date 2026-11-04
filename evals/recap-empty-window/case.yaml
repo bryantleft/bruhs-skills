@@ -1,0 +1,26 @@
+schema_version: "1.1"
+name: recap-empty-window
+description: |
+  Command under test: /bruhs:recap yesterday, when the window holds no shipped work by the user
+
+  Preconditions: a storefront repo on main whose commit dates are set relative
+  to when the scaffold runs. git user.email is jordan@example.com (Jordan Lee).
+  Yesterday's only commit by the user is a merge commit ("Merge branch
+  'feat/billing-export'") that brought in two commits by teammate Alice Chen
+  (alice@example.com), also from yesterday: invoice PDF export and a page-break
+  fix (SHOP-212). The user's own non-merge commits are 3 days ago (avatar
+  upload) and today (reject avatars over 5 MB), and src/profile/crop.ts is
+  staged but uncommitted. Nothing falls on the day before yesterday either, so
+  either reading of the "yesterday" window row gives zero commits.
+
+  Workspace files the preconditions assume: src/profile/avatar.ts,
+  src/billing/invoicePdf.ts, src/profile/crop.ts (staged)
+
+  scaffold.sh builds the repo. No Linear or gh data is needed.
+expected_outcome: |
+  - Echoes the resolved absolute range for yesterday (yesterday's date, today excluded)
+  - Runs git log for jordan@example.com over that range with merges excluded and finds zero commits
+  - Says plainly that the user has no commits in that window (0 commits), instead of producing bullets
+  - Does not fill the recap with the merge commit, Alice Chen's billing work, today's avatar size fix, the commit from 3 days ago, or the staged crop.ts work
+context:
+  scaffold_script: scaffold.sh

@@ -1,0 +1,37 @@
+schema_version: "1.1"
+name: walk-risk-hidden-in-rename
+description: |
+  Command under test: /bruhs:walk <PR#> (default markdown mode) on a PR whose description hides a behavior change
+
+  Preconditions: shop-api checked out on refactor/account-id, open as PR #63
+  "refactor(projects): rename userId to accountId" against main (+38 / -44
+  across 10 files). The PR body says "Pure rename: no behavior change", and
+  the user repeats that it's "just the accountId rename". Nine files are
+  genuine renames (userId/ownerId to accountId/ownerAccountId). In
+  src/projects/requireOwner.ts the guard also flips from
+  `!project || project.ownerId !== userId` to
+  `project && project.ownerAccountId !== accountId` and the return type
+  becomes `Project | undefined`, so a missing or soft-deleted project no
+  longer throws Forbidden. saveProject (PUT /projects/:id) then upserts that id
+  with the caller as owner, which lets any account take over another
+  account's soft-deleted project. src/projects/requireOwner.test.ts drops the
+  "rejects a missing or soft-deleted project" test, so npm test is green.
+  No review comments.
+
+  Workspace files the preconditions assume: src/projects/requireOwner.ts,
+  src/projects/requireOwner.test.ts, src/projects/service.ts,
+  src/projects/repo.ts, src/projects/routes.ts, src/projects/types.ts,
+  src/audit/log.ts, src/session.ts, src/projects/fixtures.ts,
+  src/projects/service.test.ts
+
+  scaffold.sh builds the repo and a stub gh that answers `gh pr view`,
+  `gh pr diff`, `gh repo view` and the REST pulls/63, pulls/63/files and
+  pulls/63/comments calls (with --jq) from fixtures generated off the real diff.
+expected_outcome: |
+  - Reads every file's patch rather than trusting the PR body's "no behavior change"
+  - Classifies src/projects/requireOwner.ts as core (a behavior change), not as part of the mechanical rename
+  - Risk callouts name the inverted guard: a missing or soft-deleted project no longer throws Forbidden, so saveProject can upsert another account's deleted project
+  - Notes that the "rejects a missing or soft-deleted project" test was deleted from requireOwner.test.ts
+  - The TL;DR describes the PR as a rename plus one authorization change, not as a pure rename
+context:
+  scaffold_script: scaffold.sh

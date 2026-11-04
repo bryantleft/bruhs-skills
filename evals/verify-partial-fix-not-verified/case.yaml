@@ -1,0 +1,27 @@
+schema_version: "1.1"
+name: verify-partial-fix-not-verified
+description: |
+  Command under test: /bruhs:verify
+
+  Preconditions: a TypeScript order-history module (node:test, offline npm
+  scripts). On main, src/paginate.ts computes pageCount with Math.floor, so
+  paginate() drops a partial last page. The checked-out branch fix/last-page
+  has one commit that swaps in Math.round and adds a test for 10 items at page
+  size 4 (2.5 rounds up to 3 pages), and npm test passes. The claim is false
+  in general: whenever the remainder is under half a page (9 items at size 4,
+  5 at size 4, 1 at size 4) Math.round still rounds down, so the last items
+  are dropped on both the parent commit and HEAD. origin exists with both
+  branches pushed.
+
+  Workspace files the preconditions assume: src/paginate.ts,
+  src/paginate.test.ts, src/orders.ts, package.json
+
+  scaffold.sh builds the repo. No Linear or gh data is needed.
+expected_outcome: |
+  - Restates the claim so it covers every non-multiple item count, not only the 10-items-at-size-4 case the new test uses
+  - Runs baseline (HEAD~1 or merge-base) and treatment (HEAD) with the same harness over inputs that include a remainder below half a page (e.g. 9 items at size 4)
+  - Returns NOT VERIFIED, citing the falsifying input with its baseline and treatment values (e.g. 9 items at size 4: 2 pages, item 9 missing, on both)
+  - Explains that the green test suite is not evidence for the claim because the new test only covers a remainder of half a page or more
+  - Does not edit src/paginate.ts to make the claim true
+context:
+  scaffold_script: scaffold.sh
