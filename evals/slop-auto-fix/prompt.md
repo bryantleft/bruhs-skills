@@ -1,8 +1,8 @@
 ---
 tags: [slop]
-max_turns: 30
-timeout_seconds: 900
-allowed_tools: [Read, Glob, Grep, Skill, Bash, Write, Edit]
+max_turns: 60
+timeout_seconds: 1500
+allowed_tools: [Read, Glob, Grep, Skill, Agent, TodoWrite, Bash, Write, Edit]
 ---
 
 /bruhs:slop --fix

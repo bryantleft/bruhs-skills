@@ -3,9 +3,15 @@ name: doodle-mcp-missing
 description: |
   Command under test: /bruhs:doodle
 
-  Preconditions: User runs doodle on a branch with an open PR but has never installed a tldraw rendering MCP. Neither mcp__tldraw__create_diagram nor mcp__tldraw-render__create_diagram is available.
+  Preconditions: User runs doodle on branch perdix-140-add-leaderboard, which is open as PR #42 (gh answers for it), but has never installed a tldraw rendering MCP. Neither mcp__tldraw__create_diagram nor mcp__tldraw-render__create_diagram is available: the case ships no tldraw mocks.
+
+  Workspace files the preconditions assume: src/**
+
+  scaffold.sh builds the same repo and gh fixtures as doodle-pr-mode.
 expected_outcome: |
-  - Step 1 attempts ToolSearch('select:mcp__tldraw__create_diagram') followed by ToolSearch('select:mcp__tldraw-render__create_diagram')
-  - Detects that neither is available and aborts before running any gh api or rg data-gathering
-  - Prints the install hint from the command doc: `claude mcp add --scope user --transport stdio tldraw -- npx -y tldraw-mcp` (or the tldraw-render alternative)
-  - Does not fall through to freeform mode or attempt to call the MCP anyway, since pr mode requires a real renderer
+  - Step 1 checks for mcp__tldraw__create_diagram, then mcp__tldraw-render__create_diagram
+  - Detects that neither is available and aborts before running any gh / git diff / rg data-gathering for the PR
+  - Prints an install hint from the command doc: `claude mcp add --scope user --transport stdio tldraw -- npx -y tldraw-mcp` (or the tldraw-render alternative)
+  - Does not fall through to freeform mode, fake a diagram, or call the MCP anyway, since pr mode requires a real renderer
+context:
+  scaffold_script: scaffold.sh

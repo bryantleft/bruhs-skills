@@ -3,12 +3,17 @@ name: slop-comment-references-rot
 description: |
   Command under test: /bruhs:slop
 
-  Preconditions: The branch diff adds comments '// covers R4 from the plan', '// per Sam in #backend', '// see ledger.ts line 88', '// temporary, remove after 2026-08', and '// every new reward type also needs a row in reward_kinds'. It also adds class RewardGranted extends LedgerEvent whose constructor only presets type='reward_granted' and throws on amount <= 0; the ledger posting rule already rejects non-positive amounts and nothing dispatches on the class (no instanceof, no class-keyed map). An early `if (kind === 'promo') return` sits above a switch that already has a 'promo' case, with no comment.
+  Preconditions: Branch feat/referral-rewards (pushed; origin/main is the base) adds src/rewards/grant.ts and src/jobs/promo-batch.ts. The diff adds comments '// covers R4 from the plan' (above the paused-program check), '// both sides of a referral are rewarded, per Sam in #backend', '// see ledger.ts line 88' (ledger.ts is 28 lines), '// temporary, remove after 2027-02', and '// every new reward type also needs a row in reward_kinds' (above eventsFor). It also adds class RewardGranted extends LedgerEvent whose constructor only presets type='reward_granted' and throws on amount <= 0; Ledger.post() already rejects non-positive amounts and keys on event.type, and nothing dispatches on the class (no instanceof, no class-keyed map). main already has a sibling RewardReversed built the same way. An early `if (req.kind === "promo") return;` in grantReward() sits above eventsFor()'s switch, which has a 'promo' case, with no comment; the reason is that the nightly promo batch (src/jobs/promo-batch.ts) posts promo grants through eventsFor(). Decoy: '// TODO(ENG-123): cap referral grants per sponsor once the fraud rules land' tracks open work and is fine.
 
-  Workspace files the preconditions assume: CLAUDE.md, src/rewards/grant.ts, src/rewards/events.ts
+  Workspace files the preconditions assume: CLAUDE.md, src/rewards/grant.ts, src/rewards/events.ts, src/rewards/ledger.ts, src/jobs/promo-batch.ts
+
+  scaffold.sh builds the repo, the branch and its origin.
 expected_outcome: |
   - Flags the plan ID, person/channel, line-number and dated comments as references that rot, and says provenance belongs in the commit or PR body
-  - Rewrites the R4 comment as the rule itself or deletes it, rather than adding a link to the plan
+  - Rewrites the R4 comment as the rule itself (a paused program grants nothing) or deletes it, rather than adding a link to the plan
   - Flags the 'every new reward type needs a row' comment as a process note and moves it to the PR body's deploy or risks section
   - Flags RewardGranted as a preset-only subclass after grepping for instanceof / class-keyed dispatch, and recommends the base LedgerEvent with the type constant at the call site
-  - Asks for (or adds) a one-line why on the early return that bypasses the switch, naming the constraint
+  - Asks for (or adds) a one-line why on the early promo return that bypasses the switch, naming the constraint (the nightly batch posts promo grants)
+  - Leaves TODO(ENG-123) alone
+context:
+  scaffold_script: scaffold.sh

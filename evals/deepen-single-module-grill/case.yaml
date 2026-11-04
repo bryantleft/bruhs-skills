@@ -3,15 +3,23 @@ name: deepen-single-module-grill
 description: |
   Command under test: /bruhs:deepen
 
-  Preconditions: TypeScript codebase. ReservationManager is a known shallow module the team wants grilled directly. It has methods: createReservation(customerId, restaurantId, partySize, date, time, smoking, vip, depositCents, depositRequired, notes) and updateReservation(id, partialFields). Three callers across api/reservations.ts, jobs/reminders.ts, and admin/reservations.ts each duplicate input validation (party size > 0, date in the future, deposit >= 0). The interface leaks Stripe payment intent IDs into the create signature even though only one caller uses deposits.
+  Preconditions: TypeScript booking app (Drizzle/Postgres, tested with PGlite per docs/adr/0001; Stripe for deposits). src/reservations/ReservationManager.ts is the shallow module the team wants grilled directly: createReservation(customerId, restaurantId, partySize, date, time, smoking, vip, depositCents, depositRequired, notes, stripePaymentIntentId) and updateReservation(id, partialFields), both forwarding to a ReservationRepository interface with exactly one adapter (DrizzleReservationRepository). Three callers duplicate input validation and disagree: src/api/reservations.ts (party size > 0, date in the future, deposit >= 0), src/admin/reservations.ts (party size 1..20, date today or later, deposit >= 0), src/jobs/reminders.ts (rebooks no-shows; party size > 0, future date). The interface leaks the Stripe PaymentIntent id into the create signature even though only src/api/reservations.ts takes deposits (it creates the intent itself via src/payments/stripe.ts). Existing tests test past the interface: ReservationManager.test.ts asserts arguments reach a repository mock, and the api/admin tests re-test the copied validation. CONTEXT.md is the glossary (Reservation, Party size, Deposit, ...).
+
+  The prompt pre-answers the grilling (a headless run ends at the first
+  question) and states a durable rejection: deposits stay in the same
+  transaction as their reservation, so no separate deposit service.
+
+  Workspace files the preconditions assume: CONTEXT.md, src/reservations/*, src/api/reservations.ts, src/admin/reservations.ts, src/jobs/reminders.ts, src/payments/stripe.ts
 expected_outcome: |
-  - Skips Phase 1 (--no-explore is set) and goes directly to Phase 3 grilling on ReservationManager
-  - Phase 3a frames the candidate concretely — names the existing interface, problem (10-arg create + 3 boolean state), and the user-visible target shape — before proposing alternatives
-  - Phase 3b designs the interface TWICE: produces at least two distinct alternatives (e.g., 'Minimal' vs 'Caller-optimised' vs 'Ports-and-Adapters'), each with its own dependency strategy and trade-offs. Naming alternatives A/B/C/D is encouraged but the load-bearing rule is plurality, not the labels
-  - Classifies dependency category for each alternative (in-process / local-substitutable / remote-owned / true-external) — Stripe is true-external, restaurant DB is local-substitutable
-  - Proposes promoting the scattered party-size / date / deposit invariants into the module (locality win) and hiding Stripe payment intent IDs behind a Deposit type (leverage win)
-  - Phase 3c makes an OPINIONATED recommendation among the alternatives. Recommending without picking a winner is failure. The recommendation cites trade-offs explicitly
-  - Names a seam (the deposit-collection step) and explicitly notes whether one adapter or two are expected — invokes the 'two adapters means a real seam' rule
-  - Phase 3 hand-off output (3e) includes: implementation plan suitable for /bruhs:cook, test plan tied to the new interface (what becomes integration-testable / unit-testable / contract-testable), migration plan from the old interface, and a tests-to-delete list
-  - If a rejection reason is durable, drafts an ADR — does not auto-skip ADR creation when it would prevent future re-suggestion
-  - Still does not refactor code or write the new module — output is the co-designed interface + dependency strategy + plans
+  - Skips Phase 1 and Phase 2 (a module name plus --no-explore) and goes directly to Phase 3 grilling on ReservationManager, reading only that module and its callers
+  - Phase 3a frames the candidate concretely: the existing interface (11-argument create with smoking/vip/depositRequired booleans and the PaymentIntent id), the problem, and illustrative caller code, before proposing alternatives
+  - Phase 3b designs the interface more than once: at least two distinct alternatives, each with its own dependency strategy and trade-offs
+  - Classifies dependencies: Stripe is true-external, the Postgres/Drizzle store is local-substitutable (PGlite)
+  - Promotes the scattered party-size / date / deposit invariants into the module (locality win) and hides the Stripe PaymentIntent id behind a Deposit concept (leverage win)
+  - Phase 3c makes an opinionated recommendation and cites trade-offs
+  - Names the deposit-collection seam and says it has two adapters (Stripe + test fake), while the repository interface with one adapter is not a real seam
+  - Phase 3e hand-off includes an implementation plan for /bruhs:cook, a test plan at the new interface, a migration plan for the three callers, and a tests-to-delete list
+  - Drafts an ADR recording the user's rejection of a separate deposit service
+  - Does not refactor code or write the new module
+context:
+  scaffold_script: scaffold.sh

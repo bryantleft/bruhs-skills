@@ -3,14 +3,22 @@ name: slop-happy-path
 description: |
   Command under test: /bruhs:slop
 
-  Preconditions: TypeScript + React Next.js app. bruhs:state block has framework='nextjs'. src/components/ contains 45 files, including a UserCard.tsx with a derived-state useEffect anti-pattern, a Form.tsx with an `any` type on API response, and a HeroImage.tsx with an unstable inline style object causing re-renders.
+  Preconditions: TypeScript + React Next.js app. bruhs:state block has framework='nextjs'. src/components/ holds seven files: UserCard.tsx copies firstName/lastName into state through a useEffect (derived-state anti-pattern), Form.tsx reads the API response as `const data: any` and aborts the request after an unexplained AbortSignal.timeout(10000), and HeroImage.tsx passes a new inline style object to a memo()'d FadeImage on every render. Decoys that are fine: ThemeWatcher.tsx's useEffect subscribes to matchMedia with cleanup (a real external-system sync), and Badge.tsx's `as const` is on a static literal.
 
-  Workspace files the preconditions assume: CLAUDE.md
+  Workspace files the preconditions assume: CLAUDE.md, src/components/*
+
+  The run ends at slop's "fix interactively or report only?" question;
+  scaffold.sh builds the repo.
 expected_outcome: |
-  - Step 1 reads the bruhs:state block (via read_bruhs_block.py) to learn framework=nextjs, Step 4 loads practices/engineering-principles.md (GOVERNING), practices/type-driven-design.md (PRIMARY), practices/_common.md, and practices/typescript-react.md
-  - Loads practices/engineering-principles.md as governing guidance and runs the cross-cutting landmine / receipt / tripwire / failure-honesty / hidden-state gate before applying the category priority hierarchy
-  - Analyzes src/components following the priority hierarchy: Types (P1) > Security (P2) > Performance anti-patterns (P3) > Error Handling (P4) > Architecture (P5) > Immutability (P6) > Style (P7)
-  - Flags the `any` on the API response as a P1 type-signature violation (highest priority), the unstable inline style reference as a P3 performance anti-pattern (not a style nit), and the derived-state useEffect as a React anti-pattern
+  - Step 1 reads the bruhs:state block (via read_bruhs_block.py) to learn framework=nextjs
+  - Step 4 loads practices/engineering-principles.md (GOVERNING), practices/type-driven-design.md (PRIMARY), practices/_common.md, and practices/typescript-react.md
+  - Runs the decision-quality gate: flags the 10000 ms timeout in Form.tsx as an operational number with no receipt, without proposing a different number
+  - Flags the `any` on the API response in Form.tsx as a P1 type-signature violation
+  - Flags the inline style object in HeroImage.tsx as a P3 performance anti-pattern (it defeats FadeImage's memo), not a style nit
+  - Flags the useEffect in UserCard.tsx as derived state that should be computed during render
+  - Does not flag ThemeWatcher.tsx's matchMedia effect or Badge.tsx's `as const` as problems
   - Generates the report grouped by severity (Critical / High / Medium / Low) with a summary table counting issues per category
-  - Follows up with AskUserQuestion asking whether to fix issues interactively or generate a report only
-  - Does NOT auto-fix behavior-changing issues — only unused imports, console.logs, and redundant type annotations are safe auto-fix candidates per the command doc
+  - Ends by asking whether to fix issues interactively or generate a report only
+  - Does NOT change code before the user answers
+context:
+  scaffold_script: scaffold.sh

@@ -3,11 +3,16 @@ name: doodle-module-mode
 description: |
   Command under test: /bruhs:doodle
 
-  Preconditions: pnpm workspace monorepo. packages/store has a package.json, an index.ts barrel, and ~15 TypeScript files. tldraw MCP is installed.
+  Preconditions: pnpm workspace monorepo (apps/web, packages/store, packages/ui, packages/api-client). packages/store has a package.json, an src/index.ts barrel and 13 more TypeScript files (one in src/__tests__). Intra-module imports form a real graph (index re-exports store, cart, user, selectors, hooks, types; store imports cart, persist, session; migrations.ts is imported by nothing). External imports by file count: zustand 3 (with subpaths), zod 2, @acme/api-client 2, immer 1, nanoid 1, vitest 1. Decoys: packages/store/dist/ holds stale build output (gitignored), plus README.md and CHANGELOG.md; packages/ui and apps/web import @acme/store but are not part of the module. A tldraw MCP is installed (the case's mocks/tldraw/ answers create_diagram with .tldraw/diagram.png, which scaffold.sh writes).
+
+  Workspace files the preconditions assume: pnpm-workspace.yaml, packages/store/**
+
+  scaffold.sh builds the repo.
 expected_outcome: |
-  - Resolves packages/store as the module root because it contains package.json and index.ts
-  - Lists files via `rg --files packages/store` filtered by source extension
-  - Parses intra-module imports (file → file within packages/store) and extra-module imports (top 10 by count)
-  - Builds shapes: outer frame labeled 'packages/store' containing geo boxes for each file with bound arrows for internal imports, plus a separate 'External' frame on the right with top external dependencies
-  - Calls mcp__tldraw__create_diagram with the shapes and default dimensions, then prints the local image path since module mode has no default upload (not --pr-comment)
-  - Keeps the diagram under ~30 nodes; if > 30, collapses and notes to re-run with --depth higher
+  - Resolves packages/store as the module root because it contains package.json (and an index.ts barrel)
+  - Lists source files (e.g. rg --files packages/store filtered by source extension), leaving out dist/ build output and markdown
+  - Parses intra-module imports (file -> file within packages/store) and extra-module imports (top 10 by count)
+  - Builds shapes: outer frame labeled 'packages/store' containing a geo box per file with bound arrows for internal imports, plus a separate 'External' frame to the right with the external dependencies
+  - Calls mcp__tldraw__create_diagram with the shapes and the default dimensions, then prints the local image path, since module mode has no default upload
+context:
+  scaffold_script: scaffold.sh

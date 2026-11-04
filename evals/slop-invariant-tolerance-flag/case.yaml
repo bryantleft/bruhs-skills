@@ -3,10 +3,16 @@ name: slop-invariant-tolerance-flag
 description: |
   Command under test: /bruhs:slop
 
-  Preconditions: reconcile.ts reads every account a ledger's schema defines. A recent change added an option `missingAccountAsZero: true` so reconciliation treats an absent account as a zero balance instead of throwing. Accounts are created lazily the first time reconciliation runs; enroll.ts creates the ledger but no accounts. Some older ledgers have no accounts at all.
+  Preconditions: Merchant ledger in TypeScript. src/ledger/schema.ts says every ledger has the required accounts (cash, receivable, revenue; promo_credit is optional). reconcile.ts reads every required account and throws when one is missing. The latest commit ("fix: stop nightly reconcile failing on ledgers without accounts") added an option `missingAccountAsZero` so reconciliation treats an absent account as a zero balance, and nightly.ts passes `{ missingAccountAsZero: true }`. Accounts are created lazily by post.ts on a ledger's first posting; enroll.ts creates the ledger but no accounts, so ledgers that never posted, including some older ones, have no accounts at all. Decoy that is fine: statement.ts reads the schema-optional promo_credit account as 0 when absent.
 
-  Workspace files the preconditions assume: CLAUDE.md, src/ledger/reconcile.ts, src/ledger/enroll.ts
+  Workspace files the preconditions assume: CLAUDE.md, src/ledger/reconcile.ts, src/ledger/enroll.ts, src/ledger/post.ts, src/ledger/nightly.ts
+
+  scaffold.sh builds the repo and its history.
 expected_outcome: |
   - Flags missingAccountAsZero as a read-site tolerance for an invariant violation, citing practices/engineering-principles.md (Fail loudly and actionably)
   - Recommends creating the accounts at enrollment (write site), backfilling ledgers that predate the rule, and removing the flag so reconciliation fails loudly
   - Notes the backfill must run before the reader starts failing on old ledgers
+  - Does not flag statement.ts's optional promo_credit default as the same problem
+  - Makes no code changes (--report)
+context:
+  scaffold_script: scaffold.sh

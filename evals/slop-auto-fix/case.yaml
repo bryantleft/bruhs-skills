@@ -3,13 +3,18 @@ name: slop-auto-fix
 description: |
   Command under test: /bruhs:slop
 
-  Preconditions: TypeScript project with unused imports across 23 files, 8 orphan console.log statements, and 15 redundant type annotations (e.g. `const count: number = 0`). There are also 3 `any` types and 2 hardcoded API keys.
+  Preconditions: Hono + TypeScript orders API (bruhs:state framework='hono'). Safe slop: unused imports in 4 files (orders.ts imports z and LineItem, users.ts randomUUID, webhooks.ts Order, pricing.ts formatCents), 3 console.log calls in src/ (orders.ts, users.ts, pricing.ts), and 4 redundant type annotations (welcomeSubject: string, subtotal: number, discount: number, MAILER_URL: string). Needs a prompt: 2 `any` types (toOrder(row: any) in orders.ts, `const event: any` in webhooks.ts) and 2 hardcoded secrets (MAILER_API_KEY in src/lib/mailer.ts, the Postgres password in db.ts's DATABASE_URL fallback). Decoys that must survive: `import "./env.ts"` in src/index.ts (side-effect import that validates env at boot), `const handlers: Record<string, Handler> = {}` (the annotation is needed), and console.log in scripts/print-routes.ts (it is that script's output). Today lint fails on the three console.logs; typecheck and tests pass.
 
-  Workspace files the preconditions assume: CLAUDE.md
+  Workspace files the preconditions assume: CLAUDE.md, src/**
+
+  The case is about prompting before risky fixes, so the run ends at the
+  first question; scaffold.sh builds the repo.
 expected_outcome: |
-  - Follows the priority hierarchy: Types (P1) > Security (P2) > Performance (P3) > Error Handling (P4) > Architecture (P5) > Immutability (P6) > Style (P7)
-  - Auto-applies only the safe categories listed in the command doc: unused imports, console.log removals, and redundant type annotations (23 + 8 + 15 fixes)
-  - For the 3 `any` types (type-signature violations, P1) and 2 hardcoded secrets (security, P2), enters interactive mode and uses AskUserQuestion per issue with options Apply fix / Skip / Mark intentional / Show context
-  - Never silently changes a type signature or modifies logic without prompting — only the pre-declared safe list auto-applies
-  - Step 8 runs verification after the fix batch: tsc --noEmit, lint, test, build
-  - Final summary reports counts per category and lists remaining skipped issues
+  - Auto-applies only the safe categories listed in the command doc: unused imports, console.log removals, and redundant type annotations, without asking
+  - Leaves the side-effect import, the needed Record<string, Handler> annotation and the CLI script's console.log alone
+  - For the `any` types (type-signature violations, P1) and the hardcoded secrets (security, P2), stops and asks before changing them, with options like Apply fix / Skip / Mark intentional / Show context
+  - Never silently changes a type signature, a secret, or logic: only the pre-declared safe list auto-applies
+  - Puts the `any` types and secrets ahead of low-priority nits in the order it presents remaining issues
+  - Reports what it auto-fixed with counts per category
+context:
+  scaffold_script: scaffold.sh

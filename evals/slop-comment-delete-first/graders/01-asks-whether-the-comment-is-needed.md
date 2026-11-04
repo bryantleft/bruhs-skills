@@ -4,6 +4,6 @@ focus: trace
 weight: 1
 ---
 
-PASS if the run shows this behavior: Asks whether the comment is needed at all before rewording it: deletes it and rereads the two calls
+PASS if, before rewording anything, the run asks whether the comment above `await ensureSession();` in scripts/deploy.ts needs to exist at all (for example by deleting it and rereading the two calls, or by checking what a reader would get wrong without it).
 
-FAIL if it does not, or if the run never reached the step this describes.
+FAIL if it goes straight to shortening or rephrasing the comment without considering deletion.

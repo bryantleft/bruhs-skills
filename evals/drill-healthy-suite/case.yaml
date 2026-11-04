@@ -3,11 +3,18 @@ name: drill-healthy-suite
 description: |
   Command under test: /bruhs:drill
 
-  Preconditions: Rust Axum service with disciplined test infra. CI runs: cargo nextest with coverage at 85% on changed lines (hard-gated), cargo mutants weekly with ratchet-only gate, dependency-rules.json checked by a custom build script (hard-gated), test files included in clippy + rustfmt config, acceptance specs via a small bash harness against a docker-compose, all steps run via a single ci.yml with no continue-on-error. The team is asking 'what's the next layer to add?'
+  Preconditions: Rust Axum fare-quote service with disciplined test infra. .github/workflows/ci.yml runs on every PR: cargo fmt --check; cargo clippy --all-targets -- -D warnings (test targets included; clippy.toml applies to every target); cargo llvm-cov nextest plus diff-cover --fail-under=85 on changed lines (hard gate); scripts/check_deps.sh against dependency-rules.json (hard gate); and acceptance specs (acceptance/run.sh, Given/When/Then bash scenarios against docker-compose). No continue-on-error anywhere. .github/workflows/mutants.yml runs cargo mutants weekly with a ratchet against mutants-baseline.json (kill ratio 0.81, only goes up), a posture chosen deliberately in docs/adr/0003-weekly-mutation-ratchet.md (a full run takes ~50 minutes). The complexity composite is the only absent layer, and there is a concrete hotspot: src/pricing/fare.rs quote() is deeply branched, has two recent bug-fix commits, and its unit tests cover only two paths. The team asks what the next layer to add is.
+
+  Workspace files the preconditions assume: CLAUDE.md, .github/workflows/*.yml, Cargo.toml, src/**, tests/**, acceptance/**, dependency-rules.json, scripts/check_deps.sh, docs/adr/*
+
+  The run ends at Phase 2 (or its "Which would you like to grill?");
+  scaffold.sh builds the repo and its history.
 expected_outcome: |
-  - Phase 1: maps all 8 layers and concludes most are GATED or ADVISORY-WITH-RATCHET in a healthy way
-  - Applies the 'what would slip through' test for each absent or advisory layer and is honest when the answer is 'nothing concrete in this codebase'
-  - Refuses to fabricate adoption candidates and returns only layers with a concrete bug class that could slip through
-  - If Phase 2 produces 1–2 candidates (e.g. complexity composite — only layer absent), they each carry a concrete bug class that would slip through, not a hypothetical
-  - Does NOT propose tightening already-healthy gates (raising coverage from 85% to 90%) without a concrete bug class that the higher threshold catches — drill is about adopting MISSING layers, not over-tuning gated ones
-  - Does NOT propose adding layers redundant with the existing healthy ones — anti-pattern 'leaving old tests when a deeper layer subsumes them' (and its inverse: adding a layer when an existing one already covers the bug class)
+  - Phase 1: maps all 8 layers and concludes most are gated (or ratchet by documented choice) in a healthy way
+  - Applies the 'what would slip through' test for each absent or advisory layer, and is honest when the answer is 'nothing concrete in this codebase'
+  - Returns only layers with a concrete bug class: the complexity composite, citing quote() in src/pricing/fare.rs, or nothing
+  - Does NOT propose tightening already-healthy gates (raising coverage from 85%) without a concrete bug class the higher threshold catches
+  - Does NOT treat the weekly mutation ratchet as a weak advisory layer to replace with a per-PR hard gate
+  - Does NOT propose layers redundant with existing healthy ones (for example a second acceptance harness)
+context:
+  scaffold_script: scaffold.sh

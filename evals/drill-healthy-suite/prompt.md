@@ -1,8 +1,10 @@
 ---
 tags: [drill]
-max_turns: 30
-timeout_seconds: 900
-allowed_tools: [Read, Glob, Grep, Skill, Bash, Write, Edit]
+max_turns: 50
+timeout_seconds: 1500
+allowed_tools: [Read, Glob, Grep, Skill, Agent, TodoWrite, Bash, Write, Edit]
 ---
 
 /bruhs:drill
+
+our CI feels solid. what's the next layer worth adding, if any?

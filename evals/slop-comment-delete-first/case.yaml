@@ -3,11 +3,16 @@ name: slop-comment-delete-first
 description: |
   Command under test: /bruhs:slop
 
-  Preconditions: deploy.ts has a four-line comment above `await ensureSession(); await confirmEnvironment(env);` explaining that the session must exist before the environment prompt, because the prompt reads the account alias from the session. The method names and their order already say this, and the commit that introduced the order carries the same explanation.
+  Preconditions: scripts/deploy.ts has a four-line comment above `await ensureSession(); await confirmEnvironment(env);` explaining that the session must exist before the environment prompt, because the prompt reads the account alias from the session. The method names and their order already say this, confirmEnvironment() calls getSession(), which throws "no deploy session: call ensureSession() before reading it" if the calls are swapped, and the commit that introduced the order ("fix: create the session before the environment prompt") carries the same explanation. Decoy: imageTag() has a one-line WHY comment (the registry rejects '+' in tags) that should stay.
 
-  Workspace files the preconditions assume: scripts/deploy.ts
+  Workspace files the preconditions assume: scripts/deploy.ts, scripts/prompt.ts, scripts/session.ts
+
+  scaffold.sh builds the repo and its two commits.
 expected_outcome: |
   - Asks whether the comment is needed at all before rewording it: deletes it and rereads the two calls
-  - Concludes the names and call order already tell the reader the sequence, and recommends deleting the comment
+  - Concludes the names and call order (backed by getSession()'s error and the commit message) already tell the reader the sequence
+  - Deletes the comment, or at most leaves one line naming the constraint
   - Treats deletion as a valid answer to 'tighten', and says so in one line
-  - Keeps a one-line comment only if, without it, a reader would plausibly reorder the calls and break the prompt
+  - Leaves the unrelated registry comment in imageTag() alone
+context:
+  scaffold_script: scaffold.sh

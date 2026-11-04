@@ -3,12 +3,20 @@ name: slop-python-repo
 description: |
   Command under test: /bruhs:slop
 
-  Preconditions: Python FastAPI service. bruhs:state block has stack.framework='fastapi' and stack.language='python'. Code includes an endpoint that constructs a new httpx.AsyncClient() per request, an `await` inside a for loop over independent items, and a SQL query built via f-string interpolation.
+  Preconditions: Python FastAPI service (pyproject.toml; app/, tests/). bruhs:state block has stack.framework='fastapi' and stack.language='python'. app/routes/products.py builds the search query with an f-string (`... WHERE name LIKE '%{q}%'`); app/routes/inventory.py constructs a new httpx.AsyncClient() per request in availability() and awaits one stock lookup per SKU inside a for loop over independent items. Decoys that are fine: get_product() uses a `?` placeholder, and sync_supplier_catalog() awaits inside a while loop because each page's cursor comes from the previous page, using a module-level client. ruff, mypy, pytest and uv are not installed and nothing can be installed (no network), so validate_pr_ready.sh finds no Python checker to run; `python3 -m unittest` runs the three stdlib tests.
 
-  Workspace files the preconditions assume: CLAUDE.md
+  Workspace files the preconditions assume: CLAUDE.md, pyproject.toml, app/**, tests/**
+
+  The run ends at slop's "fix interactively or report only?" question, so
+  Step 8 (verification after fixes) is out of reach; the static-analysis step
+  (Step 3) is graded instead. scaffold.sh builds the repo.
 expected_outcome: |
   - Step 4 loads practices/engineering-principles.md as GOVERNING, then detects language=python and framework=fastapi, loads practices/python.md as the base, stacks practices/python-fastapi.md on top, and still loads practices/type-driven-design.md as PRIMARY plus practices/_common.md
-  - Applies the priority hierarchy: Types (P1) > Security (P2) > Performance (P3) > Error Handling (P4) > Architecture (P5) > Immutability (P6) > Style (P7)
-  - Flags the f-string SQL query as a P2 Security issue (SQL injection), the per-request httpx.AsyncClient() as a P3 Performance anti-pattern (should be a module-scope singleton), and the await-in-loop as a P3 Performance anti-pattern (use asyncio.gather)
   - Does NOT load practices/typescript-react.md or typescript-hono.md since this is a Python project
-  - Static-analysis step uses Python-appropriate tooling (ruff, mypy/ty) rather than ESLint/Biome when running validation in Step 8
+  - Flags the f-string SQL query as a P2 Security issue (SQL injection)
+  - Flags the per-request httpx.AsyncClient() as a P3 Performance anti-pattern (should be a module-scope or lifespan-owned singleton)
+  - Flags the await-in-loop over SKUs as a P3 Performance anti-pattern (use asyncio.gather with a bound)
+  - Does not flag the dependent cursor-pagination loop or the parameterized query
+  - Static analysis (Step 3) uses Python tooling (ruff, mypy/ty, pytest, or validate_pr_ready.sh's python path) rather than ESLint/Biome/tsc, and reports honestly that the tools are not installed
+context:
+  scaffold_script: scaffold.sh

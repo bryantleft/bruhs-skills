@@ -3,13 +3,18 @@ name: slop-landmine-tripwire
 description: |
   Command under test: /bruhs:slop
 
-  Preconditions: The client uses timeout=5000, retries=3, concurrency=20, catches every upstream error, logs it, and returns an empty profile. A comment says the upstream always returns a user id, but the response is cast without validation.
+  Preconditions: src/profile-client.ts batches ids and fetches profiles from an upstream API with TIMEOUT_MS=5000, MAX_RETRIES=3 (immediate retries on every error, no backoff) and CONCURRENCY=20, none with a receipt. It catches every upstream error per batch, logs it with logger.warn, and returns empty profiles (displayName "") for those ids. A comment says the upstream always returns a userId, but the JSON is cast with `as { profiles: Profile[] }` without validation. Decoy that is fine: MAX_IDS_PER_REQUEST=100 cites docs/upstream-profile-api.md, which states that limit; the doc says nothing about rate limits, quotas or latency.
 
-  Workspace files the preconditions assume: CLAUDE.md, src/profile-client.ts
+  Workspace files the preconditions assume: CLAUDE.md, src/profile-client.ts, docs/upstream-profile-api.md
+
+  scaffold.sh builds the repo.
 expected_outcome: |
-  - Flags each operational number as missing a receipt and does not suggest replacement magic values
+  - Flags TIMEOUT_MS, MAX_RETRIES and CONCURRENCY as missing receipts and does not suggest replacement magic values
   - Names retry amplification and downstream saturation as landmines, including the delayed failure each creates
   - Flags the empty-profile fallback as false success and hidden degraded state
-  - Flags the unchecked user-id assumption as missing a boundary-validation tripwire
+  - Flags the unchecked userId assumption as missing a boundary-validation tripwire
   - Recommends an actionable error or explicit degraded result that states the failed operation, upstream cause, violated policy or assumption, and recovery action
   - Requests measurements, quotas, or capacity math needed to derive the timeout, retry, and concurrency policy
+  - Accepts MAX_IDS_PER_REQUEST as receipted by the upstream contract
+context:
+  scaffold_script: scaffold.sh

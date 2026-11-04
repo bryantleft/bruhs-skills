@@ -3,14 +3,22 @@ name: deepen-happy-path
 description: |
   Command under test: /bruhs:deepen
 
-  Preconditions: Next.js + Drizzle project. src/billing contains 9 files: charge.ts (thin wrapper around stripe.charges.create), refund.ts (thin wrapper around stripe.refunds.create), subscription.ts (8 fields + 3 booleans for state), receipt.ts (formats and emails), invoice.ts (queries DB then formats), and 4 utility files. CONTEXT.md exists and defines a 'Subscription' as 'a charge cadence bound to a Customer'. Callers across src/api and src/jobs each construct stripe.Charge objects directly before passing them to billing functions.
+  Preconditions: Next.js + Drizzle + Stripe project. src/billing contains 9 modules: charge.ts (1:1 wrapper around stripe.charges.create), refund.ts (1:1 wrapper around stripe.refunds.create), subscription.ts (8 fields + 3 state booleans isActive/isPastDue/isCanceled, plus get/save), receipt.ts (formats and emails), invoice.ts (queries DB then formats), and 4 utilities: stripe-client.ts, money.ts (zero-decimal currencies; used by 5 modules), dates.ts (month-end clamping; used by both renewal jobs), idempotency.ts (used by one caller). CONTEXT.md defines 'Subscription' as 'a charge cadence bound to a Customer', plus Customer, Charge, Refund, Invoice, Receipt. Callers in src/api (checkout, upgrade, refunds) and src/jobs (renewals, retry-failed) each build Stripe.ChargeCreateParams by hand before calling createCharge (metadata keys disagree: orderId / order_id / subscription / subscriptionId; idempotency keys are hand-rolled four different ways; one caller forgets to lowercase the currency) and each flips the subscription booleans itself.
+
+  Workspace files the preconditions assume: CONTEXT.md, src/billing/*, src/api/*, src/jobs/*
+
+  The run ends at Phase 2's "Which would you like to grill?"; scaffold.sh
+  builds the repo.
 expected_outcome: |
-  - Phase 1: reads CONTEXT.md first to anchor domain vocabulary, then traces materially different call paths until the domain and dependency shape stabilizes, not running a static linter
-  - Identifies friction points using the diagnostic categories from practices/architecture-deepening.md — at minimum 'Pass-through' (charge.ts, refund.ts thin wrappers), 'Leaky implementation' (callers constructing stripe.Charge directly), and 'Boolean-flag interfaces' (subscription.ts multi-boolean state)
-  - Applies the deletion test before promoting any module to a candidate — names the module, names where complexity would go if deleted
-  - Phase 2: produces only high-leverage candidates that pass the deletion test, each with Files / Problem / Proposed deepening / Benefits (Leverage + Locality) / Dependency category / Rough effort
-  - Uses domain vocabulary ('Subscription', 'Charge') from CONTEXT.md, NOT generic terms like 'manager' or 'service'
-  - Uses architectural language exactly: 'module', 'interface', 'depth', 'seam', 'adapter', 'leverage', 'locality' — does not substitute 'component', 'service', 'API', or 'boundary'
-  - Ranks candidates by leverage × locality, not by effort — calls this out explicitly
-  - Ends Phase 2 with the prompt: 'Which would you like to grill?'
-  - Does NOT refactor code or write any patches — output is decision support only
+  - Phase 1: reads CONTEXT.md first to anchor domain vocabulary, then traces materially different call paths (a request in src/api, a job in src/jobs) by reading code, not running a static linter
+  - Identifies friction points using the diagnostic categories from practices/architecture-deepening.md: 'Pass-through' (charge.ts, refund.ts), 'Leaky implementation' (callers constructing Stripe charge params directly), and the subscription state booleans flipped by every caller (boolean-flag state / scattered invariants)
+  - Applies the deletion test before promoting any module to a candidate: names the module and where complexity would go if deleted
+  - Does not promote money.ts or dates.ts, which pass the deletion test
+  - Phase 2: produces only high-leverage candidates, each with Files / Problem / Proposed deepening / Benefits (Leverage + Locality) / Dependency category / Rough effort
+  - Uses domain vocabulary ('Subscription', 'Charge', 'Customer') from CONTEXT.md, NOT generic terms like 'manager' or 'service'
+  - Uses architectural language exactly: 'module', 'interface', 'depth', 'seam', 'adapter', 'leverage', 'locality'
+  - Ranks candidates by leverage x locality, not by effort, and says so
+  - Ends Phase 2 with: 'Which would you like to grill?'
+  - Does NOT refactor code, write patches, or design interfaces in Phase 2
+context:
+  scaffold_script: scaffold.sh

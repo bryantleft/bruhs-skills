@@ -1,0 +1,22 @@
+{
+  "tools": [
+    {
+      "name": "create_diagram",
+      "description": "Render tldraw shapes to an image file and return its local path.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "shapes": {
+            "type": "array",
+            "description": "tldraw shape records (frame, geo, arrow, text, ...). Each has type, id, x, y and props; children set parentId; arrows bind to shapes via props.start/props.end.",
+            "items": { "type": "object" }
+          },
+          "format": { "type": "string", "enum": ["png", "svg"], "description": "Image format (default png)" },
+          "width": { "type": "number", "description": "Canvas width in pixels (default 1920)" },
+          "height": { "type": "number", "description": "Canvas height in pixels (default 1080)" }
+        },
+        "required": ["shapes"]
+      }
+    }
+  ]
+}
