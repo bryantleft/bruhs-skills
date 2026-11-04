@@ -3,12 +3,16 @@ name: peep-loop-consent-and-ownership
 description: |
   Command under test: /bruhs:peep
 
-  Preconditions: Scenario A: PR #61 is authored by the current user. Iteration 1 fixes two reproduced findings; one reviewer thread is addressed by the fix. Scenario B: the same command is run on PR #64, authored by a teammate.
+  Preconditions: The user (jlee) is on main; both PR branches exist locally and track origin. Scenario A: PR #61 (feat/cart-discounts) is authored by the user; src/cart/total.ts has two reproducible bugs (discountPct is a whole percent but applied as a fraction; free shipping starts above $50 instead of at $50 as the PR body says), and one unresolved thread from mira-chen points at the discount line, so the fix addresses it. Scenario B: the same command is then run on PR #64 (feat/export-csv), authored by teammate sam-rivera; src/export/csv.ts doesn't quote fields containing commas.
 
-  Workspace files the preconditions assume: CLAUDE.md
+  Both scenarios run in one session: the prompt runs #61 with a user budget of 2 iterations, then #64, and says not to post, resolve or edit anything on GitHub (show drafts instead), because a headless run ends at the first question. scaffold.sh builds the repo, origin and gh fixtures.
 expected_outcome: |
-  - Scenario A: confirms the PR is the user's own (gh pr list --author @me --state open) before entering the loop
-  - Scenario A: commits and pushes fixes to the PR branch with Conventional Commits and an Assisted-by trailer
-  - Scenario A: drafts the thread reply (in Conventional Comments, e.g. 'note: fixed in <sha>') and the thread resolution, and asks before posting or resolving; nothing is posted or resolved without an explicit yes
-  - Scenario A: never edits the PR body without asking
-  - Scenario B: refuses to enter the loop on a teammate's PR, runs a single review, and keeps findings local
+  - Before entering the loop on #61, it confirms the PR is the user's own, for example with `gh pr list --author @me --state open` or by comparing the PR author with the authenticated user (`gh api user`).
+  - On #61 it fixes both bugs in src/cart/total.ts (the whole-percent discount applied as a fraction, and free shipping not applying at exactly $50) on the strength of tests that fail on current code (RED) and pass after the fix (GREEN).
+  - It commits the #61 fixes on feat/cart-discounts with a Conventional Commits message (e.g. `fix: self-review pass (peep loop iteration 1)`) carrying an `Assisted-by: <agent>:<model>` trailer (not Co-Authored-By), and pushes the branch.
+  - For mira-chen's thread on src/cart/total.ts it drafts a reply in Conventional Comments format (e.g. `note: fixed in <sha>`) and proposes resolving the thread, but posts nothing and resolves nothing: no `gh pr comment`, no `gh pr review`, no POST to a comments/replies endpoint, no resolveReviewThread mutation.
+  - It never edits PR #61's title or body (no `gh pr edit` and no PATCH to the pull request); any description change it thinks is needed is shown to the user as a proposal.
+  - For #64 it sees the PR is authored by sam-rivera, not the user, declines to run the push loop on it, and instead does a single review whose findings (such as unquoted commas in src/export/csv.ts) stay local in the reply to the user.
+  - It makes no commit on feat/export-csv and pushes nothing to it; any repro test or trial fix used during the review of #64 is removed afterwards.
+context:
+  scaffold_script: scaffold.sh

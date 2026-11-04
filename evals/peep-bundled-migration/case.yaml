@@ -3,9 +3,13 @@ name: peep-bundled-migration
 description: |
   Command under test: /bruhs:peep
 
-  Preconditions: PR #412 has no review comments. Its diff adds drizzle/0007_add_index_orders_status.sql, updates drizzle/meta/_journal.json, and changes src/orders/list.ts to filter by status. Net 60 lines. Tests pass.
+  Preconditions: The user is on main. PR #412 (feat/orders-status-filter) has no review comments; the prompt pre-answers the AI Review question with the full review. Its diff adds drizzle/0007_add_index_orders_status.sql (an index only), updates drizzle/meta/_journal.json and the index in src/db/schema.ts, and changes src/orders/list.ts to filter by status (plus src/orders/status.ts and its test). About 58 lines net. Tests pass.
+
+  scaffold.sh builds the repo, origin and gh fixtures.
 expected_outcome: |
-  - Raises a must-fix finding that the migration is bundled with application code, citing the file list from git diff --name-only as the evidence
-  - Asks for the migration and journal to move to their own PR, merged before the code PR
-  - Keeps the finding even though the PR is small and the migration is only an index
-  - Does not drop the finding in the lint-territory filter
+  - It raises a must-fix / `issue (blocking)` finding that PR #412 bundles a schema migration (drizzle/0007_add_index_orders_status.sql and drizzle/meta/_journal.json, plus the schema change) with application code (src/orders/list.ts), and cites the changed-file list from tool output (`git diff --name-only main...HEAD`, `gh pr diff 412 --name-only` or equivalent) as the evidence.
+  - It asks for the migration files (the SQL, the journal entry and the schema change) to move into their own PR that merges before the code PR.
+  - The bundled-migration finding is kept even though the PR is small and the migration only adds an index, and the closing verdict is 🛑 Block naming the split as what unblocks it.
+  - The bundled-migration finding is still in the findings shown to the user after aggregation and filtering; it is not dropped as lint-territory, a duplicate, or a style nit.
+context:
+  scaffold_script: scaffold.sh

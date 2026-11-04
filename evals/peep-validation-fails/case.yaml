@@ -3,11 +3,14 @@ name: peep-validation-fails
 description: |
   Command under test: /bruhs:peep
 
-  Preconditions: PR #42 has one must-fix review comment on lib/db/queries.ts:45. A subagent runs the reproduction loop: it writes a failing test, runs it against current code (RED captured), applies the proposed FIX_OLD_STRING/FIX_NEW_STRING, and re-runs — but the post-fix run still fails (`npx tsc --noEmit` exits non-zero with a TS2345 error on the changed line, so GREEN is never reached).
+  Preconditions: The user is on main; PR #42 (branch perdix-140-add-leaderboard, Closes PERDIX-140) has one unresolved must-fix thread from mira-chen on lib/db/queries.ts:45. The bug is real: getTopAgents sorts ascending, so a test asserting "highest winRate first" fails on current code (RED). The reviewer's suggestion block replaces the comparator with `(a, b) => a.winRate > b.winRate`, which still mis-sorts at runtime, so after applying the suggestion as written the repro still fails and GREEN is never reached. (Under a real tsc the suggestion is also TS2345, boolean not assignable to number; the offline typecheck in this repo only parses, so it can't show that.) The existing test only checks the result length.
+
+  The prompt asks for auto-apply of high-confidence fixes and no posting, because a headless run ends at the first question. scaffold.sh builds the repo, origin and gh fixtures; mocks/linear-perdix serves PERDIX-140.
 expected_outcome: |
-  - The subagent reverts the Edit by swapping old_string/new_string AND deletes the repro test it created, then confirms `git diff --stat lib/db/queries.ts` and `git status --porcelain` show the tree exactly as found
-  - Because RED was reached but GREEN was not, the fix is NOT EVIDENCE_TIER: reproduced — the subagent reports the captured RED_OUTPUT and the failing post-fix output, sets EVIDENCE_TIER accordingly (unverified for the proposed fix, since it does not resolve the reproduction), and downgrades CONFIDENCE by 1
-  - Step 5 surfaces this finding under the 'Unconfirmed — reasoning only' heading (or with a ✗ evidence marker), never with a ✓, and excludes it from auto-apply
-  - Step 6 shows the user the proposed diff alongside the RED reproduction and the failing post-fix command output ('$ npx tsc --noEmit → 2 (type errors)' and the TS2345 snippet) so they can decide
-  - Auto-apply mode (if selected at Step 4) MUST NOT auto-apply this fix: only fixes with confidence>=4 AND EVIDENCE_TIER in {reproduced, tooling-confirmed} auto-apply; anything fix-validated/unverified/failed/dirty-cleanup-needed always goes to manual review regardless of confidence
-  - If the user picks 'Apply fix' anyway, Step 10 reruns the full validation suite and triggers the 'Full validation failed after applying fixes' AskUserQuestion with Revert last fix / Revert all fixes / Commit anyway / Show me the failure options
+  - For the must-fix thread on lib/db/queries.ts:45, a repro test asserting that getTopAgents returns the highest winRate first is run against the current, unmodified code and FAILS (RED), and that failure output is captured.
+  - It applies the reviewer's suggestion as written (the boolean comparator `a.winRate > b.winRate`), re-runs the same repro, sees it still fail, and says plainly that the suggestion does not fix the bug (GREEN not reached), rather than calling the suggestion reproduced or verified.
+  - After trying the suggestion, the trial edit to lib/db/queries.ts is reverted and the repro test file it created is deleted, and a `git status` / `git diff` check shows the tree as it was found (or, if cleanup failed, the run says so and reports dirty-cleanup-needed).
+  - When it presents the reviewer's suggestion to the user, it is not marked ✓ / reproduced / verified; it is shown as unconfirmed or failed, together with the proposed diff, the RED output on current code, and the still-failing output after the suggestion.
+  - Although the user asked to auto-apply high-confidence fixes, the reviewer's suggestion as written is not auto-applied, committed or pushed; it is left for the user's manual review. (A different fix that the run itself took from RED to GREEN may be applied; the failing suggestion may not.)
+context:
+  scaffold_script: scaffold.sh

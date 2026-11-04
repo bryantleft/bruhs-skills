@@ -1,0 +1,28 @@
+{
+  "id": "3f6a1d22-0000-4000-b000-000000000088",
+  "identifier": "ENG-88",
+  "title": "Invoices: add sales tax",
+  "description": "Invoices go out without tax and finance adds it by hand. Sentry BILLING-4F2 shows the hand-off breaking: invoice totals disagree with the tax report.\n\nAcceptance criteria:\n1. Tax is computed on the invoice subtotal and rounded once, half-up, to the cent. Never round per line.\n2. The invoice shows subtotal, tax and total, and total = subtotal + tax.\n3. For every invoice in the BILLING-4F2 sample, our total matches the tax report to the cent.\n\nError tracker: https://acme.sentry.io/issues/4518821/ (BILLING-4F2)",
+  "state": {
+    "name": "In Review"
+  },
+  "priority": 1,
+  "url": "https://linear.app/acme/issue/ENG-88",
+  "gitBranchName": "eng-88-invoice-tax",
+  "team": {
+    "key": "ENG",
+    "name": "Eng"
+  },
+  "labels": [
+    {
+      "name": "Feature"
+    }
+  ],
+  "comments": [],
+  "attachments": [
+    {
+      "title": "BILLING-4F2: Invoice total does not match tax report",
+      "url": "https://acme.sentry.io/issues/4518821/"
+    }
+  ]
+}

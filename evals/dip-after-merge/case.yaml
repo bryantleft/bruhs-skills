@@ -3,11 +3,15 @@ name: dip-after-merge
 description: |
   Command under test: /bruhs:dip
 
-  Preconditions: User is on feature branch perdix-139-make-model-form-image-upload-fully-rounded, the PR was just squash-merged into main 30 seconds ago, working tree is clean, no bruhs: stash exists.
+  Preconditions: User is on feature branch perdix-139-make-model-form-image-upload-fully-rounded; its PR #87 was squash-merged into main 30 seconds ago (origin/main has a teammate's README commit plus the squash commit, not yet fetched locally). The working tree is clean and there are no stashes. The remote feature branch still exists and the local branch tracks it, so `git branch -d` succeeds with git's "merged to upstream but not yet merged to HEAD" warning. No PRs are stacked on the branch.
+
+  scaffold.sh builds the repo, the squash-merged origin and gh fixtures (repo default branch, PR #87 merged, no stacked PRs).
 expected_outcome: |
-  - Step 1 runs `git branch --show-current` and `git status`; confirms we are on a feature branch and working tree is clean (no uncommitted-changes prompt)
-  - Step 2 detects the base branch via `gh repo view --json defaultBranchRef -q '.defaultBranchRef.name'` (falls back to `git remote show origin` if gh fails)
-  - Step 3 runs `git switch main`, Step 4 runs `git pull origin main`
-  - Step 5 deletes the local feature branch with `git branch -d perdix-139-make-model-form-image-upload-fully-rounded` (safe delete since it was merged) and attempts `git push origin --delete` for the remote
-  - Step 6 runs `git stash list | grep "bruhs:"`, finds nothing, skips the stash-restore prompt
-  - Step 7 prints the clean summary ending with 'Ready for your next feature! Run /bruhs:cook to start.'
+  - It starts by checking the current branch (`git branch --show-current`) and the working tree (`git status`), sees it is on perdix-139-make-model-form-image-upload-fully-rounded with a clean tree, and does not ask about uncommitted changes.
+  - It detects the base branch as main from the remote, via `gh repo view --json defaultBranchRef` (or, if that fails, `git remote show origin` / origin's HEAD), rather than assuming it.
+  - It switches to main with `git switch main` and then pulls with `git pull origin main`, bringing in the squash commit for PR #87.
+  - It deletes the local feature branch with the safe `git branch -d perdix-139-make-model-form-image-upload-fully-rounded` (git's "merged to upstream, not yet merged to HEAD" warning is expected after a squash merge) and deletes the remote branch with `git push origin --delete perdix-139-make-model-form-image-upload-fully-rounded`.
+  - It checks for bruhs stashes (`git stash list | grep "bruhs:"` or equivalent), finds none, and does not ask about restoring a stash.
+  - It ends with a summary of what it did (switched to main, pulled, deleted the local and remote branch) that closes with 'Ready for your next feature! Run /bruhs:cook to start.'
+context:
+  scaffold_script: scaffold.sh

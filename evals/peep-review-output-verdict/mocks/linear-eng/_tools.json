@@ -1,0 +1,202 @@
+{
+  "tools": [
+    {
+      "name": "linear_get_issue",
+      "description": "Get a single issue by identifier, including all comments",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "description": "Issue identifier (e.g., 'ENG-123')"
+          }
+        },
+        "required": [
+          "identifier"
+        ]
+      }
+    },
+    {
+      "name": "linear_get_teams",
+      "description": "Get all teams with their states and labels",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "linear_list_projects",
+      "description": "List all projects or filter them by criteria",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "object",
+            "description": "Optional filter criteria for projects"
+          }
+        }
+      }
+    },
+    {
+      "name": "linear_create_issue",
+      "description": "Create a new issue in Linear",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Issue title"
+          },
+          "description": {
+            "type": "string",
+            "description": "Issue description"
+          },
+          "teamId": {
+            "type": "string",
+            "description": "Team ID (UUID)"
+          },
+          "assigneeId": {
+            "type": "string",
+            "description": "Assignee user ID (UUID)"
+          },
+          "labelIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Label UUIDs to apply"
+          },
+          "parentId": {
+            "type": "string",
+            "description": "Parent issue ID (UUID, not issue identifier)"
+          },
+          "priority": {
+            "type": "number",
+            "description": "Issue priority (0-4)"
+          },
+          "projectId": {
+            "type": "string",
+            "description": "Project ID (UUID)"
+          }
+        },
+        "required": [
+          "title",
+          "description",
+          "teamId"
+        ]
+      }
+    },
+    {
+      "name": "linear_edit_issue",
+      "description": "Edit an existing issue, updating any of its fields. Note: When setting projectMilestoneId, you must also set projectId.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "issueId": {
+            "type": "string",
+            "description": "Required: The UUID of the issue to update"
+          },
+          "stateId": {
+            "type": "string",
+            "description": "UUID of the target state"
+          },
+          "title": {
+            "type": "string",
+            "description": "The issue title"
+          },
+          "description": {
+            "type": "string",
+            "description": "The issue description in markdown format"
+          },
+          "assigneeId": {
+            "type": "string",
+            "description": "UUID of the user to assign the issue to"
+          },
+          "labelIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Array of label UUIDs (replaces existing labels)"
+          },
+          "priority": {
+            "type": "number",
+            "description": "Issue priority (0=No priority, 1=Urgent, 2=High, 3=Normal, 4=Low)"
+          },
+          "projectId": {
+            "type": "string",
+            "description": "UUID of the project to associate with the issue"
+          }
+        },
+        "required": [
+          "issueId"
+        ]
+      }
+    },
+    {
+      "name": "linear_get_user",
+      "description": "Get current user information",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "linear_create_project",
+      "description": "Create a new project in Linear",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Project name"
+          },
+          "teamIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Team IDs (UUIDs)"
+          },
+          "description": {
+            "type": "string",
+            "description": "Project description"
+          }
+        },
+        "required": [
+          "name",
+          "teamIds"
+        ]
+      }
+    },
+    {
+      "name": "linear_search_issues",
+      "description": "Search for issues with filtering and pagination",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search query string"
+          },
+          "teamIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "states": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "first": {
+            "type": "number",
+            "description": "Number of issues to return (default: 50)"
+          }
+        }
+      }
+    }
+  ]
+}

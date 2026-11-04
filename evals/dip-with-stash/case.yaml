@@ -3,10 +3,13 @@ name: dip-with-stash
 description: |
   Command under test: /bruhs:dip
 
-  Preconditions: User is on feature branch perdix-140-add-dark-mode (merged). `git stash list` shows: stash@{0}: On main: bruhs: stashed before add-dark-mode — left over from cook's Step 4 Setup when unrelated changes were stashed.
+  Preconditions: User is on feature branch perdix-140-add-dark-mode (PR #91, squash-merged on GitHub, not fetched yet; the remote branch still exists and is tracked, so `git branch -d` succeeds). `git stash list` shows stash@{0}: On main: bruhs: stashed before add-dark-mode (an unrelated README edit cook stashed in Step 4 Setup) and stash@{1}: On main: try serif headings (the user's own, not bruhs'). Both apply cleanly on the new main.
+
+  The case is about asking: a headless run ends at the stash question, so graders stop there and check the stash was left alone. scaffold.sh builds the repo, the stashes, the squash-merged origin and gh fixtures.
 expected_outcome: |
-  - Completes Steps 1-5 (switch to main, pull, delete merged branch) normally
-  - Step 6 runs `git stash list | grep "bruhs:"` and detects stash@{0} with the 'bruhs:' prefix
-  - Prints the '💡 You have stashed changes from before your last feature:' message showing the stash entry
-  - Fires AskUserQuestion with header 'Stash' and options Yes (git stash pop) / No (keep stashed) / Drop (delete permanently)
-  - If user picks Yes, runs `git stash pop` and reports the restore; if Drop, runs `git stash drop stash@{0}` only after the user explicitly confirms
+  - It completes the cleanup before looking at stashes: switches to main with `git switch main`, pulls with `git pull origin main`, and deletes perdix-140-add-dark-mode with the safe `git branch -d` (git's "merged to upstream, not yet merged to HEAD" warning is expected after a squash merge), also deleting the remote branch.
+  - It lists stashes filtered for the `bruhs:` prefix (`git stash list | grep "bruhs:"` or equivalent) and identifies stash@{0} "On main: bruhs: stashed before add-dark-mode" as the one from cook, not the user's own "try serif headings" stash.
+  - It tells the user they have stashed changes from before their last feature, showing the entry (e.g. "💡 You have stashed changes from before your last feature:" followed by `stash@{0}: On main: bruhs: stashed before add-dark-mode`).
+  - It asks whether to restore the stash, offering Yes (`git stash pop`), No (keep it stashed) and Drop (delete it permanently), and stops to wait for the answer.
+context:
+  scaffold_script: scaffold.sh

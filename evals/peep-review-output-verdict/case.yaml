@@ -3,12 +3,16 @@ name: peep-review-output-verdict
 description: |
   Command under test: /bruhs:peep
 
-  Preconditions: PR #70 has no comments; the user picks 'Yes - quick scan'. The PR body links ticket ENG-88 with three acceptance criteria and an error-tracker item. Two findings survive validation: a reproduced rounding bug (issue, blocking) and a suggestion with a query-count probe. One scanner pass also wrote 'branch is 14 commits behind main, consider rebasing'. While the review runs, the author pushes a commit that changes the rounding line.
+  Preconditions: The user is on main. PR #70 (eng-88-invoice-tax, by teammate dana-kim) has no comments; the prompt pre-answers the AI Review question with the quick scan. The PR body links ticket ENG-88 (served by mocks/linear-eng: three acceptance criteria, the first being "tax is computed on the subtotal and rounded once, never per line") and Sentry issue BILLING-4F2 (served by mocks/sentry/get_issue_details). src/billing/invoice.ts rounds tax per line, so three 105-cent lines at 10% give 33 cents instead of 32 (a reproducible, blocking rounding bug), and buildInvoice looks each product up with its own query although db.products.getMany exists (a suggestion; db.queryCount makes the query-count probe easy). The branch really is 14 commits behind main, with no conflicts and nothing it depends on, so a "behind main, consider rebasing" item is filler. While the review runs (the first PR read after the diff is fetched, or the second headRefOid read), origin's branch moves to a new commit by Dana that changes the rounding line to Math.floor per line, which is still wrong (30 cents).
 
-  Workspace files the preconditions assume: CLAUDE.md, src/billing/invoice.ts
+  Workspace files the preconditions assume: CLAUDE.md, src/billing/invoice.ts. scaffold.sh builds the repo, origin, the parked author push and gh fixtures.
 expected_outcome: |
-  - Fetches ENG-88 and the error-tracker item before reviewing and uses their acceptance criteria as intent
-  - Drops the 'behind main / consider rebasing' item as filler (category filter), since no specific conflict or base-side fix depends on it
-  - Every surviving finding uses '<label> [decoration]: <subject>', a why body, and a one-line validation note naming the probe and result
-  - Finding bodies contain no arrows or em dashes; sequences are numbered lists
-  - Before the verdict, re-fetches headRefOid, sees it moved, and re-validates the rounding finding against the new head before stating Ship or Block
+  - Before reviewing, it fetches ticket ENG-88 from Linear and the linked Sentry issue BILLING-4F2, and uses ENG-88's acceptance criteria (tax rounded once on the subtotal) as the intent the review checks against.
+  - The quick scan runs three independent reviewer passes over the PR diff (launched together, with different file orders), keeps only issues at least two passes agree on, and then runs a reproduction on the surviving bug before presenting it as confirmed.
+  - No finding shown to the user says the branch is behind main or should be rebased. If a pass raises it, the run drops it as filler because no specific conflict or base-side fix depends on it.
+  - Every finding shown to the user starts with a Conventional Comments line `<label> [decoration]: <subject>` (e.g. `issue (blocking): ...`, `suggestion (non-blocking): ...`), has a body saying why it matters, and ends with a one-line validation note naming the probe and its result (e.g. the repro test that fails with 33 vs 32, the query count for a 3-line invoice).
+  - The finding bodies it presents contain no arrows (→) and no em dashes (—); any sequence of steps inside a finding is written as a numbered list. Tables, headings and status lines outside the finding bodies don't count.
+  - Before stating the verdict it re-fetches the PR's head SHA (`gh pr view 70 --json headRefOid` or equivalent), notices it differs from the SHA recorded at the start (Dana pushed a commit that changes the rounding line to Math.floor), re-runs the rounding repro against the new head, and states the verdict against the new SHA.
+  - The closing verdict is 🛑 Block, naming the per-line tax rounding (still wrong after Dana's Math.floor change, 30 vs 32 cents in the repro) as what unblocks it.
+context:
+  scaffold_script: scaffold.sh

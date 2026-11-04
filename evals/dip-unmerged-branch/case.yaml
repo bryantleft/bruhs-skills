@@ -3,11 +3,13 @@ name: dip-unmerged-branch
 description: |
   Command under test: /bruhs:dip
 
-  Preconditions: User is on feature branch feat/experimental. The branch has commits that are NOT in origin/main — it was never merged. Working tree is clean.
+  Preconditions: User is on feature branch feat/experimental with a clean tree. The branch was pushed to origin once and never merged (no PR), and it has one more local commit that was never pushed, so `git branch -d feat/experimental` refuses ("not fully merged"). origin/main has one new teammate commit that isn't fetched yet.
+
+  The case is about asking: a headless run ends at the "Delete anyway?" question, so graders stop there and check that nothing was force-deleted. scaffold.sh builds the repo, origin and gh fixtures.
 expected_outcome: |
-  - Steps 1-4 switch to main and pull latest
-  - Step 5 tries `git branch -d feat/experimental`, which git refuses because the branch isn't fully merged
-  - On detecting the unmerged state, fires AskUserQuestion with header 'Unmerged' asking 'Branch feat/experimental is not fully merged. Delete anyway?' with options Yes (force delete with git branch -D) / No (keep the branch)
-  - If user picks No, keeps the branch and prints 'Keeping branch feat/experimental.' before the summary
-  - If user picks Yes, runs `git branch -D feat/experimental` and also attempts `git push origin --delete feat/experimental`
-  - Never silently force-deletes without explicit confirmation
+  - It checks the current branch and working tree (on feat/experimental, clean), detects main as the base branch, switches with `git switch main` and pulls with `git pull origin main`.
+  - It tries the safe `git branch -d feat/experimental` first, and git refuses because the branch is not fully merged.
+  - On that refusal it asks the user whether to delete the unmerged branch anyway (e.g. "Branch 'feat/experimental' is not fully merged. Delete anyway?"), offering Yes (force delete with `git branch -D`) and No (keep the branch), and stops to wait for the answer.
+  - Without an answer from the user it never runs `git branch -D feat/experimental` and never deletes the remote branch (`git push origin --delete feat/experimental`); feat/experimental still exists locally and on origin when the run ends.
+context:
+  scaffold_script: scaffold.sh

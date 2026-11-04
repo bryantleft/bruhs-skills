@@ -3,15 +3,19 @@ name: peep-with-comments
 description: |
   Command under test: /bruhs:peep
 
-  Preconditions: User is on branch perdix-140-add-leaderboard with an open PR #42 that has 4 unresolved review threads: a must-fix on lib/db/queries.ts, a nit suggestion in components/game/leaderboard-card.tsx, a second suggestion, and one question. gh CLI is authenticated.
+  Preconditions: User is on branch perdix-140-add-leaderboard with an open PR #42 (Closes PERDIX-140) that has 4 unresolved review threads: a must-fix on lib/db/queries.ts:45 (getTopAgents never sorts by winRate, a real bug), a nit in components/game/leaderboard-card.tsx (magic number 10, also getTopAgents' default), a second suggestion in the same file (show win rate as a percentage), and a question on lib/hooks/use-leaderboard.ts:12 (why poll every 5s; it reuses POLL_MS shared with useGameState). gh CLI is authenticated. The existing test only checks the result length, so it passes on the bug.
+
+  The prompt pre-answers decisions (apply what holds up, commit and push, draft replies without posting) because a headless run ends at the first question. scaffold.sh builds the repo, origin and gh fixtures; mocks/linear-perdix serves PERDIX-140.
 expected_outcome: |
-  - Step 1 detects the PR for the current branch via `gh pr view --json number,headRefName,url,state,reviewDecision,title`
-  - Step 2 fetches review threads via the gh api graphql query on reviewThreads(first: 100) to get isResolved, path, line, comments with author/body
-  - Since 4 unresolved threads exist, skips Step 3 (AI discovery) and goes directly to Step 4
-  - Step 4 spawns ALL 4 feature-dev:code-reviewer subagents in a single tool-call message (parallel, no context bleed) — each with the per-thread prompt including PR title/description, comment, file path/line, categorization instructions, and the 'Produce Hard Evidence' reproduction-first block
-  - For the must-fix thread, the subagent runs the reproduction loop: writes a minimal failing test beside lib/db/queries.ts, runs it against current code and captures RED_OUTPUT (must fail), applies the fix, re-runs and captures GREEN_OUTPUT (must pass), then reverts the fix AND deletes the repro test and confirms `git diff --stat` is empty
-  - Each subagent returns the STRICT format including EVIDENCE_TIER, REPRO_TEST, REPRO_COMMANDS, RED_OUTPUT, GREEN_OUTPUT — the must-fix at EVIDENCE_TIER: reproduced, the style nit (no bug claim) at fix-validated, the question at n/a
-  - Step 5 aggregates, drops approvals, splits findings into Confirmed (reproduced/tooling-confirmed) vs 'Unconfirmed — reasoning only', sorts must-fix > suggestion > question, and renders the summary table with an Evidence column (✓ reproduced / ◆ tooling-confirmed / ⚙ fix-validated / ✗ unverified)
-  - Any reply drafted for the question thread (RESPONSE_DRAFT) is in Conventional Comments format ('<label> [decoration]: <subject>', e.g. 'note (non-blocking): ...'), per practices/pr-review.md — not bare prose
-  - Any commit peep makes to push the fixes uses a Conventional Commits message
-  - Before committing, Step 10 runs the full CI-equivalent suite (typecheck && lint && test) even though each fix individually passed
+  - With no PR number given, it looks up the PR for the current branch (perdix-140-add-leaderboard) with `gh pr view --json ...` (fields such as number, headRefName, url, state, reviewDecision, title) and identifies it as PR #42.
+  - It fetches the PR's review threads with the `gh api graphql` reviewThreads query (getting isResolved, path, line and comment author/body) and reports 4 unresolved threads: lib/db/queries.ts:45, two on components/game/leaderboard-card.tsx, and lib/hooks/use-leaderboard.ts:12.
+  - Because unresolved threads exist, it goes straight to analyzing those threads. It does not offer or run the zero-comment AI discovery review (no "AI Review" offer, no reviewer-per-changed-file pass).
+  - It launches one isolated subagent per unresolved thread (4 in total), all started together in a single batch rather than one after another, and each subagent's brief carries the PR title/description, that thread's comment, its file path and line, categorization instructions, and the reproduction-first evidence instructions.
+  - For the must-fix thread on lib/db/queries.ts:45, a test asserting that getTopAgents returns the highest winRate first is run against the current code and FAILS (RED), passes after the sort-by-winRate-descending fix (GREEN), and afterwards the trial fix is reverted and the repro test file deleted, with the subagent reporting a clean `git diff --stat` / `git status`.
+  - The per-thread results use the structured format with an EVIDENCE_TIER (alongside REPRO_TEST / REPRO_COMMANDS / RED_OUTPUT / GREEN_OUTPUT where relevant), with the queries.ts must-fix at `reproduced`, the leaderboard-card suggestions (no bug claim) at `fix-validated` or similar non-reproduced tier, and the polling question at `n/a`.
+  - Before addressing threads it presents a summary that orders must-fix before suggestions before the question, separates confirmed findings (reproduced / tooling-confirmed) from anything "unconfirmed — reasoning only", and shows each finding's evidence (✓ reproduced, ⚙ fix-validated, n/a, etc.).
+  - The reply it drafts for the polling question on lib/hooks/use-leaderboard.ts:12 uses Conventional Comments format (`<label> [decoration]: <subject>`, e.g. `note: ...`) and answers from the code it read: the interval is POLL_MS from lib/game/constants.ts, shared with useGameState.
+  - After applying fixes and before committing, it runs the project's full check suite (`npm run typecheck`, `npm run lint` and `npm test`, or the equivalent package.json scripts) on the combined changes, not only the per-fix checks.
+  - It commits the applied fixes on perdix-140-add-leaderboard with a Conventional Commits message (e.g. `fix: address PR review feedback`) and pushes the branch.
+context:
+  scaffold_script: scaffold.sh

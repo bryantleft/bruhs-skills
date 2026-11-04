@@ -1,0 +1,16 @@
+{
+  "tools": [
+    {
+      "name": "get_issue_details",
+      "description": "Get details for a Sentry issue: title, status, counts, latest event, breadcrumbs. Pass the issue URL, or organizationSlug plus issueId.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "issueUrl": {"type": "string", "description": "Full Sentry issue URL, e.g. https://my-org.sentry.io/issues/123/"},
+          "organizationSlug": {"type": "string"},
+          "issueId": {"type": "string", "description": "Issue ID or short ID, e.g. 123 or PROJ-1A"}
+        }
+      }
+    }
+  ]
+}
