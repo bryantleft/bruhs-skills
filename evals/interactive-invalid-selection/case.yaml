@@ -3,9 +3,14 @@ name: interactive-invalid-selection
 description: |
   Command under test: interactive
 
-  Preconditions: User passes a bogus subcommand 'foo' that is not one of spawn, claim, cook, yeet, peep, dip, doodle, or slop.
+  Preconditions: User passes a bogus subcommand 'foo' that is not one of the commands in SKILL.md's index (spawn, claim, cook, verify, yeet, walk, land, peep, dip, slop, doodle, deepen, drill, recap). The project is a small claimed Next.js app (bruhs:state, Linear on linear-perdix) on a clean main branch; nothing in it is called foo.
+
+  A headless run ends at the clarifying question, which is the point of the
+  case.
 expected_outcome: |
   - Recognizes that 'foo' is not a valid bruhs subcommand and does not try to execute a command file that doesn't exist
-  - Lists the valid subcommands from SKILL.md (spawn, claim, cook, yeet, peep, dip, doodle, slop) so the user can see what is available
+  - Lists the valid subcommands from SKILL.md (at least spawn, claim, cook, yeet, peep, dip, doodle, deepen, drill) so the user can see what is available
   - Falls back to the interactive AskUserQuestion menu or asks the user to clarify which command they meant
-  - Does not create files, run git commands, or call Linear MCP tools while resolving the ambiguity
+  - Does not create files, change git state, or call Linear MCP tools while resolving the ambiguity
+context:
+  scaffold_script: scaffold.sh

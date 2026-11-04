@@ -3,15 +3,20 @@ name: spawn-new-nextjs-project
 description: |
   Command under test: /bruhs:spawn
 
-  Preconditions: Empty directory (no turbo.json, no pnpm-workspace.yaml, no package.json). User wants a standalone Next.js + Tailwind + shadcn project with Biome. A Linear MCP 'linear-bnle' is configured.
+  Preconditions: Empty directory (no turbo.json, no pnpm-workspace.yaml, no package.json). User wants a standalone Next.js + Tailwind + shadcn project with Biome. A Linear MCP 'linear-bnle' is configured in ~/.claude.json (mock team Bnle, key BNLE; one existing project, Core). The workspace is a git repo with only an empty root commit.
+
+  The prompt pre-answers the selection flow and the Linear team/project,
+  because a headless run ends at the first question. A run has no network, so
+  `pnpm create next-app`, shadcn init and installs can't succeed: the graders
+  check the decisions up to the scaffold command and that a failed scaffold is
+  reported plainly. Steps 7 (tooling reconciliation), 8 and 10 depend on the
+  scaffolder's output and are not graded.
 expected_outcome: |
-  - Step 1 detects no monorepo markers and skips the 'Add to this monorepo' question
-  - Step 2a AskUserQuestion asks Structure (Monorepo / Single package); user picks Single package
-  - Step 2b/2c/2d walks through Type (Web) → Language (TypeScript, default) → Framework (Next.js / TanStack Start / Astro) via AskUserQuestion
-  - Step 2e presents Styling (Tailwind + shadcn multiSelect), Database, Auth, Libraries, Testing, Tooling (Biome, Husky) via AskUserQuestion
-  - Step 3/4 detects linear-bnle, asks team then project via AskUserQuestion with options built dynamically from mcp__linear-bnle__linear_get_teams and mcp__linear-bnle__linear_list_projects
+  - Step 1 detects no monorepo markers and skips the 'Add to repo' question
+  - Uses the user's pre-answered selections (Single package, Web → TypeScript → Next.js, Tailwind + shadcn/ui, Biome, no database/auth/state) without asking again
+  - Step 3/4 detects linear-bnle, calls mcp__linear-bnle__linear_get_teams and uses the Bnle team; creates a new Linear project for my-app with linear_create_project
   - Step 5 creates foundational Linear tickets (initial setup, CI/CD, core deps)
-  - Step 6 scaffolds with `pnpm create next-app@latest my-app` and initializes shadcn without hard-coding flags: uses the shadcn skill/MCP if available, otherwise checks `pnpm dlx shadcn@latest init --help` and runs init with the current flags for the mira preset + CSS variables
-  - Step 7 reconciles tooling: since Biome was selected, removes eslint and eslint-config-next, deletes .eslintrc*, rewrites package.json scripts (lint → biome check .), and writes a biome.json with Next.js-equivalent rules (React hooks, a11y)
-  - Step 8 writes the bruhs:state block to CLAUDE.md and AGENTS.md with structure='single', framework='nextjs', styling=['Tailwind CSS','shadcn/ui'], tooling=['biome'], integrations.linear.mcpServer='linear-bnle'
-  - Step 10 writes .github/workflows/ci.yml using the blacksmith-2vcpu-ubuntu-2204 runner and pnpm lint/typecheck/test/build
+  - Step 6 chooses `pnpm create next-app@latest my-app` (pnpm, never npm/npx/yarn)
+  - With no network the scaffold fails; the run says so plainly instead of claiming the project was created
+context:
+  scaffold_script: scaffold.sh

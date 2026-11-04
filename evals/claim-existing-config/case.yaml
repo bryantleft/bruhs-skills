@@ -3,12 +3,19 @@ name: claim-existing-config
 description: |
   Command under test: /bruhs:claim
 
-  Preconditions: Project already has a valid bruhs:state block in CLAUDE.md with Linear wired to linear-sonner and a Next.js+Drizzle stack. User runs claim again, perhaps to reconfigure after adding Convex.
+  Preconditions: Project already has a valid bruhs:state block in CLAUDE.md and AGENTS.md with Linear wired to linear-sonner and a Next.js+Drizzle stack, plus hand-added fields (stack.libraries zod/effect, a "refactor": "Tech Debt" label). The latest commit added Convex (convex/, convex dependency). User runs claim again, perhaps to reconfigure after adding Convex.
 
-  Workspace files the preconditions assume: CLAUDE.md
+  Workspace files the preconditions assume: CLAUDE.md, AGENTS.md
+
+  A headless run ends at the reconfigure question, so the graders check the
+  question and that nothing was touched before it; the Yes / No branches are
+  not reachable in one turn. scaffold.sh builds the repo; mocks/linear-sonner/
+  exists so a premature Linear call would show up.
 expected_outcome: |
-  - Step 1 detects the existing bruhs:state block in CLAUDE.md via the read_bruhs_block.py probe (with legacy .claude/bruhs.json fallback)
-  - Immediately issues an AskUserQuestion with header 'Reconfigure' offering Yes (overwrite) / No (keep existing and exit)
-  - If user picks 'No', exits cleanly without touching the file or calling any Linear MCP tools
-  - If user picks 'Yes', continues into Step 2 stack detection and proceeds to re-run the full workflow before overwriting the file at Step 7
-  - Does not silently overwrite the existing config without the prompt
+  - Step 1 detects the existing bruhs:state block in CLAUDE.md via the read_bruhs_block.py probe
+  - Asks whether to reconfigure (header 'Reconfigure'), offering Yes (overwrite) / No (keep existing and exit), and waits
+  - Before the answer: does not touch CLAUDE.md / AGENTS.md and calls no Linear MCP tools
+  - Does not silently overwrite the existing config (or merge in Convex) without the prompt
+  - (Not reachable in one headless turn: the Yes / No branches)
+context:
+  scaffold_script: scaffold.sh

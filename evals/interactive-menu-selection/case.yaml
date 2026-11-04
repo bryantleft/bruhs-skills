@@ -3,9 +3,15 @@ name: interactive-menu-selection
 description: |
   Command under test: interactive
 
-  Preconditions: User invokes /bruhs with no arguments inside a project that already has bruhs:state block in CLAUDE.md. They want to start building a new feature but forgot the exact subcommand.
+  Preconditions: User invokes /bruhs with no arguments inside a project that already has bruhs:state block in CLAUDE.md. They want to start building a new feature but forgot the exact subcommand. The project is a small Next.js app on a clean main branch with Linear on linear-perdix.
+
+  A headless run ends at the menu question, so the graders check the menu and
+  that nothing happened before it; routing after a pick (e.g. cook's Step 0)
+  is not reachable in one turn.
 expected_outcome: |
-  - Presents an AskUserQuestion menu listing the bruhs subcommands (spawn, claim, cook, yeet, peep, doodle, dip) without including slop, per SKILL.md
-  - Waits for the user's selection before performing any filesystem or git operations
-  - After the user picks 'cook', routes to the cook workflow defined in commands/cook.md beginning at Step 0 (check the bruhs:state block in CLAUDE.md)
-  - Does not fabricate a feature description — either prompts the user for one or enters cook's interactive sub-flow
+  - Presents the menu listing the bruhs commands SKILL.md names for it (spawn, claim, cook, yeet, peep, doodle, dip, deepen, drill) without including slop
+  - Ends at the menu, waiting for the user's selection, without picking or starting a command
+  - Performs no file writes, git state changes, or Linear calls before the selection
+  - (Not reachable in one headless turn: routing to cook after the pick)
+context:
+  scaffold_script: scaffold.sh

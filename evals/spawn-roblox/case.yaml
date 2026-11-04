@@ -3,14 +3,18 @@ name: spawn-roblox
 description: |
   Command under test: /bruhs:spawn
 
-  Preconditions: Empty directory. User wants a Roblox Luau project with Rojo for syncing to Studio. Linear MCP not configured.
+  Preconditions: Empty directory. User wants a Roblox Luau project with Rojo for syncing to Studio. Linear MCP not configured (no agent config lists one; the case has no Linear mocks). The workspace is a git repo with only an empty root commit.
+
+  The prompt pre-answers the selection flow and the "continue without Linear?"
+  question, because a headless run ends at the first question. rojo and the
+  Luau tools are unlikely to be runnable in the sandbox: the graders check the
+  choices, the scaffold command, an honest report of its outcome, and the
+  config + CI that don't need it (the prompt asks to set those up anyway).
 expected_outcome: |
-  - Step 2b Type selection goes to the secondary 'Other' question (Extension / CLI / Library / Roblox) per the command doc; user picks Roblox
-  - Step 2c locks Language to Luau (Roblox is only Luau per the matrix)
-  - Step 2d locks Framework to Rojo
-  - Step 2e Tooling question offers Selene / StyLua / Rojo multiSelect (not Biome, Vitest, or other TypeScript tools)
-  - Skips the TypeScript-only questions (libraries like Zod, testing like Vitest, infrastructure like Vercel)
-  - Step 3 detects no Linear server and fires AskUserQuestion asking whether to continue without Linear; if yes, proceeds without Linear ticket creation
-  - Step 6 scaffolds with `rojo init obby-game` (not pnpm create)
-  - Step 8 writes the bruhs:state block to CLAUDE.md and AGENTS.md with framework='Rojo', language='luau', tooling=['selene','stylua','rojo'], and omits the integrations.linear section
-  - Step 10 writes a GitHub Actions workflow that uses selene and stylua (Luau tooling) — not pnpm
+  - Follows the matrix: Type Roblox → Language Luau → Framework Rojo, with Luau tooling (Selene, StyLua, Rojo) and no TypeScript-only options (Tailwind, shadcn, Zod, Vitest, Biome, Vercel)
+  - Step 3 detects no Linear server and, as pre-answered, proceeds without Linear (no Linear calls or tickets)
+  - Step 6 chooses `rojo init obby-game` (not pnpm create) and reports plainly if rojo can't run
+  - Step 8 writes the bruhs:state block to CLAUDE.md and AGENTS.md with framework='Rojo', tooling selene/stylua/rojo, and omits the integrations.linear section
+  - Step 10 writes a GitHub Actions workflow that uses selene and stylua (Luau tooling via Aftman), not pnpm
+context:
+  scaffold_script: scaffold.sh

@@ -5,12 +5,22 @@ description: |
 
   Preconditions: Existing Turborepo monorepo 'gambit' with apps/web (Next.js) already in it. User wants to add a new Hono API package as apps/api. Linear is configured.
 
-  Workspace files the preconditions assume: turbo.json, pnpm-workspace.yaml
+  In this world: apps/web (Next.js, Drizzle, Better Auth, Zod) and packages/ui; bruhs:state in CLAUDE.md + AGENTS.md uses stack.frameworks ["Next.js"] and Linear on linear-perdix (team PERDIX, project Core). pnpm-workspace.yaml lists "apps/web" by name (not apps/*), so the new app needs adding to it.
+
+  Workspace files the preconditions assume: turbo.json, pnpm-workspace.yaml, CLAUDE.md, AGENTS.md
+
+  The prompt pre-answers the selection flow and Linear, because a headless
+  run ends at the first question. A run has no network, so `pnpm create hono`
+  can't succeed: the graders check the decisions up to the scaffold command,
+  that a failed scaffold is reported plainly, and the repo wiring and state
+  merge that don't need the network (the prompt asks to finish the rest).
 expected_outcome: |
-  - Step 1 detects turbo.json and pnpm-workspace.yaml, fires AskUserQuestion with header 'Add to repo' offering New app / New package / New project (outside)
-  - User picks 'New app', then Step 2b selects Type (API), Step 2c Language (TypeScript), Step 2d Framework (Hono)
-  - Step 2e asks stack additions relevant to API (database, auth, libraries, tooling) via AskUserQuestion
-  - Step 5 creates a single Linear ticket for the api setup (not the full 3-ticket bootstrap used for greenfield projects)
-  - Step 6 scaffolds via `pnpm create hono@latest apps/api` from the monorepo root
-  - Updates turbo.json pipeline to include the new app, and extends pnpm-workspace.yaml if necessary
-  - Step 8 updates the existing bruhs:state block in CLAUDE.md and AGENTS.md to add the new framework to stack.frameworks (monorepo uses the frameworks ARRAY form, not framework string) rather than overwriting the existing block
+  - Step 1 detects turbo.json and pnpm-workspace.yaml and takes the add-to-monorepo path with New app (pre-answered), not a new standalone project
+  - Uses Type API → TypeScript → Hono at apps/api with Zod, as the user said, without asking again
+  - Reuses the existing linear-perdix config and creates a setup ticket for the api app (not a new Linear project)
+  - Step 6 chooses `pnpm create hono@latest apps/api` from the monorepo root
+  - With no network the scaffold fails; the run says so plainly
+  - Extends pnpm-workspace.yaml to include apps/api (it listed apps/web by name)
+  - Step 8 merges Hono into the existing bruhs:state block in CLAUDE.md and AGENTS.md (stack.frameworks array becomes Next.js + Hono; database, auth, tooling and Linear ids preserved) rather than overwriting it
+context:
+  scaffold_script: scaffold.sh

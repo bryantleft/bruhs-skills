@@ -5,11 +5,19 @@ description: |
 
   Preconditions: Hybrid state: CLAUDE.md already contains a valid bruhs:state marker block (Case A applies). A legacy .claude/bruhs.json ALSO exists from a previous installation — possibly stale, possibly out of sync with the marker block. This can happen if a user ran an old version of /bruhs:claim, then upgraded the plugin and ran the new version mid-rollout (or merged a branch that re-introduced the legacy file).
 
-  Workspace files the preconditions assume: CLAUDE.md, .claude/bruhs.json
+  In this world the marker block says Next.js + linear-perdix (team PERDIX) and the stale legacy file says Astro + Convex + linear-sonner (team SON), so any leak of legacy values is visible.
+
+  Workspace files the preconditions assume: CLAUDE.md, AGENTS.md, .claude/bruhs.json
+
+  A headless run ends at the reconfigure question, so the graders check the
+  question, the legacy-file note, and that nothing changed before it; the
+  Yes / No branches are not reachable in one turn. Mocks for both Linear
+  servers exist so a premature Linear call would show up.
 expected_outcome: |
-  - Case A takes priority: Step 1's first probe (read_bruhs_block.py --kind state) finds a marker block, so claim immediately enters the Reconfigure prompt (Yes / No) — NOT the migration prompt (Case B)
-  - Calls out the legacy .claude/bruhs.json in the prompt or in a one-line note BEFORE the user picks Yes/No: 'A legacy .claude/bruhs.json is also present and will be ignored by read_bruhs_block.py — clean it up if you no longer need it.'
-  - If user picks 'No' (keep existing): exits cleanly, does NOT delete the legacy file silently, does NOT overwrite the marker block. The legacy file remains in place but is dormant
-  - If user picks 'Yes' (reconfigure): proceeds through Step 2–7, writes a fresh bruhs:state block. After writing, fires the delete-prompt AskUserQuestion for the legacy file (same prompt as the Migrate path)
-  - Never silently treats the legacy file's stack values as authoritative when the marker block exists — the marker block always wins on conflicts
-  - Does NOT chain migration on top of reconfigure (no Case B prompt fires when Case A already matched)
+  - Case A takes priority: Step 1's probe finds the marker block, so claim asks the Reconfigure question (Yes / No) — NOT the migration prompt (Case B)
+  - Calls out the legacy .claude/bruhs.json in a one-line note before / with the question: it is dormant and ignored by read_bruhs_block.py
+  - Before the answer: changes nothing (no block writes, no deletion of the legacy file)
+  - Never presents the legacy file's values (Astro, Convex, linear-sonner) as current — the marker block always wins
+  - (Not reachable in one headless turn: the Yes / No branches and the later delete prompt)
+context:
+  scaffold_script: scaffold.sh

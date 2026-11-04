@@ -3,11 +3,18 @@ name: claim-happy-path
 description: |
   Command under test: /bruhs:claim
 
-  Preconditions: Existing Next.js app with next.config.ts, tailwind.config.ts, drizzle.config.ts, components/ui/ present, biome.json at root. Git is initialized, no bruhs:state block in CLAUDE.md exists, and a Linear MCP server 'linear-perdix' is configured in ~/.claude.json.
+  Preconditions: Existing single-package Next.js app ('gambit') with next.config.ts, tailwind.config.ts, drizzle.config.ts, components/ui/button.tsx and biome.json at root. Git is initialized, there is no CLAUDE.md, AGENTS.md or .claude/bruhs.json, and ~/.claude.json lists the Linear MCP server 'linear-perdix' (plus context7). The Linear mock has one team (Perdix, key PERDIX) and one project (Core).
+
+  The prompt names the team and project and says not to wait for confirmation,
+  because a headless run ends at the first question. scaffold.sh builds the
+  repo and writes ~/.claude.json in the run's temp home; mocks/linear-perdix/
+  answers the Linear calls (generated from the `# mocks:` line in scaffold.sh).
 expected_outcome: |
   - Runs Step 1 detect-existing-config, confirms bruhs:state block in CLAUDE.md is absent, and proceeds without the reconfigure prompt
   - Step 2 detects framework=Next.js (from next.config.ts), styling=['Tailwind CSS','shadcn/ui'] (tailwind.config + components/ui/), database=['drizzle-postgres'] (drizzle.config), tooling=['biome']
   - Step 3 reads ~/.claude.json, finds linear-perdix, sets linearAvailable=true, and Step 4 calls mcp__linear-perdix__linear_get_teams then mcp__linear-perdix__linear_list_projects
-  - Uses AskUserQuestion to pick team then project (one question at a time, options built dynamically from MCP results)
-  - Step 5 prints the detected stack summary and asks for confirmation via AskUserQuestion before writing the file
+  - Uses the team (Perdix) and project (Core) the user named, matched to ids from the MCP results, without asking again
+  - Step 5 prints the detected stack summary; the user pre-confirmed, so it writes without waiting
   - Step 7 writes the bruhs:state block to CLAUDE.md and AGENTS.md with structure='single', integrations.linear.mcpServer='linear-perdix', the selected team/project IDs and names, and tooling.skills including superpowers, feature-dev, commit-commands, shadcn, and vercel-react-best-practices
+context:
+  scaffold_script: scaffold.sh
