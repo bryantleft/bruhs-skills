@@ -3,11 +3,18 @@ name: cook-flag-gated-plan
 description: |
   Command under test: /bruhs:cook
 
-  Preconditions: Balances are currently visible only to internal staff. The feature exposes them to partner admins (a new audience). It launches behind a flag. Exports to CSV are explicitly out of scope.
+  Preconditions: TypeScript + Drizzle rewards platform with a bruhs:state block (no Linear). Reward balances are visible only to internal staff through POST /internal/balances (src/balances/routes.ts), which trusts the fleet ids in the request body. The feature exposes balances to partner admins, a new audience scoped to one tenant (src/auth/session.ts, docs/design/2026-02-10-partner-portal-auth.md, src/partner/fleets.ts). It launches behind a flag, and flags are snapshotted into the session at login with 30-day sessions (src/flags.ts), so a post-launch disable doesn't reach signed-in users unless the plan deals with it. A staff CSV export exists (src/balances/export-csv.ts); the prompt says CSV export is out of scope.
 
-  Workspace files the preconditions assume: CLAUDE.md
+  Workspace files the preconditions assume: CLAUDE.md, src/flags.ts, src/auth/session.ts, src/balances/routes.ts, src/balances/export-csv.ts, docs/design/2026-02-10-partner-portal-auth.md
+
+  The user asks to see the plan before anything is built, so the run should
+  end at the plan (or a design doc awaiting approval). scaffold.sh builds the repo.
 expected_outcome: |
   - The plan lists CSV export as a non-goal, distinct from any deferred items
-  - The plan states the flag-off story: what partner admins see and what happens to any in-flight state if the flag is disabled after launch
-  - The plan states the authz model and how submitted fleet ids are scoped to the admin's own tenant
+  - The plan states the flag-off story: what partner admins see with the flag off
+  - The plan states what happens to signed-in partner admins and in-flight state if the flag is disabled after launch, given flags are snapshotted at login
+  - The plan states the authz model (partner_admin role on a partner route, not the staff endpoint)
+  - The plan states how submitted fleet ids are scoped to the admin's own tenant
   - Decision-quality checklist items are answered, not just copied
+context:
+  scaffold_script: scaffold.sh

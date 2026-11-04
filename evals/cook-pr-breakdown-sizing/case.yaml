@@ -3,11 +3,17 @@ name: cook-pr-breakdown-sizing
 description: |
   Command under test: /bruhs:cook
 
-  Preconditions: The repo uses Drizzle. The feature needs two new tables (referrals, referral_payouts), purchase-hook logic, and an admin page. The team has not built anything like it before, and it is unclear whether payouts should be computed at purchase time or by a nightly job.
+  Preconditions: Next.js + Drizzle shop with a bruhs:state block (no Linear). Migrations live in drizzle/ (with meta/_journal.json) and the schema in src/db/schema.ts. Purchases complete through src/purchases/complete-purchase.ts, which runs onPurchaseCompleted hooks (src/purchases/hooks.ts); refunds are allowed for 30 days (src/purchases/refund.ts); a nightly job runner exists (src/jobs/nightly.ts); an admin orders page exists (src/app/admin/orders/page.tsx). The feature needs two new tables (referrals, referral_payouts), purchase-hook logic, and an admin page. The team has not built anything like it before, and the prompt says it is unclear whether payouts should be computed at purchase time or by a nightly job. docs/design/ holds one earlier doc, so a design doc (if the run writes one) has a home.
 
-  Workspace files the preconditions assume: CLAUDE.md
+  Workspace files the preconditions assume: CLAUDE.md, drizzle/, src/db/schema.ts, src/purchases/, src/jobs/nightly.ts, docs/design/2026-06-02-cart-expiry.md
+
+  The user asks to see the plan before anything is built, so the run should
+  end at the plan (or a design doc awaiting approval). scaffold.sh builds the repo.
 expected_outcome: |
   - Produces a PR breakdown table with one row per PR, a dependency column, and a rough size per row
   - Puts the schema change in its own row (migration plus generated schema only) ahead of the rows that use it
   - Splits any row estimated over ~400 lines into thinner vertical slices
-  - Because the payout timing is uncertain, recommends a throwaway end-to-end spike first, then rebuilding each PR fresh off main instead of slicing the spike branch
+  - Because the payout timing is uncertain, recommends a throwaway end-to-end spike first
+  - Rebuilds each PR fresh off main after the spike instead of slicing the spike branch
+context:
+  scaffold_script: scaffold.sh

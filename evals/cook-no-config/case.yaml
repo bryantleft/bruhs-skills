@@ -3,9 +3,17 @@ name: cook-no-config
 description: |
   Command under test: /bruhs:cook
 
-  Preconditions: TypeScript project with no bruhs:state block in CLAUDE.md and no legacy .claude/bruhs.json — read_bruhs_block.py returns empty.
+  Preconditions: TypeScript (Next.js) project with a hand-written CLAUDE.md but no bruhs:state block in it, no AGENTS.md, and no legacy .claude/bruhs.json, so read_bruhs_block.py prints nothing (it exits 1 with an error on stderr). No Linear server is configured or mocked.
+
+  Workspace files the preconditions assume: CLAUDE.md (without a bruhs block)
+
+  This case is about the Step 0 question. A headless run ends at the first
+  question, so the graders check that cook asks the right question with the
+  right options and stops; what happens after each answer can't be reached
+  in one turn and is not graded. scaffold.sh builds the repo.
 expected_outcome: |
-  - Step 0 detects the missing config and fires AskUserQuestion with header 'Config' offering 'Run /bruhs:claim (Recommended)' and 'Continue without config'
-  - If user picks 'Run /bruhs:claim', hands off to the claim workflow first, then resumes cook
-  - If user picks 'Continue without config', skips all Linear-related steps (no ticket lookup, no ticketContext), uses sensible defaults for stack detection, and continues to Step 1 treating the input as a feature description
-  - Reminds the user at the end of Step 7 that they can run /bruhs:claim later to enable full features
+  - Step 0 detects the missing config despite the hand-written CLAUDE.md
+  - Asks the user, offering 'Run /bruhs:claim (Recommended)' and 'Continue without config' (Linear will be skipped)
+  - Stops and waits for the answer: no claim run, no config written, no exploring or building
+context:
+  scaffold_script: scaffold.sh

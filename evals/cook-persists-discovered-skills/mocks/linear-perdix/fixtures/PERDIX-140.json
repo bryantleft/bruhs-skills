@@ -1,0 +1,22 @@
+{
+  "id": "7d1c2e4a-0000-4000-b000-000000000140",
+  "identifier": "PERDIX-140",
+  "title": "Add leaderboard to game page",
+  "description": "Spectators can't tell who's winning a tournament.\n\nAcceptance criteria:\n- The game page shows the top 10 agents ranked by win rate, highest first\n- The leaderboard refreshes while a tournament is running, on the same cadence as the bracket\n- Agents with no games don't break the card",
+  "state": {
+    "name": "In Review"
+  },
+  "priority": 2,
+  "url": "https://linear.app/acme/issue/PERDIX-140",
+  "gitBranchName": "perdix-140-add-leaderboard",
+  "team": {
+    "key": "PERDIX",
+    "name": "Perdix"
+  },
+  "labels": [
+    {
+      "name": "Feature"
+    }
+  ],
+  "comments": []
+}

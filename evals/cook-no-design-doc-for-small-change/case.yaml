@@ -3,9 +3,15 @@ name: cook-no-design-doc-for-small-change
 description: |
   Command under test: /bruhs:cook
 
-  Preconditions: Single component change, no backend, no other consumers, trivially reversible.
+  Preconditions: Next.js shop with a bruhs:state block (no Linear). The order detail page (src/app/orders/[orderId]/page.tsx) shows the order id as text, and a CopyButton component already exists (src/components/copy-button.tsx, used on the invoice page). Single component change, no backend, no other consumers, trivially reversible. docs/design/ holds an earlier design doc, so a doc location exists and writing one is possible but not warranted.
 
-  Workspace files the preconditions assume: CLAUDE.md
+  Workspace files the preconditions assume: CLAUDE.md, src/app/orders/[orderId]/page.tsx, src/components/copy-button.tsx, docs/design/2026-05-12-order-state-machine.md
+
+  The prompt pre-answers decisions because a headless run ends at the first
+  question. scaffold.sh builds the repo.
 expected_outcome: |
   - Checks the design-doc triggers in practices/design-docs.md and finds none apply
-  - Plans in chat and proceeds without writing a design doc
+  - Plans in chat without writing a design doc
+  - Proceeds to implement the button on the order page
+context:
+  scaffold_script: scaffold.sh

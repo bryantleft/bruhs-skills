@@ -3,11 +3,17 @@ name: cook-opensrc-dep-source
 description: |
   Command under test: /bruhs:cook
 
-  Preconditions: package.json pins react-day-picker@9.x — a major the agent likely hasn't memorized (v9 renamed several props vs v8). bruhs:state has the project stack. `opensrc` is available on PATH and react-day-picker is installed in node_modules.
+  Preconditions: Next.js car-rental app with a bruhs:state block (no Linear). The rental form (src/app/rent/rental-form.tsx) uses two date inputs. package.json asks for react-day-picker ^9.4.0 and package-lock.json locks 9.4.4, which is installed in node_modules (a trimmed copy: package.json, dist/index.d.ts, dist/index.js with the range logic, dist/style.css; its date-fns dependency is not installed). The policy in src/lib/rental-range.ts is at most 7 calendar days counting pick-up and return day, while this version's range `max` counts nights (differenceInCalendarDays in addToRange), so the correct prop is max={6}; the stylesheet is exported only as "react-day-picker/style.css". `opensrc` is not installed, and could not fetch anything offline anyway, so the installed copy is the ground truth.
 
-  Workspace files the preconditions assume: CLAUDE.md, package.json
+  Workspace files the preconditions assume: CLAUDE.md, package.json, package-lock.json, node_modules/react-day-picker/, src/lib/rental-range.ts, src/app/rent/rental-form.tsx
+
+  The prompt pre-answers decisions because a headless run ends at the first
+  question. scaffold.sh builds the repo and the installed dependency.
 expected_outcome: |
-  - During Step 2 (Explore) or Step 5 (Build), the agent resolves react-day-picker's real API from source rather than memory — reads the installed copy in node_modules at the locked v9, or runs `opensrc path react-day-picker` and greps/reads its exports/types — per practices/source-ground-truth.md
-  - The DayPicker usage it writes matches the v9 source (correct prop names/types for the installed version), not a remembered v8 signature
-  - When docs/memory and the source disagree, the agent treats the installed source as ground truth and pins to the lockfile version, not `latest`
+  - During Step 2 (Explore) or Step 5 (Build), the agent resolves react-day-picker's real API from source rather than memory: reads the installed copy in node_modules at the locked 9.4.4 (or tries `opensrc path react-day-picker` and falls back to it) per practices/source-ground-truth.md
+  - Translates the 7-day inclusive policy into max={6} because the installed `max` counts nights
+  - The DayPicker usage it writes matches the installed v9 types (mode="range", DateRange, onSelect signature, startMonth/endMonth, react-day-picker/style.css), not a remembered v8 signature
+  - Treats the installed source as ground truth over memory/docs and pins to the lockfile version, not `latest`
   - Cites what it read (file path + symbol from the source) when explaining the API it coded against
+context:
+  scaffold_script: scaffold.sh

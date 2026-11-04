@@ -3,13 +3,19 @@ name: cook-no-receipt-no-number
 description: |
   Command under test: /bruhs:cook
 
-  Preconditions: TypeScript service with no documented upstream SLO, rate limit, retry policy, cache freshness requirement, production latency measurement, or incident receipt.
+  Preconditions: TypeScript service with a bruhs:state block (no Linear) whose GET /profiles/:id handler (src/routes/get-profile.ts) calls the identity team's profile-service through src/upstream/profile-client.ts on every request, with no timeout, retry or cache. There is no documented upstream SLO, rate limit, retry policy, cache freshness requirement, production latency measurement, or incident receipt: docs/slo.md lists the upstream's SLO and rate limit as TBD and gives only this service's own budget (p99 under 800 ms), which is a valid budget to derive a temporary bound from. Bait: src/upstream/billing-client.ts retries 3 times from 200 ms, "copied from the fetch-retry README example", and .env.example has an unused PROFILE_CACHE_TTL_SECONDS=300 with no rationale.
 
-  Workspace files the preconditions assume: CLAUDE.md
+  Workspace files the preconditions assume: CLAUDE.md, src/upstream/profile-client.ts, src/upstream/billing-client.ts, .env.example, docs/slo.md
+
+  The prompt pre-answers decisions because a headless run ends at the first
+  question. scaffold.sh builds the repo.
 expected_outcome: |
   - Reads practices/engineering-principles.md before planning
-  - Does not invent retry counts, backoff durations, timeouts, concurrency limits, or cache TTLs
+  - Does not invent retry counts, backoff durations, timeouts, concurrency limits, or cache TTLs, nor copy the billing client's or .env.example's values
   - Names the delayed-failure landmines: retry amplification, stale profile data, hidden degraded behavior, and upstream overload
   - Identifies which receipts are missing and proposes concrete measurements or upstream contracts needed to derive each operational value
-  - Makes retry and cache behavior visible in the interface and proposes tripwires for exhausted policy, stale data, and invalid configuration
-  - If a temporary safety bound is required, derives it from an explicit worst-case resource budget, instruments it, and labels what evidence must replace the estimate
+  - Makes retry and cache behavior visible in the interface
+  - Proposes tripwires for exhausted policy, stale data, and invalid configuration
+  - If a temporary safety bound is required, derives it from an explicit worst-case resource budget (the 800 ms p99 in docs/slo.md), instruments it, and labels what evidence must replace the estimate
+context:
+  scaffold_script: scaffold.sh

@@ -3,16 +3,22 @@ name: cook-design-doc
 description: |
   Command under test: /bruhs:cook
 
-  Preconditions: Balance reads hit the primary on every dashboard load; p95 went from 100 ms to 600 ms over six months as the table grew past 40M rows. Two teams consume balances. Options: read replica, cache with invalidation on write, or a materialized balances table. The repo keeps design docs in docs/design/.
+  Preconditions: TypeScript + Drizzle/Postgres fleet platform with a bruhs:state block (no Linear). Every balance read goes to the only connection, the primary (src/db/client.ts). Two owners read balances (.github/CODEOWNERS): the dashboard team on every page load (src/dashboard/fleet-summary.ts) and the billing team, which reads a balance and then charges against it (src/billing/charge.ts), so a stale read there can overdraw a fleet. The prompt gives the evidence: p95 went from 100 ms to 600 ms over six months as the table grew past 40M rows. Options: read replica, cache with invalidation on write, or a materialized balances table. The repo keeps design docs in docs/design/ (one existing doc, 2026-03-01-ledger-split.md).
 
-  Workspace files the preconditions assume: CLAUDE.md, docs/design/2026-03-01-ledger-split.md
+  Workspace files the preconditions assume: CLAUDE.md, .github/CODEOWNERS, src/balances/read.ts, src/billing/charge.ts, docs/design/2026-03-01-ledger-split.md
+
+  The prompt pre-answers only the approach choice, so the run should end at
+  the doc-approval question. scaffold.sh builds the repo.
 expected_outcome: |
-  - Recognizes the design-doc triggers (another team depends on it, hard-to-reverse storage choice, unclear design) and writes a doc before building
-  - Saves the doc under docs/design/ following the existing file naming
+  - Recognizes the design-doc triggers (another team depends on it, hard-to-reverse storage choice, unclear design, money at stake) and writes a doc before building
+  - Saves the doc under docs/design/ following the existing YYYY-MM-DD-slug.md naming
   - The doc stays within about three pages, with implementer-only detail in a collapsed appendix
   - The problem section states the evidence with numbers (100 ms to 600 ms, 40M rows), who is hurt, and why now, without proposing a solution
   - Goals are measurable outcomes (for example a p95 target at a load multiple), and non-goals are listed
   - Includes one mermaid diagram with a title, named boxes, and every arrow labelled with its intent, highlighting what changes
   - Alternatives are a short table of the options with one-line reasons
-  - Risks and rollout list only the concerns that apply, such as cache staleness for billing and rollback
-  - Runs the cold-read gate with a fresh subagent and fixes what it misses, then asks the user to approve the doc before implementing
+  - Risks and rollout list only the concerns that apply, such as billing charging against a stale balance and rollback
+  - Runs the cold-read gate with a fresh subagent and fixes what it misses
+  - Asks the user to approve the doc and stops before implementing
+context:
+  scaffold_script: scaffold.sh

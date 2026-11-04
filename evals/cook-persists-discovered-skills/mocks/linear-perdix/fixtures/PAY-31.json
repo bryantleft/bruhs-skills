@@ -1,0 +1,22 @@
+{
+  "id": "5b2e9c10-0000-4000-b000-000000000031",
+  "identifier": "PAY-31",
+  "title": "Bulk approve refunds from the admin refunds page",
+  "description": "Support approves refunds one at a time and the queue backs up after every incident.\n\nAcceptance criteria:\n- Admins can select several pending refunds and approve them in one action (POST /admin/refunds/bulk)\n- Only users with the refund:write permission can approve refunds, one at a time or in bulk\n- Each approved refund posts exactly one ledger entry\n- The refund multiselect shows only matching refunds while searching (design: hide unmatched items instead of greying them out, on every admin page that uses the shared multiselect)",
+  "state": {
+    "name": "In Review"
+  },
+  "priority": 2,
+  "url": "https://linear.app/acme/issue/PAY-31",
+  "gitBranchName": "pay-31-bulk-approve-refunds",
+  "team": {
+    "key": "PAY",
+    "name": "Pay"
+  },
+  "labels": [
+    {
+      "name": "Feature"
+    }
+  ],
+  "comments": []
+}
