@@ -6,12 +6,13 @@ workflow for high-quality UI work.
 
 **Used by:**
 - `cook` - Invoked automatically when building UI features
-- `slop` - Can audit UI quality
+- `slop` - Can audit UI quality (runs the Live Browser Pass for UI targets)
 
 ## Contents
 
 - [When to Apply](#when-to-apply)
 - [Skill Categories](#skill-categories)
+- [Live Browser Pass (audit + improve)](#live-browser-pass-audit--improve)
 - [Design Engineering Reference](#design-engineering-reference)
 - [Cook Integration](#cook-integration)
 - [Skill Selection Quick Reference](#skill-selection-quick-reference)
@@ -22,6 +23,116 @@ workflow for high-quality UI work.
 ## When to Apply
 
 These practices activate when a feature involves **visible UI changes** — new pages, components, layouts, forms, modals, onboarding flows, etc. Skip for pure backend/API/infra work.
+
+---
+
+## Live Browser Pass (audit + improve)
+
+Every UI **audit** or **improve existing UI** task runs this pass against the
+real app. Static review (`critique`, `audit`, reading the CSS) finds candidates;
+this pass finds what actually breaks. The standing instruction is:
+
+> Test this in the browser at different widths, with touch emulation, and on a
+> throttled 3G connection. Fix anything that looks broken or feels off. Save a
+> before and after screenshot for every fix and send me a summary afterwards.
+
+Treat that as the task prompt whenever the user asks to audit, review, polish,
+or improve UI, and as the closing check of `cook` Step 6 for visible changes.
+Do it in a real browser (chrome-devtools MCP, agent-browser, or the project's
+Playwright; see `practices/ui-preview.md` for the tool order). Reading code is
+not testing it.
+
+### 1. Sweep the matrix
+
+Start the dev server (note whether you started it, so you can stop it). For each
+changed or audited route, check every cell:
+
+| Axis | Values |
+|------|--------|
+| Width | 320, 390, 768, 1024, 1280, 1920 (also any breakpoint the project's CSS defines, and ±1px either side of it) |
+| Input | mouse/hover, plus touch emulation (`hasTouch`, `isMobile`, coarse pointer, no hover) at the phone and tablet widths |
+| Network | unthrottled, plus throttled 3G (~400 kbps down/up, 400 ms RTT), cache disabled, on first load and on every interaction that fetches |
+
+Look for:
+- **Looks broken:** horizontal scroll, overflow and clipped text, overlapping
+  or misaligned elements, layout jumps (CLS), unreadable contrast, images
+  missing or stretched, a sticky or fixed element covering content.
+- **Feels off:** hover-only affordances with no touch path, touch targets under
+  44px, tap delay, a missing pressed state, scroll-jacking, janky or long
+  motion. On 3G: blank screens with no skeleton or spinner, buttons that can be
+  double-submitted, spinners with no timeout or error, late fonts or images
+  shifting the layout, interactions that block on large bundles.
+
+Also check the browser console and failed network requests in each cell.
+
+### 2. Fix, with before/after proof
+
+For each issue, in turn:
+1. Screenshot the **before** at the exact cell (width + input + network) that
+   shows it.
+2. Fix the root cause in the code, not a one-off override for that width.
+3. Reload the same cell and screenshot the **after**. Then re-check the other
+   widths so the fix did not break them.
+
+Save the pairs as
+`/tmp/bruhs-ui-audit/<NN>-<slug>-{before,after}-<width>[-touch][-3g].png`.
+A fix with no matching before/after pair does not count as done. If a capture
+comes back empty or the page errored, retake it.
+
+### 3. Send the summary
+
+When the sweep is done, send the user a summary (with the screenshots attached
+or linked, when the surface supports it):
+
+```markdown
+## UI browser pass: <route(s)>
+
+Tested: widths 320–1920, touch emulation, throttled 3G (cache off).
+
+| # | Issue | Where (width / input / network) | Fix | Before | After |
+|---|-------|---------------------------------|-----|--------|-------|
+| 1 | Nav overflows, causes horizontal scroll | 320 / touch | Wrap nav items, `min-width: 0` on flex child | 01-nav-before-320-touch.png | 01-nav-after-320-touch.png |
+
+**Left as is:** <issues found but not fixed, and why>
+**Not tested:** <cells skipped, and why>
+```
+
+Keep it honest. List what you could not reproduce or chose not to fix. Never
+say a cell "looks fine" without having loaded it.
+
+### Playwright reference (fallback driver)
+
+```javascript
+import { chromium, devices } from 'playwright'
+
+const browser = await chromium.launch()
+// Touch emulation: a phone profile sets hasTouch, isMobile, a coarse pointer and the UA
+const ctx = await browser.newContext({ ...devices['iPhone 13'] })
+const page = await ctx.newPage()
+
+// Throttled 3G via CDP (Chromium only)
+const cdp = await ctx.newCDPSession(page)
+await cdp.send('Network.enable')
+await cdp.send('Network.setCacheDisabled', { cacheDisabled: true })
+await cdp.send('Network.emulateNetworkConditions', {
+  offline: false, latency: 400,
+  downloadThroughput: (400 * 1024) / 8, uploadThroughput: (400 * 1024) / 8,
+})
+
+await page.goto('http://127.0.0.1:<port>/<route>')
+await page.screenshot({ path: '/tmp/bruhs-ui-audit/01-nav-before-390-touch-3g.png', fullPage: true })
+
+// Width sweep (desktop context, no touch)
+const desk = await browser.newContext()
+const dp = await desk.newPage()
+for (const w of [320, 768, 1024, 1280, 1920]) {
+  await dp.setViewportSize({ width: w, height: 900 })
+  await dp.goto('http://127.0.0.1:<port>/<route>')
+  const overflow = await dp.evaluate(() => document.documentElement.scrollWidth > innerWidth)
+  // overflow === true → horizontal scroll bug at this width
+}
+await browser.close()
+```
 
 ---
 
@@ -175,7 +286,10 @@ Skill("polish")     // always — final detail pass
 if (edgeCasesFound) Skill("harden")
 if (perfIssuesFound) Skill("optimize")
 
-// 4. Post-build
+// 4. Live Browser Pass: widths × touch × throttled 3G, fix, before/after per fix, summary
+liveBrowserPass()   // see "Live Browser Pass (audit + improve)" above
+
+// 5. Post-build
 if (reusablePatternsEmerged) Skill("extract")
 ```
 
@@ -189,13 +303,14 @@ Don't invoke every skill — pick what's relevant:
 |----------|-----------------|
 | **New page from scratch** | `frontend-design` + `normalize` + `clarify` → `critique` + `audit` + `polish` |
 | **New component** | `frontend-design` + `normalize` + design-engineering reference → `critique` + `polish` |
-| **Improving existing UI** | `critique` first → targeted adjustment skills → `polish` |
+| **Improving existing UI** | `critique` first → targeted adjustment skills → `polish` → [Live Browser Pass](#live-browser-pass-audit--improve) |
+| **UI audit** | `audit` + `critique` → [Live Browser Pass](#live-browser-pass-audit--improve) (widths, touch, 3G; before/after per fix; summary) |
 | **Motion/animation review** | `practices/design-engineering.md` + `critique` + `audit`, then `polish` / `optimize` |
 | **Mobile-facing feature** | add `adapt` + consider `animate` + design-engineering gestures/a11y rules |
 | **Onboarding / empty states** | add `onboard` + `clarify` |
 | **Design feels bland** | `bolder` or `colorize` or `delight` |
 | **Design feels noisy** | `quieter` or `distill` |
-| **Before shipping to prod** | `audit` + `polish` + `harden` |
+| **Before shipping to prod** | `audit` + `polish` + `harden` + Live Browser Pass |
 | **Performance concerns** | `optimize` |
 | **Design system enrichment** | `extract` |
 
@@ -215,5 +330,7 @@ Don't invoke every skill — pick what's relevant:
 - [ ] Animations respect `prefers-reduced-motion` (`animate`)
 - [ ] Animations have purpose, frequency fit, strong easing, correct origin, sub-300ms UI timing, and no layout-property animation
 - [ ] Touch targets >= 44px on mobile (`adapt`, `audit`)
+- [ ] Live Browser Pass run: widths 320–1920, touch emulation, throttled 3G
+- [ ] Every fix has a before/after screenshot pair, and the summary was sent
 - [ ] No layout shift on load (`optimize`, `polish`)
 - [ ] Doesn't look AI-generated (`critique`, `frontend-design`)

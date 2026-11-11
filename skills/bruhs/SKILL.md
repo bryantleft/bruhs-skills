@@ -1,6 +1,6 @@
 ---
 name: bruhs
-description: End-to-end development lifecycle for AI coding agents — scaffold projects, plan and build features, create Linear tickets, open and review PRs, clean up after merge, audit codebases, and improve UI polish/motion quality. Works with any agent that reads CLAUDE.md or AGENTS.md. Use when starting a project, implementing a feature, shipping code, addressing PR reviews, merging, auditing code quality, designing or reviewing UI polish, or reviewing animations.
+description: End-to-end development lifecycle for AI coding agents — scaffold projects, plan and build features, create Linear tickets, open and review PRs, clean up after merge, audit codebases, and improve UI polish/motion quality (with a live browser pass across widths, touch, and throttled 3G). Works with any agent that reads CLAUDE.md or AGENTS.md. Use when starting a project, implementing a feature, shipping code, addressing PR reviews, merging, auditing code quality, designing or reviewing UI polish, or reviewing animations.
 ---
 
 # bruhs

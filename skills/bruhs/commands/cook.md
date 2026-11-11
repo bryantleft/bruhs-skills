@@ -690,6 +690,8 @@ if (reusablePatternsEmerged) Skill("extract") // pull into design system
 
 Fix all issues found before proceeding to visual verification.
 
+**Live Browser Pass (for UI changes):** run `practices/ui-design.md` → *Live Browser Pass*: *"Test this in the browser at different widths, with touch emulation, and on a throttled 3G connection. Fix anything that looks broken or feels off. Save a before and after screenshot for every fix and send me a summary afterwards."* Pairs go to `/tmp/bruhs-ui-audit/`; the summary table goes to the user before visual verification.
+
 **Visual Verification (for UI changes):**
 
 If the feature includes UI changes, verify and capture per **`practices/ui-preview.md`** — do not eyeball it:

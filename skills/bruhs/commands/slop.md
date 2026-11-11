@@ -1061,6 +1061,9 @@ if (config.stack?.libraries?.includes('effect')) {
 if (targetTouchesUI || diffTouchesUI || config.stack?.animation) {
   uiPractices = Read('practices/ui-design.md');
   designEngineering = Read('practices/design-engineering.md');
+  // Static findings are candidates. If the app runs, also do the Live Browser Pass
+  // (ui-design.md): widths, touch emulation, throttled 3G; before/after
+  // screenshot per fix (fix only with --fix; otherwise screenshot + report); summary.
 }
 ```
 
