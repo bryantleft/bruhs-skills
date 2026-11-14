@@ -1,10 +1,10 @@
 ---
-description: Generate a reviewer walkthrough for a PR — markdown by default (postable as a PR comment), interactive HTML canvas opt-in. Categorizes files into core vs mechanical, summarizes verbose code as pseudocode, surfaces risk and migration order. Use when posting a PR for review, or asked to "walk through this PR".
+description: Generate a reviewer walkthrough for a PR — markdown by default (postable as a PR comment), interactive HTML canvas or a narrated video (local voice) opt-in. Categorizes files into core vs mechanical, summarizes verbose code as pseudocode, surfaces risk and migration order. Use when posting a PR for review, or asked to "walk through this PR".
 ---
 
 # walk - PR Reviewer Walkthrough
 
-Generate a walkthrough that reads like a peer explaining the PR to a reviewer — what to look at first, what to skip, what's risky, where the moved code went. Default output is markdown (postable as a PR comment). `--canvas` swaps to an interactive HTML page with collapsible diffs and moved-code detection.
+Generate a walkthrough that reads like a peer explaining the PR to a reviewer — what to look at first, what to skip, what's risky, where the moved code went. Default output is markdown (postable as a PR comment). `--canvas` swaps to an interactive HTML page with collapsible diffs and moved-code detection. `--video` renders a short narrated video (intent, change, implications, validation) with a local voice.
 
 ## Contents
 
@@ -14,6 +14,7 @@ Generate a walkthrough that reads like a peer explaining the PR to a reviewer �
 - [File Categorization](#file-categorization)
 - [Pseudocode Summaries](#pseudocode-summaries)
 - [Canvas Mode](#canvas-mode)
+- [Video Mode](#video-mode)
 - [Examples](#examples)
 - [Tips](#tips)
 
@@ -27,6 +28,9 @@ Generate a walkthrough that reads like a peer explaining the PR to a reviewer �
 - `/bruhs:walk --post` — Post the markdown walkthrough as a PR comment
 - `/bruhs:walk --commit-body` — Replace the PR body's "What changed" section with the walkthrough
 - `/bruhs:walk --max-pseudocode N` — Apply a user-chosen changed-line threshold for pseudocode summaries
+- `/bruhs:walk --video` — Narrated video walkthrough, rendered and voiced locally, for the author to watch first
+- `/bruhs:walk --video --post` — After the author approves it, post the transcript comment and hand over the video to attach
+- `/bruhs:walk --video --tts piper|say|espeak-ng|none` — Force a narration engine (default: best available)
 
 ## Output Modes
 
@@ -35,6 +39,7 @@ Generate a walkthrough that reads like a peer explaining the PR to a reviewer �
 | **markdown** (default) | Posting to PR comment, reviewer reads in GitHub UI, async review | Single markdown block, copy-pasteable |
 | **canvas** (`--canvas`) | Synchronous walkthrough, complex diff with moved code, you want collapsible sections | Local HTML page served at `http://127.0.0.1:8432` |
 | **post** (`--post`) | Auto-post the markdown as a `gh pr comment` so reviewers see it before the diff | Markdown + PR comment URL |
+| **video** (`--video`) | The why and the implications matter as much as the diff: behavior changes, UI, a demo worth seeing, reviewers outside the code | `walkthrough.mp4` + captions + transcript, under `.git/bruhs/walk/pr-<N>/` |
 
 Choose markdown when a linear reading order is clear. Use `--canvas` when the diff's
 dependency shape, moved code, or migration order is materially easier to understand
@@ -84,7 +89,7 @@ explicit threshold. See [Pseudocode Summaries](#pseudocode-summaries).
 
 ### Step 5: Generate the Walkthrough
 
-For markdown mode, use [Markdown Template](#markdown-template). For canvas mode, jump to [Canvas Mode](#canvas-mode).
+For markdown mode, use [Markdown Template](#markdown-template). For canvas mode, jump to [Canvas Mode](#canvas-mode). For video mode, jump to [Video Mode](#video-mode).
 
 ### Step 6: Deliver
 
@@ -99,6 +104,7 @@ For markdown mode, use [Markdown Template](#markdown-template). For canvas mode,
   gh pr edit <PR#> --body-file /tmp/walk-pr-<N>-body.md
   ```
 - **`--canvas`**: see [Canvas Mode](#canvas-mode).
+- **`--video`**: see [Video Mode](#video-mode).
 
 ## File Categorization
 
@@ -250,6 +256,170 @@ Then surface `http://127.0.0.1:8432/walk-pr-<PR#>.html` to the user. Use a **fix
 
 Kill the server when the user is done. Don't leave background `http.server` processes around.
 
+## Video Mode
+
+`--video` turns the walkthrough into a narrated video of about 45–90 seconds, scaled to
+the change (a small fix can be 20). It explains **why** the PR exists, **what** it
+changes, **what that affects**, and **how we know** it works. The demo is
+evidence, not the whole video. Everything renders on this machine. The voice is a local
+text-to-speech model, and nothing leaves the machine until the author posts.
+
+Two audiences, in this order:
+
+1. **The author** watches first. It checks whether the agent built what they meant and
+   explains it the way they would. Never post before the author approves.
+2. **Reviewers** watch it before opening the diff. The transcript comment keeps it
+   skimmable and searchable.
+
+### Step V1: Read the PR and collect receipts
+
+Do Steps 1–4 above. Then collect evidence for the validation scene. A **receipt** is
+something that ran and that you can point at:
+
+- `gh pr checks <N>` results (name + state)
+- test, typecheck or benchmark output you ran in this session (command + result line)
+- `/bruhs:verify` verdicts and artifacts under `/tmp/verify-this/<slug>/`: their
+  screenshots and recordings are the best demo footage
+
+A checked box in the PR body is the author's claim, not a receipt. If the PR body says
+"tested locally" and nothing here shows it, the claim is `unchecked`. When a demo would
+help and there is no artifact, run `/bruhs:verify --keep-artifacts` first, or say the
+video has no demo. Artifacts can hold secrets, customer data or tokens. Look at every
+image and clip before it goes in the video.
+
+### Step V2: Write the script
+
+```bash
+OUT="$(git rev-parse --absolute-git-dir)/bruhs/walk/pr-<N>"   # under .git/: never committed
+mkdir -p "$OUT"
+```
+
+Write `$OUT/script.json`. Scenes run **intent → change → implications → validation**.
+The first is intent, the last is the single validation scene, and implications is
+optional for a trivial change.
+
+```json
+{
+  "pr": {"number": 42, "title": "feat(api): rate-limit /v1/search per client",
+         "base": "main", "head": "feat/api-rate-limit", "additions": 74, "deletions": 9, "files": 8},
+  "scenes": [
+    {"kind": "intent", "heading": "Enforce the search quota", "visual": {"type": "title"},
+     "narration": "Our docs promise partners a hundred searches a minute. Nothing enforced it."},
+    {"kind": "change", "heading": "A fixed window per client",
+     "visual": {"type": "diff", "path": "src/server.ts", "text": "@@ -14,6 +16,9 @@\n+    if (!decision.allowed) {\n+      return send(res, 429, …);\n+    }"},
+     "narration": "Every request after the hundredth in a minute gets a four twenty nine."},
+    {"kind": "change", "heading": "The limit in action",
+     "visual": {"type": "video", "src": "/tmp/verify-this/search-quota/treatment/burst.mp4"},
+     "narration": "Here the hundred and first request is refused."},
+    {"kind": "implications", "heading": "Per process, not per fleet",
+     "visual": {"type": "points", "items": ["3 replicas: a client can get up to 3x the quota", "Old keys are never evicted"]},
+     "narration": "Counters live in each process. With three replicas a client can get three times the quota."},
+    {"kind": "validation", "heading": "What was checked", "visual": {"type": "claims"},
+     "claims": [
+       {"text": "Limiter allows the quota, then refuses", "status": "shown", "receipt": "npm test: 2 passed, 0 failed"},
+       {"text": "The quota holds across replicas", "status": "intended"},
+       {"text": "Behavior under a real partner load", "status": "unchecked"}],
+     "narration": "The limiter's tests pass and the burst was refused locally. Sharing the counters across replicas is still to do."}
+  ]
+}
+```
+
+| Visual | Use it for |
+|---|---|
+| `title` | The intent scene: PR title, branch and size from `pr` |
+| `points` | Implications and tradeoffs: a few short items |
+| `code` / `diff` | The lines the narration talks about (`path`, optional `start_line`). A diff colors `+`, `-` and `@@` lines |
+| `image` / `video` | Screenshots and recordings from verify or a manual demo (`src`, relative to the script). A clip shorter than the narration holds its last frame. `start` skips into it |
+| `claims` | The validation scene, always: every claim as **shown**, **intended** or **not checked** |
+
+**Narration rules:**
+
+- **It is spoken.** Write it the way you'd say it: "four twenty nine", "three
+  replicas", "the client key helper". No backticks, paths or symbols. The slide shows those.
+- **Lead with the why.** The intent scene says what was wrong or missing and for whom,
+  before any code.
+- **Never narrate a result you can't point at.** Every measured or demonstrated claim
+  in the narration must be a `shown` claim with a receipt. Say intent as intent
+  ("this should…", "the goal is…"). Don't turn "we expect it to be faster" into "it's faster".
+- **Implications come from the risk callouts.** Cover who is affected, compatibility,
+  migration order, tradeoffs and known limits. A video that hides risk is worse than none.
+- **Keep it short.** Use two or three sentences per scene and only the scenes the change
+  needs. Captions are timed per sentence, so short sentences read best.
+
+### Step V3: Check and render
+
+```bash
+python3 <SKILL_DIR>/scripts/walk_video.py check  "$OUT/script.json"
+python3 <SKILL_DIR>/scripts/walk_video.py render "$OUT/script.json" --out "$OUT" [--tts <engine>]
+```
+
+`check` lists every problem at once. Typical ones are a shown claim with no receipt,
+scenes out of order, or code that doesn't fit the slide. Fix the script; never loosen a
+claim's status to get past an error. `render` writes `walkthrough.mp4` (1920x1080,
+captions burned in), `captions.srt`, `transcript.md` and `manifest.json`, then prints
+the manifest.
+
+**Narration engines.** `auto` picks the first available:
+
+| Engine | What it is | When |
+|---|---|---|
+| `piper` | Local neural voice model (one ~60 MB download) | Default once installed |
+| `say` | macOS built-in voice | macOS without piper |
+| `espeak-ng` | Robotic but local | Linux without piper |
+| `none` | Silent video, captions only | Nothing else available, or `--tts none` |
+
+When `auto` falls back, the render warns. Pass that warning on to the user along with
+the one-time piper setup:
+
+```bash
+uv tool install piper-tts                                        # or: pipx install piper-tts
+mkdir -p ~/.local/share/bruhs/voices
+uvx --from piper-tts python -m piper.download_voices \
+  --data-dir ~/.local/share/bruhs/voices en_US-lessac-medium     # any piper voice works
+```
+
+`walk_video.py engines` shows what's installed. `--voice <file.onnx>` or
+`BRUHS_PIPER_VOICE` picks a specific piper voice, and `--say-voice <name>` picks a
+macOS voice. Use the same voice every time, so walkthroughs sound consistent across PRs.
+
+If ffmpeg (with libass) is missing, the script exits 3 and says how to install it. Tell
+the user; don't fall back to a markdown walkthrough without saying so.
+
+### Step V4: The author watches it
+
+Show the author the video and the transcript (`open "$OUT/walkthrough.mp4"` on macOS;
+otherwise give the path), then ask:
+
+```javascript
+AskUserQuestion({
+  questions: [{
+    question: "Does the walkthrough say what you meant this PR to do?",
+    header: "Video",
+    multiSelect: false,
+    options: [
+      { label: "Post it", description: "Post the transcript as a PR comment; you attach the video" },
+      { label: "Change it", description: "Tell me what's off; I'll edit the script and re-render" },
+      { label: "Keep it local", description: "Don't post anything" }
+    ]
+  }]
+})
+```
+
+On "Change it", edit `script.json` and re-render. Rendering takes seconds. Don't post
+until the author picks "Post it", even when `--post` was passed.
+
+### Step V5: Post
+
+```bash
+gh pr comment <N> --body-file "$OUT/transcript.md"
+open -R "$OUT/walkthrough.mp4"   # macOS: reveal the file for dragging
+```
+
+GitHub has no API for uploading video to a comment. Say so plainly: the author edits
+the new comment and drags `walkthrough.mp4` onto the `_Video: …_` line, and GitHub
+plays it inline. Give the comment URL and the file path. The transcript says the
+narration was synthesized on the author's machine; keep that line.
+
 ## Markdown Template
 
 ```markdown
@@ -357,6 +527,24 @@ Posting as PR comment…
 ✓ Posted: https://github.com/sonner-labs/sonner/pull/46#issuecomment-<id>
 ```
 
+### `--video`
+
+```
+> /bruhs:walk --video
+
+Fetching PR #42…
+  feat/api-rate-limit ← main, +74 / -9, 8 files
+Receipts: gh pr checks (3 passing), npm test (2 passed), /tmp/verify-this/search-quota/
+Writing .git/bruhs/walk/pr-42/script.json (5 scenes)…
+  check: ok, ~58s estimated
+Rendering with piper (en_US-lessac-medium)…
+  ✓ .git/bruhs/walk/pr-42/walkthrough.mp4 (0:56)
+
+Opened the video. Transcript: .git/bruhs/walk/pr-42/transcript.md
+Shown: limiter tests, local burst refused. Intended: quota across replicas. Not checked: partner load.
+Does the walkthrough say what you meant this PR to do?
+```
+
 ### `--canvas`
 
 ```
@@ -381,3 +569,4 @@ Walkthrough ready: http://127.0.0.1:8432/walk-pr-46.html
 - **Pair with `/bruhs:doodle pr`** for architectural PRs — a diagram + walkthrough together gives sync and async reviewers what they each need.
 - **Don't lie about risk.** If something is risky, list it. A walkthrough that hides risk is worse than no walkthrough.
 - **Run before `/bruhs:land`** so reviewers can start while CI churns.
+- **Run `/bruhs:verify --keep-artifacts` before `--video`** when the change has visible behavior. Its screenshots and recordings are the demo footage, and its verdict is a receipt.

@@ -909,4 +909,4 @@ git reset --hard "HEAD@{<pre-rewrite-index>}"   # find via git reflog
 - **One feature per yeet** - Keep commits focused; use interactive mode if needed
 - **Check PR** - Always review the PR link to verify everything looks right
 - **Pair with `/bruhs:land`** - yeet opens the PR; land babysits it to green
-- **Pair with `/bruhs:walk --post`** - drop a reviewer walkthrough comment for large PRs
+- **Pair with `/bruhs:walk --post`** - drop a reviewer walkthrough comment for large PRs, or `/bruhs:walk --video` for a narrated walkthrough the author checks before reviewers see it

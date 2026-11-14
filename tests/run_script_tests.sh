@@ -18,6 +18,7 @@
 #     detect_mcp_servers.py   → detect-mcp-servers-multi-workspace.json
 #     validate_pr_ready.sh    → validate-pr-ready-node.json
 #     write_bruhs_config.py   → write-bruhs-config-shim.json
+#     walk_video.py           → walk-video-script.json
 #     export_evals_json.py    → every evals/<case>/ loads; export is valid JSON
 #     evals/*/scaffold.sh     → each builds its workspace offline; mocks in sync
 #
@@ -453,6 +454,111 @@ mkdir -p "$shim_dry"
 out=$(echo "$STATE_JSON" | python3 "$SCRIPTS/write_bruhs_config.py" --root "$shim_dry" --dry-run 2>/dev/null)
 assert "shim --dry-run does not write CLAUDE.md" sh -c "! test -f '$shim_dry/CLAUDE.md'"
 assert "shim --dry-run does not write AGENTS.md" sh -c "! test -f '$shim_dry/AGENTS.md'"
+
+#─────────────────────────────────────────────────────────────────────────────
+heading "walk_video.py — script tripwires, engine choice, captions-only render"
+#─────────────────────────────────────────────────────────────────────────────
+
+wv="$WORK/walk-video"
+mkdir -p "$wv"
+cat > "$wv/script.json" <<'EOF'
+{
+  "pr": {"number": 42, "title": "feat(api): rate-limit /v1/search per client", "base": "main", "head": "feat/api-rate-limit", "additions": 74, "deletions": 9, "files": 8},
+  "scenes": [
+    {"kind": "intent", "heading": "Enforce the search quota", "visual": {"type": "title"},
+     "narration": "Our docs promise one hundred searches per minute. Nothing enforced it."},
+    {"kind": "change", "heading": "A fixed window per client", "visual": {"type": "diff", "path": "src/server.ts",
+      "text": "@@ -14,6 +16,9 @@\n+    if (!decision.allowed) {\n+      return send(res, 429, { error: \"rate_limited\" }); // \\n stays literal\n+    }"},
+     "narration": "Over the limit, search answers four twenty nine."},
+    {"kind": "implications", "heading": "Per process", "visual": {"type": "points", "items": ["3 replicas, so up to 3x the quota"]},
+     "narration": "Counters are per process."},
+    {"kind": "validation", "heading": "What was checked", "visual": {"type": "claims"},
+     "claims": [
+       {"text": "Limiter unit tests pass", "status": "shown", "receipt": "npm test: 2 passed | 0 failed"},
+       {"text": "The 101st request returns 429", "status": "unchecked"},
+       {"text": "Quota holds across replicas", "status": "intended"}],
+     "narration": "Unit tests pass. The live endpoint was not checked."}
+  ]
+}
+EOF
+# mutate SCRIPT EXPR: copy script.json with a Python expression applied to `s`.
+mutate() {
+    python3 - "$wv/script.json" "$wv/$1.json" "$2" <<'PY'
+import json, sys
+s = json.load(open(sys.argv[1]))
+exec(sys.argv[3])
+json.dump(s, open(sys.argv[2], "w"))
+PY
+}
+
+out=$(python3 "$SCRIPTS/walk_video.py" check "$wv/script.json" --tts none 2>&1); ec=$?
+assert_eq "walk_video check accepts a well-formed script" "0" "$ec"
+assert_contains "check reports ok" '"ok": true' "$out"
+
+mutate no-receipt 's["scenes"][3]["claims"][0].pop("receipt")'
+out=$(python3 "$SCRIPTS/walk_video.py" check "$wv/no-receipt.json" --tts none 2>&1); ec=$?
+assert_eq "a shown claim without a receipt exits 2" "2" "$ec"
+assert_contains "the error asks for a receipt or a weaker status" "mark it intended or unchecked" "$out"
+
+mutate bad-status 's["scenes"][3]["claims"][1]["status"] = "verified"'
+ec=$(capture_ec python3 "$SCRIPTS/walk_video.py" check "$wv/bad-status.json" --tts none)
+assert_eq "an unknown claim status exits 2" "2" "$ec"
+
+mutate no-validation 's["scenes"].pop()'
+out=$(python3 "$SCRIPTS/walk_video.py" check "$wv/no-validation.json" --tts none 2>&1); ec=$?
+assert_eq "a script without a validation scene exits 2" "2" "$ec"
+assert_contains "the error names the missing validation scene" "last scene must be a validation scene" "$out"
+
+mutate out-of-order 's["scenes"].insert(2, dict(s["scenes"][0]))'
+out=$(python3 "$SCRIPTS/walk_video.py" check "$wv/out-of-order.json" --tts none 2>&1); ec=$?
+assert_eq "an intent scene after a change scene exits 2" "2" "$ec"
+assert_contains "the error states the scene order" "intent → change → implications → validation" "$out"
+
+mutate long-code 's["scenes"][1]["visual"]["text"] = "\n".join(["x"] * 40)'
+out=$(python3 "$SCRIPTS/walk_video.py" check "$wv/long-code.json" --tts none 2>&1); ec=$?
+assert_eq "a diff taller than the slide exits 2" "2" "$ec"
+assert_contains "the error says how many lines fit" "the slide holds" "$out"
+
+mutate missing-image 's["scenes"][1]["visual"] = {"type": "image", "src": "nope.png"}'
+out=$(python3 "$SCRIPTS/walk_video.py" check "$wv/missing-image.json" --tts none 2>&1); ec=$?
+assert_eq "a missing image exits 2" "2" "$ec"
+assert_contains "the error names the missing file" "nope.png" "$out"
+
+mutate backticks 's["scenes"][1]["narration"] = "It calls `checkSearchLimit` first."'
+out=$(python3 "$SCRIPTS/walk_video.py" check "$wv/backticks.json" --tts none 2>&1); ec=$?
+assert_eq "backticks in narration warn but pass" "0" "$ec"
+assert_contains "the warning explains backticks are read aloud" "backticks" "$out"
+
+# No piper binary and no voice: asking for piper by name fails loudly; auto falls back.
+nopiper_path="$(dirname "$(command -v python3)"):/usr/bin:/bin"
+out=$(env PATH="$nopiper_path" XDG_DATA_HOME="$wv/empty" BRUHS_PIPER_VOICE= python3 "$SCRIPTS/walk_video.py" check "$wv/script.json" --tts piper 2>&1); ec=$?
+assert_eq "--tts piper without piper exits 3" "3" "$ec"
+assert_contains "the error says how to get piper" "uv tool install piper-tts" "$out"
+out=$(env PATH="$nopiper_path" XDG_DATA_HOME="$wv/empty" BRUHS_PIPER_VOICE= python3 "$SCRIPTS/walk_video.py" engines 2>&1)
+assert_contains "engines reports the auto choice" '"auto":' "$out"
+assert "engines prints valid JSON" python3 -c "import json,sys; json.loads(sys.argv[1])" "$out"
+
+if command -v ffmpeg >/dev/null 2>&1 && ffmpeg -hide_banner -filters 2>/dev/null | grep -qE '^ *\S+ +ass '; then
+    out=$(python3 "$SCRIPTS/walk_video.py" render "$wv/script.json" --tts none --out "$wv/out" 2>"$wv/render.err"); ec=$?
+    assert_eq "captions-only render exits 0" "0" "$ec"
+    [ "$ec" -ne 0 ] && sed 's/^/      /' "$wv/render.err" | tail -5
+    assert "render writes walkthrough.mp4" test -s "$wv/out/walkthrough.mp4"
+    assert "render writes captions.srt" test -s "$wv/out/captions.srt"
+    assert "render removes its work directory" sh -c "! test -d '$wv/out/work'"
+    streams=$(ffprobe -v error -show_entries stream=codec_type,width,height -of csv=p=0 "$wv/out/walkthrough.mp4" 2>/dev/null | sort | tr '\n' ' ')
+    assert_eq "the video is 1080p with an audio track" "audio video,1920,1080 " "$streams"
+    assert "video length matches the manifest within 0.2s" python3 - "$wv/out/walkthrough.mp4" "$wv/out/manifest.json" <<'PY'
+import json, subprocess, sys
+probed = float(subprocess.check_output(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", sys.argv[1]]))
+assert abs(probed - json.load(open(sys.argv[2]))["seconds"]) < 0.2, probed
+PY
+    transcript=$(cat "$wv/out/transcript.md")
+    assert_contains "transcript keeps the receipt (pipes escaped)" 'npm test: 2 passed \| 0 failed' "$transcript"
+    assert_contains "transcript labels unchecked claims" "| Not checked |" "$transcript"
+    assert_contains "transcript says the narration engine" "none (captions only)" "$transcript"
+else
+    printf '  [SKIP] walk_video render (ffmpeg with libass not on PATH)\n'
+fi
 
 #─────────────────────────────────────────────────────────────────────────────
 heading "export_evals_json.py"

@@ -112,7 +112,7 @@ claude plugin eval . --tag peep --scaffold --allow-tools Bash Write Edit
 ```
 
 `--scaffold` is required: without it no workspace is built. These are real,
-billed model runs. The full suite is 71 cases × 3 runs × 2 arms, roughly 430
+billed model runs. The full suite is 72 cases × 3 runs × 2 arms, roughly 430
 agent runs plus 3 judge calls per `llm` grader per run, so filter with `--case`
 or `--tag`, and try `--model haiku` while iterating on graders. Results go to
 `evals/results/` (gitignored).
@@ -178,7 +178,7 @@ case twice.
 | `/bruhs:slop` | `slop-*` (7) |
 | `/bruhs:spawn` | `spawn-*` (4) |
 | `/bruhs:verify` | `verify-*` (3) |
-| `/bruhs:walk` | `walk-*` (3) |
+| `/bruhs:walk` | `walk-*` (4) |
 | `/bruhs:yeet` | `yeet-*` (8) |
 
 ### Cross-cutting flows

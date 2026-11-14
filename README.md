@@ -103,6 +103,12 @@ Ship staged work. Runs the project's full verification suite before committing �
 
 Git-only mode skips Linear if not configured.
 
+### `/bruhs:walk`
+
+Reviewer walkthrough for a PR: markdown by default (`--post` drops it as a comment), an interactive HTML canvas with `--canvas`, or a narrated video with `--video`.
+
+**Video:** a 45–90 second walkthrough covering intent, change, implications and validation. The demo footage comes from `/bruhs:verify` artifacts. Narration uses a local voice model (piper; macOS `say`, espeak-ng or captions-only as fallbacks), and ffmpeg renders it on your machine. Every result it narrates is labelled shown (with a receipt), intended, or not checked. The author watches it first. Then `--post` adds the transcript as a PR comment, and the author drags the video into it (GitHub has no video upload API).
+
 ### `/bruhs:peep`
 
 Address PR review comments using isolated subagents — one per thread, no context bleed between threads.
@@ -200,6 +206,7 @@ Stack-agnostic and stack-specific guidance, loaded conditionally by `cook` and `
 - `derive_stack_rules.py` — emit stack-specific behavioral rules as markdown given state JSON on stdin.
 - `write_bruhs_config.py` *(deprecated)* — thin shim that forwards to `sync_bruhs_block.py --kind state` so existing callers don't break.
 - `validate_pr_ready.sh` — run typecheck + lint + tests for the detected stack (Node/Rust/Python/Go); used by `yeet`, `peep`, `cook`.
+- `walk_video.py` — check a walkthrough scene script (claims need receipts, scenes run intent → validation) and render it to a narrated, captioned MP4 with a local TTS engine and ffmpeg; used by `walk --video`.
 
 ## Evaluations
 
@@ -301,6 +308,8 @@ Run `/mcp` (or your agent's equivalent) to verify connected servers.
 
 - **GitHub CLI (`gh`)** — required for PR creation. Authenticate with `gh auth login`.
 - **tldraw MCP** (optional) — required for `/bruhs:doodle`. See the command docs for install hints.
+- **ffmpeg with libass** (optional) — required for `/bruhs:walk --video`. Homebrew's and Debian's builds include libass.
+- **piper** (optional) — the local voice for `/bruhs:walk --video`: `uv tool install piper-tts`, plus one voice in `~/.local/share/bruhs/voices/`. Without it, narration falls back to macOS `say`, then espeak-ng, then captions only.
 
 ## License
 

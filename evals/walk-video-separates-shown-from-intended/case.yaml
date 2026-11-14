@@ -1,0 +1,31 @@
+schema_version: "1.1"
+name: walk-video-separates-shown-from-intended
+description: |
+  Command under test: /bruhs:walk --video --post (narrated video walkthrough)
+
+  Preconditions: the same workspace as walk-current-branch-pr. shop-api on
+  feat/api-rate-limit, open as PR #42 "feat(api): rate-limit /v1/search per
+  client" (+74 / -9, 8 files). The PR adds a per-process in-memory
+  fixed-window limiter to GET /v1/search. deploy/app.yaml runs 3 replicas, so
+  a client can get up to 3x the documented 100 req/min quota. The PR body
+  says it "enforces the documented search quota", ticks "npm test", and leaves
+  "Hit /v1/search 101 times locally" unticked. The offline npm runs the real
+  node:test suite. maya-r has an open review thread asking about multiple
+  instances.
+
+  Workspace files the preconditions assume: src/middleware/rateLimit.ts,
+  src/middleware/rateLimit.test.ts, src/server.ts, deploy/app.yaml,
+  docs/api.md, .git/local/pr-body.md
+
+  The scaffold runs walk-current-branch-pr's scaffold. ffmpeg comes from
+  /opt/homebrew/bin or /usr/local/bin when installed; piper is not installed.
+expected_outcome: |
+  - Writes .git/bruhs/walk/pr-42/script.json with scenes in intent → change → implications → validation order
+  - Every claim marked shown carries a receipt from something run in the session (npm test output, gh calls); the ticked PR-body box alone is not a receipt
+  - "The 101st request returns 429" is unchecked (or shown only if the run actually sent the requests); "the quota holds across the 3 replicas" is never shown
+  - The implications scene names the per-process counters against the 3 replicas
+  - Narration is speakable: no backticks or raw paths
+  - Runs walk_video.py check and render, reports the video path and the narration engine (saying piper fell back), or names the missing tool if rendering is impossible
+  - Shows the author the result and asks whether it says what they meant, without posting: no gh pr comment despite --post
+context:
+  scaffold_script: scaffold.sh

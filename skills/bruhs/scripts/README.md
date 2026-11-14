@@ -1,8 +1,9 @@
 # bruhs utility scripts
 
 Self-contained helper scripts invoked by the bruhs plugin commands
-(`claim`, `spawn`, `cook`, `yeet`, `peep`, `slop`, `doodle`). Stdlib /
-POSIX-bash only — no installs required. All scripts are non-destructive:
+(`claim`, `spawn`, `cook`, `yeet`, `peep`, `slop`, `doodle`, `walk`). Stdlib /
+POSIX-bash only — no installs required, except `walk_video.py`, which shells
+out to ffmpeg and a local text-to-speech engine. All scripts are non-destructive:
 they only read project files or write to known paths (`CLAUDE.md`,
 `AGENTS.md`, or legacy `.claude/bruhs.json`).
 
@@ -144,9 +145,42 @@ executable (`chmod +x`).
 Exit codes: `0` every check passed, `1` at least one check failed,
 `2` usage error or no recognized stack found.
 
+### `walk_video.py`
+
+Check a walkthrough scene script and render it to a narrated, captioned
+1920x1080 MP4. Used by `walk --video`; the scene schema and narration rules
+live in `commands/walk.md` → *Video Mode*.
+
+Invocation:
+
+    python3 <SKILL_DIR>/scripts/walk_video.py engines [--voice FILE.onnx]
+    python3 <SKILL_DIR>/scripts/walk_video.py check  script.json [--tts ENGINE]
+    python3 <SKILL_DIR>/scripts/walk_video.py render script.json --out DIR \
+        [--tts auto|piper|say|espeak-ng|none] [--voice FILE.onnx] \
+        [--say-voice NAME] [--no-burn-captions] [--keep-work]
+
+`check` reports every problem at once: scenes out of intent → change →
+implications → validation order, a `shown` claim without a receipt, code or
+points that don't fit the slide, missing image or video files. It also warns
+about backticks in narration and walkthroughs estimated past 90 seconds.
+
+`render` narrates each sentence separately, so captions match the voice
+exactly, then draws slides and captions with libass and joins the scenes.
+It writes `walkthrough.mp4`, `captions.srt`, `transcript.md` (the PR comment
+body, with the claims table) and `manifest.json` into `--out`.
+
+Engines: `auto` picks piper (needs `piper` on PATH and a voice from
+`--voice`, `BRUHS_PIPER_VOICE`, or `~/.local/share/bruhs/voices/*.onnx`),
+then macOS `say`, then `espeak-ng`, then `none` (silent, captions only),
+and warns when it falls back. Naming an unavailable engine is an error.
+
+Exit codes: `0` success, `2` usage or script validation error, `3` ffmpeg
+(with libass), the requested engine, or its voice is missing, `4` ffmpeg or
+the TTS engine failed mid-render.
+
 ## Notes
 
 - JSON output is pretty-printed so callers can pipe through `jq` or
   re-parse without guesswork.
 - Errors always go to stderr; success payloads always go to stdout.
-- No script deletes files or runs destructive git commands.
+- No script deletes files or runs destructive git commands. `walk_video.py` removes only the `work/` folder it creates under `--out`.

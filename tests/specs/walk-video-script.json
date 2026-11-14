@@ -1,0 +1,25 @@
+{
+  "skills": ["bruhs"],
+  "command": "scripts/walk_video.py",
+  "query": "python3 <PLUGIN_DIR>/scripts/walk_video.py render script.json --out <DIR>",
+  "files": [],
+  "context": "A walkthrough script for PR #42 with an intent scene (title card), a change scene (diff containing braces and a literal backslash-n), an implications scene (points) and a validation scene whose claims are one shown (with a receipt containing a pipe), one unchecked and one intended. ffmpeg with libass is on PATH; piper may not be.",
+  "expected_behavior": [
+    "check exits 0 and reports ok for the well-formed script",
+    "A shown claim without a receipt exits 2 and tells the author to add a receipt or mark it intended or unchecked",
+    "An unknown claim status, a missing validation scene, or scenes out of intent → change → implications → validation order exit 2 with a message naming the rule",
+    "A code or diff visual taller or wider than the slide exits 2 and states how many lines or columns fit",
+    "A missing image or video file exits 2 and names the path",
+    "Backticks in narration produce a warning, not an error",
+    "--tts piper with no piper binary or voice exits 3 and says how to install piper; auto falls back to say, espeak-ng, then captions-only and says so",
+    "render --tts none writes a 1920x1080 walkthrough.mp4 with an audio track, captions.srt, transcript.md and manifest.json, and removes its work directory",
+    "The rendered duration matches manifest.json",
+    "transcript.md lists every claim with its status and receipt, escaping pipes so the markdown table holds"
+  ],
+  "failure_modes": [
+    "A claim marked shown renders without any receipt behind it",
+    "Braces or backslashes in code are swallowed as libass override tags",
+    "Falling back to a silent video without saying so",
+    "Leaving per-scene intermediates behind in the output directory"
+  ]
+}

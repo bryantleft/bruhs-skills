@@ -18,7 +18,7 @@ description: End-to-end development lifecycle for AI coding agents — scaffold 
 |cook|Plan + Build feature end-to-end|commands/cook.md
 |verify|Prove a claim with falsifiable evidence (VERIFIED/NOT VERIFIED/INCONCLUSIVE)|commands/verify.md
 |yeet|Ship: Linear ticket → Branch → Commit → PR|commands/yeet.md
-|walk|Generate reviewer walkthrough (markdown or interactive HTML canvas)|commands/walk.md
+|walk|Generate reviewer walkthrough (markdown, interactive HTML canvas, or narrated video with a local voice)|commands/walk.md
 |land|Watch PR checks and iterate on CI failures until green|commands/land.md
 |peep|Address PR review comments, or self-review with linked context, evidence gates and a ship verdict, then merge|commands/peep.md
 |dip|Clean up after merge, switch to base branch|commands/dip.md
@@ -44,6 +44,7 @@ slop --quick           → clean up branch-diff slop before shipping
 yeet                   → Linear ticket + branch + commit + PR
         ↓
 walk --post            → reviewer walkthrough comment (large PRs)
+walk --video           → narrated walkthrough video; author watches first
         ↓
 land                   → watch CI to green
         ↓
@@ -62,7 +63,7 @@ Out-of-band, any time:
 - `/bruhs:<command>` → Direct to command
 - `/bruhs:cook <feature>` or `/bruhs:cook TICKET-123` → With argument
 - `/bruhs:verify [claim | PR#] [--keep-artifacts]` → Falsifiable verification
-- `/bruhs:walk [PR#] [--canvas|--post|--commit-body]` → Reviewer walkthrough
+- `/bruhs:walk [PR#] [--canvas|--video|--post|--commit-body]` → Reviewer walkthrough
 - `/bruhs:land [PR#] [--no-fix|--max-iterations N]` → Watch CI to green
 - `/bruhs:peep [PR# | TICKET] [--land|--resolve-conflicts]` → Address review comments
 - `/bruhs:slop [path] [--quick|--fix|--report] [--severity ...]` → Codebase analysis
