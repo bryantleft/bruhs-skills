@@ -76,6 +76,15 @@ Out-of-band, any time:
 
 ## Engineering Doctrine
 
+> Every agent mistake becomes a lint rule, not a prompt.
+
+The fundamental feedback loop is **find the failure → fix it → encode what would
+catch it → enforce it on future changes**. Every confirmed mistake found during
+implementation, review, or CI triage must leave behind a retained executable check,
+or an explicit unresolved enforcement gap. The check must run through normal
+validation without relying on this conversation or the same agent remembering it.
+See `practices/engineering-principles.md` → Turn mistakes into tripwires.
+
 Every command uses this shared vocabulary:
 
 |Term|Meaning|

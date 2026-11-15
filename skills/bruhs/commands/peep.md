@@ -141,6 +141,10 @@ The RED→GREEN transition is the evidence. "It compiled" is not.
 4. **Apply the proposed fix**, re-run the same test. It MUST pass. Capture (`GREEN_OUTPUT`).
 5. **Revert the fix AND delete the repro test.** Confirm `git diff --stat` and `git status --porcelain` show the tree exactly as found.
 
+This cleanup is for exploratory review only. Return the reproduction in
+`REPRO_TEST` so the orchestrator can retain it when applying an approved fix (Step
+10). Reverting the investigation must not discard the future regression check.
+
 Per-project commands:
 - **TypeScript/JS**: `tsc --noEmit`, `eslint`/`biome check`, `vitest run <file>` / `jest <file>` / `node --test`
 - **Rust**: `cargo check`, `cargo clippy`, `cargo test <module>`
@@ -546,7 +550,9 @@ After all 3 return, **merge by consensus**:
 5. Record `VOTE_COUNT: <n>/3` on each surviving issue for display.
 6. **Reproduction pass on survivors.** Consensus across opinions is not evidence — it's correlated opinion. Run the [reproduction loop](#evidence-key-principle) on each surviving bug/must-fix to assign its `EVIDENCE_TIER`. A survivor whose repro test *passes on current code* is dropped (the consensus was a shared hallucination). Only `reproduced`/`tooling-confirmed` survivors are presented as confirmed; the rest go under "Unconfirmed — reasoning only".
 
-If singleton drops are common across runs, that's a signal the prompt should be tightened — but a single noisy pass should never reach the user.
+If singleton drops are common across runs, capture demonstrated false positives as
+behavioral eval cases and strengthen the evidence gate. Prompt tuning alone does
+not provide retained enforcement; a single noisy pass should never reach the user.
 
 **If "Skip to merge":** Jump directly to Step 12 (Check Merge Readiness).
 
@@ -1027,6 +1033,14 @@ Needs manual review:
 ```
 
 ### Step 10: Commit and Push Fixes
+
+For each confirmed bug being fixed, retain its `REPRO_TEST` in the normal suite or
+use an equivalent enforced check per `practices/engineering-principles.md` → Turn
+mistakes into tripwires. Replay it against the original failure and the fix. An
+existing type, lint, or test check that already catches the failure needs no
+duplicate. Include the retained check with the fix; exploratory RED→GREEN evidence
+alone does not provide future protection. Report the check and its normal command,
+or the explicit remaining enforcement gap, in the output summary.
 
 After addressing all comments:
 

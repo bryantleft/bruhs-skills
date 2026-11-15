@@ -2,6 +2,19 @@
 
 End-to-end development lifecycle for AI coding agents — scaffold projects, plan and build features, open and review PRs, clean up after merge, audit codebases, surface architectural deepenings, drill the test safety net, and improve UI polish/motion quality. Works with any agent that reads `CLAUDE.md` or `AGENTS.md`.
 
+> Every agent mistake becomes a lint rule, not a prompt.
+
+This is bruhs' fundamental feedback loop: **find the failure → fix it → encode what
+would catch it → enforce it on future changes**. Quality compounds when each
+correction leaves the repository better able to reject the same failure, even in a
+fresh agent session. A fix includes both corrected behavior and retained executable
+prevention; any remaining enforcement gap stays explicit.
+
+“Lint rule” includes regression tests, type or schema constraints, architecture
+checks, and workflow checks or evals. Reuse existing enforcement and prove it rejects
+the failure through the normal validation path. See
+[Engineering Principles](skills/bruhs/practices/engineering-principles.md#turn-mistakes-into-tripwires).
+
 bruhs is built around five shared ideas:
 
 - **Landmine** — a harmless-looking decision that creates a delayed failure

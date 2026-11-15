@@ -393,7 +393,9 @@ Pattern adopted at Stripe, Shopify, GitHub: an AI reviewer runs first and posts 
 
 ### Bug fixes
 
-- Is there a regression test? (If not, push back)
+- Which retained executable check rejects the original bug and accepts the fix?
+  Does it run through normal validation? An existing check can suffice; a deleted
+  reproduction or prompt reminder leaves an enforcement gap.
 - Is the root cause fixed, or just the symptom?
 - Are similar bugs likely elsewhere?
 

@@ -124,6 +124,13 @@ The fix should be:
 
 Common failure → fix patterns are in [Failure Triage](#failure-triage). If the failure looks unrelated to this PR (e.g. flake, infra outage, broken main), see [Escape Hatches](#guardrails) instead of bloating the PR.
 
+Apply `practices/engineering-principles.md` → Turn mistakes into tripwires to each
+confirmed mistake fixed here. The CI check that caught the failure may already be
+the right retained protection; preserve it rather than add a duplicate. If fixing
+the cause exposes an uncovered failure pattern, add the smallest regression check
+and run it through normal validation. The summary names the check that catches each
+fixed failure next time, or states the remaining enforcement gap.
+
 ### Step 5: Commit and Push
 
 ```bash

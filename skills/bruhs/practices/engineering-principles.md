@@ -3,6 +3,17 @@
 These principles govern every bruhs command and every stack-specific practice. When
 another recommendation conflicts with this file, this file wins.
 
+## Fundamental Feedback Loop
+
+> Every agent mistake becomes a lint rule, not a prompt.
+
+**Find the failure → fix it → encode what would catch it → enforce it on future
+changes.** Apply this during implementation, review, and CI triage, from the first
+confirmed occurrence. Each correction should improve the repository's ability to
+reject that failure in a fresh agent session. Corrected behavior and retained
+executable prevention are both part of the fix. An unresolved enforcement gap must
+remain visible; a passing suite alone does not close it.
+
 ## Shared Vocabulary
 
 ### Landmine
@@ -114,6 +125,36 @@ For every correctness-critical assumption, ask: “How will we know when this be
 false?” Put the check at the earliest boundary with enough context to explain the
 failure.
 
+### Turn mistakes into tripwires
+
+Treat “lint rule” as shorthand for executable enforcement. When fixing a confirmed
+agent mistake, identify the failure pattern and strengthen the smallest check that
+would have caught it:
+
+- **Static pattern or dependency violation:** enable or extend an existing lint or
+  architecture rule before writing a custom checker.
+- **Behavioral bug:** retain a regression test at the module's public interface.
+- **Invalid state or input:** tighten the type, schema, or database constraint at
+  the boundary that owns the invariant.
+- **Agent workflow failure:** use a deterministic tool check where possible, or a
+  realistic behavioral eval when judgment is involved.
+
+Prove the check rejects the known failure and accepts the corrected case. Wire it
+into the normal validation path so the next occurrence is caught automatically.
+Retain the check in the repository with the fix. A temporary reproduction that is
+deleted after debugging proves this fix worked once; it provides no future
+protection. Prefer checks that catch the demonstrated failure class across relevant
+call sites over checks tied to the exact text of one patch.
+
+If an existing check already catches it, fix why that check was skipped or ignored;
+do not add a duplicate. Keep enforcement scoped to the demonstrated failure class,
+without turning an isolated typo or preference into a universal rule.
+
+If reliable automation is not practical within the task, state the remaining gap
+and the verification used. A prompt reminder may explain the invariant, but does
+not count as enforcement. Report which check now catches the mistake, or which
+gap remains.
+
 ### Understand before optimizing
 
 Remove unnecessary work and known pathological shapes such as N+1 I/O first. When a
@@ -150,16 +191,20 @@ Use this loop during planning, implementation, review, and verification:
 2. **Hunt landmines** — identify delayed failures, hidden state, and unvalidated
    assumptions.
 3. **Collect receipts** — justify limits and trade-offs with evidence.
-4. **Install tripwires** — make violated assumptions fail clearly.
+4. **Install tripwires** — make violated assumptions fail clearly. For each confirmed
+   mistake, fix the cause and retain the smallest check that catches its recurrence.
 5. **Simplify** — delete work, collapse pass-through layers, and make the design
    obvious.
-6. **Verify** — produce falsifiable evidence for the user-visible claim.
+6. **Verify** — produce falsifiable evidence for the user-visible claim and show the
+   retained check rejects the original failure through normal validation. Report any
+   remaining enforcement gap explicitly.
 
 ## Review Questions
 
 - What future failure is hidden by this apparently harmless choice?
 - Which operational numbers lack receipts?
 - Which assumptions are comments instead of tripwires?
+- Which executable check catches this mistake next time?
 - Can a failure still look like success?
 - Is state or I/O hidden from the interface?
 - Does this abstraction remove complexity or merely relocate it?

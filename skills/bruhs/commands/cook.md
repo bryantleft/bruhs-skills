@@ -457,6 +457,14 @@ Tidy naming, extract helpers, remove duplication, tighten types. Re-run the full
 Loop RED → GREEN → REFACTOR for each new behavior. Do not batch multiple behaviors into one RED.
 
 **Cleanup after the cycle (only if we wrote temp tests):**
+
+For a confirmed bug, follow `practices/engineering-principles.md` → Turn mistakes
+into tripwires before cleanup. Promote its reproduction into the project's normal
+test suite, or retain an equivalent enforced check, and remove retained files from
+`tempTestFiles`. If no harness exists, establish a minimal persistent validation
+path where practical; otherwise report the enforcement gap. Cleanup must never
+delete the only check that catches a confirmed mistake.
+
 ```javascript
 if (!testSuiteExists && tempTestFiles.length > 0) {
   tempTestFiles.forEach(f => rm(f))
@@ -739,7 +747,7 @@ if (devServerStartedByUs) {
   console.log("✓ Stopped dev server")
 }
 
-// Remove temporary test files only if no test suite existed
+// Remove scratch tests only; retained regression checks were removed from tempTestFiles
 if (!testSuiteExists && tempTestFiles.length > 0) {
   tempTestFiles.forEach(f => rm(f))
   console.log("✓ Cleaned up temporary test files")
@@ -747,6 +755,11 @@ if (!testSuiteExists && tempTestFiles.length > 0) {
 ```
 
 ### Step 7: Ready to Ship
+
+For each confirmed mistake fixed during the build or self-review, name the retained
+check, its normal validation command, and the evidence that it rejects the original
+failure and accepts the fix. If enforcement remains incomplete, say so explicitly
+in the handoff; green checks do not imply the failure is now covered.
 
 Before reporting "ready to ship", run the full validation suite. A passing local RED-GREEN-REFACTOR cycle is not sufficient — the project's typecheck + lint + tests must all pass end-to-end.
 
