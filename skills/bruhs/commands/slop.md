@@ -58,6 +58,7 @@ Quick mode focuses on the AI-slop patterns that are most likely to be **introduc
 - Re-exported types or `// removed` placeholder comments for deleted code
 - Backwards-compat shims for code paths that no longer exist
 - Test descriptions that restate the function name (`describe('drawCard', () => it('drawCard', …))`)
+- Added tests that duplicate an existing owner's contract, restate the implementation, or cannot name a bug that would make them fail
 - Comments that explain WHAT the code does (the code already shows that), instead of WHY
 - Comments moved or reworded without first checking whether deleting them leaves the reader wrong
 - Comments citing things that rot: ticket/plan IDs, dates, people, line numbers
@@ -582,6 +583,38 @@ console.log('data:', data);
 console.log('debugging here');
 console.log('TODO: remove this');
 ```
+
+**4.6 Ownerless Tests**
+```typescript
+// SLOP: restates the implementation; breaks on a harmless refactor,
+// stays green if the total is wrong
+it('calls computeTax once', () => {
+  checkout(cart);
+  expect(computeTax).toHaveBeenCalledTimes(1);
+});
+
+// SLOP: a second owner for a contract checkout.test.ts already asserts
+it('totals the cart', () => expect(checkout(cart).total).toBe(42));
+
+// CLEAN: one owner per contract, asserting behavior at the public interface
+it('includes tax in the total', () => {
+  expect(checkout(cartWithTaxableItem).total).toBe(110);
+});
+```
+
+Every test runs on every change it is selected for, so a test that guards nothing is
+recurring CI cost. Keep a test only if you can name the behavior it protects and a
+plausible bug that would make it fail. When several tests assert one contract, keep
+the strongest as its owner and fold the rest into it.
+
+Guardrails for removal:
+
+- Record each deletion in a ledger in the report: test, contract, owner that now
+  covers it, and the bug the owner still catches.
+- Never delete the only test that guards a contract, even a weak one. Strengthen it
+  instead.
+- A test that encodes a past incident's regression stays unless its owner provably
+  rejects the same failure.
 
 ### Category 5: Copy-Paste Duplication
 

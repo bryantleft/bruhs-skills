@@ -972,6 +972,10 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: true
+
 jobs:
   ci:
     runs-on: blacksmith-2vcpu-ubuntu-2204
@@ -1011,6 +1015,10 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: true
+
 jobs:
   ci:
     runs-on: blacksmith-2vcpu-ubuntu-2204
@@ -1027,6 +1035,8 @@ jobs:
 ```
 
 Replace `<name>` with the project name. If the TypeScript template above uses `ubuntu-latest` instead of the Blacksmith runner, use `ubuntu-latest` here too for consistency.
+
+The `concurrency` block cancels a PR's in-progress run when a newer commit is pushed, since a run for a superseded commit proves nothing anyone will merge. Each push to `main` gets its own group (keyed on the commit SHA), so no merged commit's run is cancelled or dropped from the queue. When the project grows beyond one job, put path gates in the job's `if:` condition (or a cheap upstream changes job) rather than in a step after checkout, so skipped work never allocates a runner. See `practices/testing-infrastructure.md` → CI cycle time.
 
 ## Example: New Project
 

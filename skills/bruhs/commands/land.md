@@ -114,6 +114,8 @@ Pick the first failure and pull logs:
 
 Extract the **first actionable error** — the topmost stack trace, build failure, or assertion. Do not try to fix everything at once.
 
+Reproduce it locally before pushing a fix. Run the failing test file, or the project's changed-tests command when it has one (`vitest related`, `jest --findRelatedTests`, `pytest <path>`, `cargo test -p <crate>`), not the whole suite. Do not push speculative fixes to let CI test a guess: each push re-runs every selected check and queues behind other work. If the failure only reproduces in CI, say so in the iteration log.
+
 ### Step 4: Apply the Smallest Safe Fix
 
 The fix should be:

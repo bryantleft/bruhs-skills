@@ -150,6 +150,14 @@ If an existing check already catches it, fix why that check was skipped or ignor
 do not add a duplicate. Keep enforcement scoped to the demonstrated failure class,
 without turning an isolated typo or preference into a universal rule.
 
+Each contract has one strong owner. Before adding a test, find the check that
+already owns the behavior and strengthen it instead of writing a second one. A
+retained test must name the behavior it protects and a plausible bug that would make
+it fail; a test that restates the implementation, breaks on a harmless refactor, or
+stays green when the behavior breaks is noise, not a tripwire. Every retained check
+runs on every change it is selected for, so the tripwire stays as small as the
+failure class it covers.
+
 If reliable automation is not practical within the task, state the remaining gap
 and the verification used. A prompt reminder may explain the invariant, but does
 not count as enforcement. Report which check now catches the mistake, or which
@@ -160,6 +168,11 @@ gap remains.
 Remove unnecessary work and known pathological shapes such as N+1 I/O first. When a
 performance change trades away readability, flexibility, or correctness, measure the
 real path before and after.
+
+The same applies to CI. Measure cycle time from PR creation to merge, not runner
+cost alone: a cheaper runner that makes dependent work wait longer is a regression.
+Delete redundant tests and jobs, skip work before a runner starts, and cancel
+superseded runs before tuning shard counts or runner sizes.
 
 ### Prefer obvious over clever
 
@@ -209,4 +222,5 @@ Use this loop during planning, implementation, review, and verification:
 - Is state or I/O hidden from the interface?
 - Does this abstraction remove complexity or merely relocate it?
 - What can be deleted?
+- Which existing check already owns this contract?
 - What evidence would prove this change works?

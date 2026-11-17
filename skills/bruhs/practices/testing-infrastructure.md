@@ -16,6 +16,7 @@ Used by `/bruhs:drill`. Also pairs with `/bruhs:slop` (line-level audit), `/bruh
 - [Gating posture](#gating-posture)
 - [Replace, don't layer](#replace-dont-layer)
 - [The orchestrator is load-bearing](#the-orchestrator-is-load-bearing)
+- [CI cycle time](#ci-cycle-time)
 - [Rejected framings](#rejected-framings)
 
 ---
@@ -154,6 +155,8 @@ Walk the project organically — CI workflow files, package config, test config,
 | **Orchestrator advisory** | `.github/workflows/*.yml` has `continue-on-error: true` on layers the team thinks of as gated |
 | **Threshold drift** | Coverage threshold has been lowered in the last 6 months to keep CI green |
 | **Exclusion drift** | Architecture rule exclusion list has grown; mutation runner's "skip" list has grown |
+| **Ownerless tests** | Several tests assert the same contract; tests restate implementation (mock-call counts, private shapes) and break on harmless refactors; no test names a bug it would catch |
+| **Orchestrator waste** | See [CI cycle time](#ci-cycle-time) — no superseded-run cancellation, skips after setup, the full suite on every PR with no selection, the same gate at every stage |
 
 **Apply the "what would slip through" test** before proposing adoption. If you can't name a concrete bug class this layer would catch in *this* codebase, don't propose it. Vague "best practice" isn't a candidate.
 
@@ -211,7 +214,7 @@ The 8th layer doesn't fit the same shape as 1–7. It isn't a layer that catches
 
 **Discipline floor:**
 
-- Every gate runs on every PR (or every gate has a documented scheduled-only reason).
+- Every gate runs at a declared stage: PR, push to main, scheduled, or release. A gate missing from the PR stage has a documented reason, and a PR-stage gate that selects a subset widens to the full set whenever a change's dependencies are unknown.
 - No `continue-on-error: true` on any layer except those with an ADR explaining why.
 - Required checks in branch protection match the gates the team thinks are gated.
 - The CI failure message names which layer failed and what the gate was, so the failure is actionable on first read.
@@ -223,6 +226,30 @@ The 8th layer doesn't fit the same shape as 1–7. It isn't a layer that catches
 - Future adoption proposals face headwinds: "we tried adopting X, it didn't help".
 
 Fix the orchestrator first (or in the same PR as the first adoption). Otherwise everything else is theatre.
+
+---
+
+## CI cycle time
+
+The orchestrator's second job is to verify each change without making it wait. Agents
+produce tests, jobs and retries faster than CI can check them, so waste in the
+orchestrator turns directly into queued work. The metric is **cycle time: PR creation
+to merge**. Runner cost is a constraint on it, not a substitute: a cheaper runner that
+makes dependent work wait longer is a regression.
+
+Fix in this order, cheapest and safest first:
+
+1. **Delete waste.** Remove tests with no owner (see [Ownerless tests](#diagnostics-spotting-weak-or-missing-layers)) and jobs whose result nobody reads. Every redundant test runs on every selected change forever.
+2. **Cancel superseded runs.** A `concurrency` group with `cancel-in-progress` on PRs. A run for a commit that is no longer the head proves nothing anyone will merge.
+3. **Skip before setup.** Put path and change gates in the job's `if:` condition or a cheap upstream "changes" job, not in a step after checkout and install. A skip after setup still pays for the runner and the setup.
+4. **Run each gate at one stage.** PR revisions run merge-required gates. Pushes to main run small regression guards. Broad or slow validation runs on a schedule against a named revision. Release gates validate the exact revision that ships. An old green scheduled run is not proof for a newer commit.
+5. **Select tests from the diff, deterministically.** Map changed files to tests through explicit owner mappings, sibling and directory tests, and reverse imports. Unknown, shared, deleted or ambiguous inputs widen the run to the full set. Record why each test was selected, keep a one-switch rollback to the full suite, and declare file reads the import graph cannot see. Model-predicted selection is not a substitute for real dependencies; run it only in shadow mode, where it never skips a test.
+6. **Reuse environments safely.** Key caches on lockfile, toolchain and platform, and let only trusted writers (the default branch) populate shared caches so a PR cannot poison them.
+7. **Size shards last.** Each shard repeats setup, so over-sharding adds cost without shortening the slowest job. Pack and balance shards against measured job durations.
+
+Every number in this section's changes — shard counts, admission delays, cache lifetimes, test-line budgets — needs a receipt from this repository's own timings or quotas. Do not copy another project's values.
+
+A **test-line ratchet** (net new test lines per change, over-budget changes offset by deleting or consolidating tests, or justified in the PR) is a legitimate ratchet posture once the suite is known to carry ownerless tests. Its ceiling needs a receipt like any other number.
 
 ---
 
