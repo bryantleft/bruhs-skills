@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quota settings</title>
+<style>
+  :root { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color: #1c1f24; }
+  body { margin: 0; background: #f6f7f9; }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 18px 32px; background: #fff; border-bottom: 1px solid #e5e7eb; }
+  header a { color: #2563eb; text-decoration: none; font-weight: 600; }
+  main { max-width: 880px; margin: 32px auto; padding: 0 20px; }
+  .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 24px; margin-bottom: 20px; }
+  label { display: block; font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+  input, select { font: inherit; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; width: 100%; box-sizing: border-box; }
+  .row { display: flex; gap: 12px; align-items: end; }
+  button { font: inherit; font-weight: 600; padding: 10px 18px; border-radius: 8px; border: 0; background: #2563eb; color: #fff; cursor: pointer; }
+  #status { margin-top: 14px; font-size: 15px; color: #047857; min-height: 1.4em; }
+  .secret { font-family: ui-monospace, Menlo, monospace; }
+  li { padding: 14px 0; border-bottom: 1px solid #f0f1f3; }
+  .palette { position: fixed; inset: 0; display: none; place-items: start center; padding-top: 120px; background: rgba(0,0,0,.25); }
+  .palette.open { display: grid; }
+  .palette div { background: #fff; width: 480px; border-radius: 12px; padding: 16px; box-shadow: 0 20px 50px rgba(0,0,0,.2); }
+</style>
+</head>
+<body>
+<header><strong>Acme Console</strong><a href="#docs">Docs</a></header>
+<main>
+  <div class="card">
+    <h2>Search quota</h2>
+    <p>API key: <span class="secret" data-sensitive>sk_live_51HxYzQ</span></p>
+    <div class="row">
+      <div style="flex:1"><label for="limit">Requests per minute</label><input id="limit" placeholder="100"></div>
+      <div style="width:180px"><label for="scope">Applies to</label><select id="scope"><option value="client">Each client</option><option value="fleet">Whole fleet</option></select></div>
+      <button id="save">Save limit</button>
+    </div>
+    <div id="status" role="status"></div>
+  </div>
+  <div class="card"><h3>Recent clients</h3><ul id="clients"></ul></div>
+  <div class="card" id="danger"><h3>Danger zone</h3><button style="background:#dc2626">Reset all counters</button></div>
+</main>
+<div class="palette" id="palette"><div><input placeholder="Type a command…" aria-label="Command"></div></div>
+<script>
+  const ul = document.getElementById('clients');
+  for (let i = 1; i <= 24; i++) { const li = document.createElement('li'); li.textContent = 'client-' + String(i).padStart(3, '0') + ' — ' + (90 + i) + ' req/min'; ul.appendChild(li); }
+  document.getElementById('save').onclick = () => {
+    const v = document.getElementById('limit').value || '100';
+    document.getElementById('status').textContent = '✓ Saved: ' + v + ' requests per minute, ' + document.getElementById('scope').selectedOptions[0].text.toLowerCase();
+  };
+  addEventListener('keydown', (e) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); document.getElementById('palette').classList.add('open'); } if (e.key === 'Escape') document.getElementById('palette').classList.remove('open'); });
+</script>
+</body>
+</html>

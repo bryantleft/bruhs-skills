@@ -3,7 +3,8 @@
 Self-contained helper scripts invoked by the bruhs plugin commands
 (`claim`, `spawn`, `cook`, `yeet`, `peep`, `slop`, `doodle`, `walk`). Stdlib /
 POSIX-bash only — no installs required, except `walk_video.py`, which shells
-out to ffmpeg and a local text-to-speech engine. All scripts are non-destructive:
+out to ffmpeg and a local text-to-speech engine, and `record_demo.mjs`, which
+needs Node 18+, Playwright with Chromium, and ffmpeg. All scripts are non-destructive:
 they only read project files or write to known paths (`CLAUDE.md`,
 `AGENTS.md`, or legacy `.claude/bruhs.json`).
 
@@ -178,9 +179,41 @@ Exit codes: `0` success, `2` usage or script validation error, `3` ffmpeg
 (with libass), the requested engine, or its voice is missing, `4` ffmpeg or
 the TTS engine failed mid-render.
 
+### `record_demo.mjs`
+
+Record a browser demo from a shot list (URL, device, steps) and render an MP4
+that a reviewer can read. Used by `walk --video`, `verify --keep-artifacts` and
+UI previews; the shot-list format lives in `practices/demo-recording.md`.
+
+Invocation:
+
+    node <SKILL_DIR>/scripts/record_demo.mjs check   shots.json
+    node <SKILL_DIR>/scripts/record_demo.mjs observe URL|shots.json [--device NAME] [--steps]
+    node <SKILL_DIR>/scripts/record_demo.mjs record  shots.json --out DIR [--headed] [--keep-work]
+
+`check` validates the shot list without a browser: one action per step, valid
+targets, sizes and zooms. It warns when the capture resolution can't keep zoomed
+detail sharp (fewer than 0.8 captured pixels per output pixel) and names the
+scale that would.
+
+`observe` opens the page (after any `setup` steps) and prints its accessibility
+snapshot, so targets can be written from real roles and names.
+
+`record` drives Chromium through the steps with `--force-device-scale-factor`
+so the screencast delivers device pixels, moves the real mouse along the same
+eased path it draws, and logs a timeline. A second offscreen Chromium page
+composites each output frame (camera zoom, cursor or touch indicators, click
+ripples, key chips) and pipes it to ffmpeg. It writes `demo.mp4`, `poster.png`
+and `manifest.json` into `--out`.
+
+Exit codes: `0` success, `2` usage or shot-list error, `3` Playwright,
+Chromium or ffmpeg missing, `4` a step failed (the error names the step, saves
+`failed-step-N.png` and prints the page's accessibility snapshot) or the render
+failed.
+
 ## Notes
 
 - JSON output is pretty-printed so callers can pipe through `jq` or
   re-parse without guesswork.
 - Errors always go to stderr; success payloads always go to stdout.
-- No script deletes files or runs destructive git commands. `walk_video.py` removes only the `work/` folder it creates under `--out`.
+- No script deletes files or runs destructive git commands. `walk_video.py` and `record_demo.mjs` remove only the `work/` folder they create under `--out`.

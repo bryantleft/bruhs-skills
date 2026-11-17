@@ -15,6 +15,7 @@ Generate a walkthrough that reads like a peer explaining the PR to a reviewer �
 - [Pseudocode Summaries](#pseudocode-summaries)
 - [Canvas Mode](#canvas-mode)
 - [Video Mode](#video-mode)
+  - [Demo footage](#demo-footage)
 - [Examples](#examples)
 - [Tips](#tips)
 
@@ -283,9 +284,29 @@ something that ran and that you can point at:
 
 A checked box in the PR body is the author's claim, not a receipt. If the PR body says
 "tested locally" and nothing here shows it, the claim is `unchecked`. When a demo would
-help and there is no artifact, run `/bruhs:verify --keep-artifacts` first, or say the
+help and there is no artifact, run `/bruhs:verify --keep-artifacts` first, or record
+one with `scripts/record_demo.mjs` (see [Demo footage](#demo-footage)), or say the
 video has no demo. Artifacts can hold secrets, customer data or tokens. Look at every
 image and clip before it goes in the video.
+
+### Demo footage
+
+When the change is visible in a browser, record the demo with the bruhs recorder
+rather than a raw screen grab:
+
+```bash
+DEMO="$(git rev-parse --absolute-git-dir)/bruhs/demo/<slug>"
+node <SKILL_DIR>/scripts/record_demo.mjs observe http://127.0.0.1:<port>/<route>
+node <SKILL_DIR>/scripts/record_demo.mjs check  "$DEMO/shots.json"
+node <SKILL_DIR>/scripts/record_demo.mjs record "$DEMO/shots.json" --out "$DEMO"
+```
+
+It records at device pixels, draws a cursor that moves like a hand (touch indicators on
+a mobile device), zooms in on the element each step touches, and blurs `redact`
+selectors. Add a `{"zoom": T}` step on the result of the change, not only the button
+that causes it. Put `{"mark": "…"}` steps where the narration turns; their times in
+`manifest.json` are the `start` values for the scenes that use the clip. The shot list
+format is in `practices/demo-recording.md`.
 
 ### Step V2: Write the script
 
@@ -309,7 +330,7 @@ optional for a trivial change.
      "visual": {"type": "diff", "path": "src/server.ts", "text": "@@ -14,6 +16,9 @@\n+    if (!decision.allowed) {\n+      return send(res, 429, …);\n+    }"},
      "narration": "Every request after the hundredth in a minute gets a four twenty nine."},
     {"kind": "change", "heading": "The limit in action",
-     "visual": {"type": "video", "src": "/tmp/verify-this/search-quota/treatment/burst.mp4"},
+     "visual": {"type": "video", "src": "/tmp/verify-this/search-quota/treatment/demo.mp4", "fill": true},
      "narration": "Here the hundred and first request is refused."},
     {"kind": "implications", "heading": "Per process, not per fleet",
      "visual": {"type": "points", "items": ["3 replicas: a client can get up to 3x the quota", "Old keys are never evicted"]},
@@ -329,7 +350,7 @@ optional for a trivial change.
 | `title` | The intent scene: PR title, branch and size from `pr` |
 | `points` | Implications and tradeoffs: a few short items |
 | `code` / `diff` | The lines the narration talks about (`path`, optional `start_line`). A diff colors `+`, `-` and `@@` lines |
-| `image` / `video` | Screenshots and recordings from verify or a manual demo (`src`, relative to the script). A clip shorter than the narration holds its last frame. `start` skips into it |
+| `image` / `video` | Screenshots and recordings from verify, `record_demo.mjs` or a manual demo (`src`, relative to the script). A clip shorter than the narration holds its last frame. `start` skips into it. `"fill": true` shows it full-frame under the captions instead of in the slide's content box: use it for recordings, whose detail is lost at a third of the frame |
 | `claims` | The validation scene, always: every claim as **shown**, **intended** or **not checked** |
 
 **Narration rules:**
@@ -570,3 +591,4 @@ Walkthrough ready: http://127.0.0.1:8432/walk-pr-46.html
 - **Don't lie about risk.** If something is risky, list it. A walkthrough that hides risk is worse than no walkthrough.
 - **Run before `/bruhs:land`** so reviewers can start while CI churns.
 - **Run `/bruhs:verify --keep-artifacts` before `--video`** when the change has visible behavior. Its screenshots and recordings are the demo footage, and its verdict is a receipt.
+- **Record demos with `record_demo.mjs`, show them with `"fill": true`.** The zooms are what make a 1080p walkthrough readable; a full-page recording in a slide box is not.

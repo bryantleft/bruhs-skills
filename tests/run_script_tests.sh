@@ -19,6 +19,7 @@
 #     validate_pr_ready.sh    → validate-pr-ready-node.json
 #     write_bruhs_config.py   → write-bruhs-config-shim.json
 #     walk_video.py           → walk-video-script.json
+#     record_demo.mjs         → record-demo-shots.json
 #     export_evals_json.py    → every evals/<case>/ loads; export is valid JSON
 #     evals/*/scaffold.sh     → each builds its workspace offline; mocks in sync
 #
@@ -560,6 +561,134 @@ else
     printf '  [SKIP] walk_video render (ffmpeg with libass not on PATH)\n'
 fi
 
+mutate fill-not-bool 's["scenes"][1]["visual"] = {"type": "image", "src": "script.json", "fill": "yes"}'
+out=$(python3 "$SCRIPTS/walk_video.py" check "$wv/fill-not-bool.json" --tts none 2>&1); ec=$?
+assert_eq "a non-boolean fill exits 2" "2" "$ec"
+assert_contains "the error names fill" 'must be true or false' "$out"
+
+#─────────────────────────────────────────────────────────────────────────────
+heading "record_demo.mjs — shot-list tripwires, resolution, desktop + touch recordings"
+#─────────────────────────────────────────────────────────────────────────────
+
+if ! command -v node >/dev/null 2>&1; then
+    printf '  [SKIP] record_demo (node not on PATH)\n'
+else
+rd="$WORK/record-demo"
+mkdir -p "$rd"
+app_url="file://$TESTS/fixtures/demo-app/index.html"
+cat > "$rd/shots.json" <<EOF
+{
+  "url": "$app_url",
+  "redact": ["[data-sensitive]"],
+  "steps": [
+    {"mark": "save"},
+    {"type": {"label": "Requests per minute"}, "text": "250", "clear": true},
+    {"click": {"role": "button", "name": "Save limit"}},
+    {"waitFor": {"text": "Saved: 250"}},
+    {"zoom": "#status", "hold": 600},
+    {"press": "Meta+K", "pause": 300}
+  ]
+}
+EOF
+# shots_mutate NAME EXPR: copy shots.json with a Python expression applied to `s`.
+shots_mutate() {
+    python3 - "$rd/shots.json" "$rd/$1.json" "$2" <<'PY'
+import json, sys
+s = json.load(open(sys.argv[1]))
+exec(sys.argv[3])
+json.dump(s, open(sys.argv[2], "w"))
+PY
+}
+
+out=$(node "$SCRIPTS/record_demo.mjs" check "$rd/shots.json" 2>&1); ec=$?
+assert_eq "record_demo check accepts a well-formed shot list" "0" "$ec"
+assert_contains "check reports the device-pixel capture size" '"pixels": "2560x1440"' "$out"
+
+shots_mutate two-actions 's["steps"][1]["click"] = "#save"'
+out=$(node "$SCRIPTS/record_demo.mjs" check "$rd/two-actions.json" 2>&1); ec=$?
+assert_eq "a step with two actions exits 2" "2" "$ec"
+assert_contains "the error asks for exactly one action" "needs exactly one action" "$out"
+
+shots_mutate bad-target 's["steps"][2]["click"] = {"role": "button", "label": "Save"}'
+out=$(node "$SCRIPTS/record_demo.mjs" check "$rd/bad-target.json" 2>&1); ec=$?
+assert_eq "a target with two kinds exits 2" "2" "$ec"
+assert_contains "the error lists the target kinds" "needs exactly one of role" "$out"
+
+shots_mutate relative-url 's["url"] = "/settings"'
+ec=$(capture_ec node "$SCRIPTS/record_demo.mjs" check "$rd/relative-url.json")
+assert_eq "a relative start url exits 2" "2" "$ec"
+
+shots_mutate odd-size 's["output"] = {"size": "1921x1080"}'
+out=$(node "$SCRIPTS/record_demo.mjs" check "$rd/odd-size.json" 2>&1); ec=$?
+assert_eq "an odd output size exits 2" "2" "$ec"
+assert_contains "the error explains even sizes" "even numbers" "$out"
+
+shots_mutate nothing-visible 's["steps"] = [{"wait": 500}]'
+ec=$(capture_ec node "$SCRIPTS/record_demo.mjs" check "$rd/nothing-visible.json")
+assert_eq "a shot list with no visible step exits 2" "2" "$ec"
+
+shots_mutate deep-zoom 's["steps"][4]["scale"] = 3'
+out=$(node "$SCRIPTS/record_demo.mjs" check "$rd/deep-zoom.json" 2>&1); ec=$?
+assert_eq "a zoom deeper than the capture supports warns but passes" "0" "$ec"
+assert_contains "the warning names the scale that keeps it sharp" 'zoomed detail blurs' "$out"
+
+shots_mutate low-scale 's["scale"] = 1'
+out=$(node "$SCRIPTS/record_demo.mjs" check "$rd/low-scale.json" 2>&1)
+assert_contains "an upscaled capture warns that it will look soft" "it will look soft" "$out"
+
+can_record=0
+if command -v ffmpeg >/dev/null 2>&1 && node -e "require('playwright').chromium.launch().then(b => b.close()).catch(() => process.exit(1))" >/dev/null 2>&1; then
+    can_record=1
+fi
+if [ "$can_record" -eq 1 ]; then
+    node "$SCRIPTS/record_demo.mjs" record "$rd/shots.json" --out "$rd/out" >/dev/null 2>"$rd/record.err"; ec=$?
+    assert_eq "desktop record exits 0" "0" "$ec"
+    [ "$ec" -ne 0 ] && sed 's/^/      /' "$rd/record.err" | tail -8
+    assert "record writes demo.mp4" test -s "$rd/out/demo.mp4"
+    assert "record writes poster.png" test -s "$rd/out/poster.png"
+    assert "record removes its work directory" sh -c "! test -d '$rd/out/work'"
+    vstream=$(ffprobe -v error -select_streams v:0 -show_entries stream=width,height,r_frame_rate -of csv=p=0 "$rd/out/demo.mp4" 2>/dev/null)
+    assert_eq "desktop video is 1920x1080 at 60 fps" "1920,1080,60/1" "$vstream"
+    assert "manifest: device pixels, cursor moves, clicks, a key chip, a zoom, the chapter" python3 - "$rd/out/manifest.json" "$rd/out/demo.mp4" <<'PY'
+import json, subprocess, sys
+m = json.load(open(sys.argv[1]))
+assert m["capture"]["pixels"] == {"width": 2560, "height": 1440}, m["capture"]
+i = m["interactions"]
+assert i["cursor_moves"] >= 2 and i["clicks"] >= 2 and i["keys"] == 1 and i["touches"] == 0, i
+assert m["zooms"] and max(z["z"] for z in m["zooms"]) >= 1.15, m["zooms"]
+assert m["chapters"] and m["chapters"][0]["label"] == "save", m["chapters"]
+probed = float(subprocess.check_output(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", sys.argv[2]]))
+assert abs(probed - m["seconds"]) < 0.2, (probed, m["seconds"])
+PY
+
+    printf '{"url": "%s", "device": "mobile", "steps": [{"tap": {"role": "button", "name": "Save limit"}}, {"scroll": 400}]}\n' "$app_url" > "$rd/mobile.json"
+    node "$SCRIPTS/record_demo.mjs" record "$rd/mobile.json" --out "$rd/mobile" >/dev/null 2>"$rd/mobile.err"; ec=$?
+    assert_eq "mobile record exits 0" "0" "$ec"
+    [ "$ec" -ne 0 ] && sed 's/^/      /' "$rd/mobile.err" | tail -8
+    vstream=$(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 "$rd/mobile/demo.mp4" 2>/dev/null)
+    assert_eq "a phone recording defaults to 1080x1920 portrait" "1080,1920" "$vstream"
+    assert "a touch device shows touches, never a cursor, at 3x pixels" python3 - "$rd/mobile/manifest.json" <<'PY'
+import json, sys
+m = json.load(open(sys.argv[1]))
+assert m["capture"]["touch"] and m["capture"]["scale"] == 3, m["capture"]
+i = m["interactions"]
+assert i["touches"] >= 2 and i["cursor_moves"] == 0 and i["clicks"] == 0, i
+PY
+
+    shots_mutate missing-target 's["steps"] = [{"click": {"role": "button", "name": "Nope"}, "timeout": 1000}]'
+    out=$(node "$SCRIPTS/record_demo.mjs" record "$rd/missing-target.json" --out "$rd/fail" 2>&1); ec=$?
+    assert_eq "a step whose target never appears exits 4" "4" "$ec"
+    assert_contains "the error names the failed step" 'step 1 (click role=button[name="Nope"])' "$out"
+    assert_contains "the error shows what the page has instead" 'button "Save limit"' "$out"
+    assert "the failure leaves a screenshot" test -s "$rd/fail/failed-step-1.png"
+    printf '%s' "$out" > "$rd/fail.out"
+    assert "redacted text stays out of the failure snapshot" sh -c "! grep -q sk_live '$rd/fail.out'"
+    assert "a failed record removes its work directory" sh -c "! test -d '$rd/fail/work'"
+else
+    printf '  [SKIP] record_demo record (playwright with chromium, or ffmpeg, not available)\n'
+fi
+fi
+
 #─────────────────────────────────────────────────────────────────────────────
 heading "export_evals_json.py"
 #─────────────────────────────────────────────────────────────────────────────
@@ -567,10 +696,12 @@ heading "export_evals_json.py"
 case_count=$(find "$PLUGIN_DIR/evals" -mindepth 2 -maxdepth 2 \( -name prompt.md -o -name case.yaml \) -exec dirname {} \; | sort -u | wc -l | tr -d ' ')
 assert "every eval case passes --check" python3 "$TESTS/export_evals_json.py" --check
 out=$(python3 "$TESTS/export_evals_json.py" 2>/dev/null)
-assert "export prints valid JSON" python3 -c "import json,sys; json.loads(sys.argv[1])" "$out"
-exported=$(python3 -c "import json,sys; d=json.loads(sys.argv[1]); print(len(d['evals']))" "$out" 2>/dev/null)
+# The export is larger than one argv string may be (128 KiB on Linux): read it from a file.
+printf '%s' "$out" > "$WORK/evals-export.json"
+assert "export prints valid JSON" python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$WORK/evals-export.json"
+exported=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(len(d['evals']))" "$WORK/evals-export.json" 2>/dev/null)
 assert_eq "export holds one entry per case folder" "$case_count" "$exported"
-assert "every exported case has a prompt and assertions" python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert all(e['prompt'] and e['assertions'] for e in d['evals'])" "$out"
+assert "every exported case has a prompt and assertions" python3 -c "import json,sys; d=json.load(open(sys.argv[1])); assert all(e['prompt'] and e['assertions'] for e in d['evals'])" "$WORK/evals-export.json"
 
 bad_evals="$WORK/bad-evals"
 mkdir -p "$bad_evals/broken-case/graders"

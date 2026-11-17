@@ -25,7 +25,18 @@ If `/expect` finds breakage, fix it and re-run before capturing anything. **Neve
 
 Capture against a **running dev server** (start it if needed; remember whether you started it so you can stop it). Capture at least desktop (1280×800) and mobile (390×844). When a meaningful baseline exists (the change modifies existing UI), capture **before** (stash or check out the base) and **after** so the PR can show both.
 
-**Preferred — chrome-devtools MCP** (the tool `/expect` already uses). If connected, drive navigation + screenshots through it:
+**The recording — `scripts/record_demo.mjs`.** Record the interaction the PR changes with the bruhs recorder, not a raw screen grab. It captures at device pixels, draws a moving cursor (touch indicators on mobile), zooms in on each element the steps touch and blurs `redact` selectors. Write a shot list, check it, record:
+
+```bash
+DEMO="$(git rev-parse --absolute-git-dir)/bruhs/demo/<slug>"
+node <SKILL_DIR>/scripts/record_demo.mjs observe http://127.0.0.1:<port>/<route>   # roles and names for targets
+node <SKILL_DIR>/scripts/record_demo.mjs check  "$DEMO/shots.json"
+node <SKILL_DIR>/scripts/record_demo.mjs record "$DEMO/shots.json" --out "$DEMO"         # demo.mp4 + poster.png
+```
+
+Record the desktop flow, and a `"device": "mobile"` flow when the change is responsive. Shot-list format, resolution rules and privacy: **`practices/demo-recording.md`**. The tools below are for screenshots and measurement; fall back to their recording only when the recorder can't run (no Playwright or ffmpeg), and say so.
+
+**Screenshots — chrome-devtools MCP** (the tool `/expect` already uses). If connected, drive navigation + screenshots through it:
 
 ```javascript
 // Detect: ToolSearch("select:mcp__chrome-devtools__take_screenshot")
@@ -33,7 +44,7 @@ Capture against a **running dev server** (start it if needed; remember whether y
 // Tools are prefixed mcp__chrome-devtools__* (navigate, set viewport, screenshot).
 ```
 
-**Scripted measurement + recording — [agent-browser](https://github.com/vercel-labs/agent-browser)** (`npm i -g agent-browser && agent-browser install`). It drives its own Chrome, so it doesn't touch the user's browser, and one pass can interact, measure and record. Use it when a parity claim needs a number ("the icon sits 4px off") or when chrome-devtools isn't connected:
+**Scripted measurement — [agent-browser](https://github.com/vercel-labs/agent-browser)** (`npm i -g agent-browser && agent-browser install`). It drives its own Chrome, so it doesn't touch the user's browser, and one pass can interact, measure and record. Use it when a parity claim needs a number ("the icon sits 4px off") or when chrome-devtools isn't connected:
 
 ```bash
 agent-browser set viewport 1280 800 2                                  # 2 = retina
@@ -48,7 +59,7 @@ agent-browser record stop                                              # needs f
 
 It starts from a fresh profile, so log in as part of the flow for authenticated pages.
 
-**Fallback — the project's Playwright** (do not add it as a dep just for this; use what's in `package.json`). This both screenshots and records the interaction as video in one session:
+**Fallback — the project's Playwright** (do not add it as a dep just for this; use what's in `package.json`). Its `recordVideo` captures CSS pixels (half resolution on a 2x screen) with no cursor, so use it for a recording only when `record_demo.mjs` can't run:
 
 ```javascript
 import { chromium } from 'playwright'
@@ -90,7 +101,7 @@ BR=$(git branch --show-current)
 DEST=".bruhs/pr-media/$BR"
 tmp=$(mktemp -d)
 git worktree add -q "$tmp" --orphan bruhs-assets 2>/dev/null || git worktree add -q "$tmp" bruhs-assets
-mkdir -p "$tmp/$DEST" && cp /tmp/bruhs-ui-preview/*.png /tmp/bruhs-ui-preview/video/*.webm "$tmp/$DEST/"
+mkdir -p "$tmp/$DEST" && cp /tmp/bruhs-ui-preview/*.png "$DEMO/demo.mp4" "$DEMO/poster.png" "$tmp/$DEST/"
 ( cd "$tmp" && git add -A && git commit -q -m "chore(pr-media): $BR" && git push -q origin bruhs-assets )
 git worktree remove "$tmp"
 # Raw URL pattern (images render inline in the PR body):
@@ -115,13 +126,14 @@ Verified with `/expect` (adversarial browser tests via chrome-devtools): <1-line
 ![mobile](<raw-url-or-attachment>)
 
 **Recording** — <interaction shown>
-<!-- drag the .webm here for an inline player; file: /tmp/bruhs-ui-preview/video/<name>.webm -->
+<!-- drag demo.mp4 here for an inline player; file: .git/bruhs/demo/<slug>/demo.mp4 -->
 https://github.com/<owner>/<repo>/... (link or attachment)
 ```
 
 ## Rules
 
 - **No preview without verification.** `/expect` must pass first. Capturing a broken UI as if it works is a hallucination.
-- **Show behavior, not just a frame.** The recording must include the interaction the PR changes — a static screenshot is not a "video preview".
+- **Show behavior, not just a frame.** The recording must include the interaction the PR changes — a static screenshot is not a "video preview". Show the effect too: zoom on the result, not only the button.
+- **Redact before recording.** Secrets, tokens, emails and customer data go in the shot list's `redact`; watch the video before it's hosted.
 - **Be honest about hosting.** Images embed automatically; an inline video player requires the manual drag-drop. State which path you used and what (if anything) the user still needs to do.
 - **Clean up.** Stop the dev server if you started it; remove `/tmp/bruhs-ui-preview` after the media is hosted/embedded.

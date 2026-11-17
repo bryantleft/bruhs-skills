@@ -302,6 +302,8 @@ def _validate_visual(
         start = visual.get("start", 0)
         if vtype == "video" and (not isinstance(start, (int, float)) or start < 0):
             errors.append(f"{where}: \"start\" must be a number of seconds ≥ 0")
+        if "fill" in visual and not isinstance(visual["fill"], bool):
+            errors.append(f"{where}: \"fill\" must be true or false")
     elif vtype == "claims":
         errors.extend(_validate_claims(where, claims))
     return errors
@@ -706,8 +708,13 @@ def build_scene_audio(scene: dict, idx: int, engine: str, engines: Dict[str, dic
 def render_scene(scene: dict, idx: int, pr: dict, audio: Path, cues: List[Tuple[float, float, str]],
                  duration: float, work: Path, base_dir: Path, burn_captions: bool) -> Path:
     ass = AssScene(duration)
-    draw_header(ass, scene, pr)
-    draw_visual(ass, scene, pr)
+    visual = scene["visual"]
+    # A filled image or video takes the whole frame: a recording shrunk into
+    # the slide's content box loses the detail it was recorded to show.
+    fill = visual["type"] in ("image", "video") and visual.get("fill") is True
+    if not fill:
+        draw_header(ass, scene, pr)
+        draw_visual(ass, scene, pr)
     if burn_captions:
         for start, end, chunk in cues:
             ass.caption("\\N".join(ass_text(line) for line in chunk.split("\n")), start, end)
@@ -718,9 +725,12 @@ def render_scene(scene: dict, idx: int, pr: dict, audio: Path, cues: List[Tuple[
     dur = f"{duration:.3f}"
     cmd = ["ffmpeg", "-v", "error", "-y", "-f", "lavfi",
            "-i", f"color=c=0x{COLORS['bg']}:s={WIDTH}x{HEIGHT}:r={FPS}:d={dur}"]
-    visual = scene["visual"]
-    box = f"scale={CONTENT_W}:{CONTENT_H}:force_original_aspect_ratio=decrease,setsar=1"
-    place = f"overlay=x={MARGIN_X}+({CONTENT_W}-overlay_w)/2:y={CONTENT_TOP}+({CONTENT_H}-overlay_h)/2"
+    if fill:
+        box = f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=decrease,setsar=1"
+        place = "overlay=x=(main_w-overlay_w)/2:y=(main_h-overlay_h)/2"
+    else:
+        box = f"scale={CONTENT_W}:{CONTENT_H}:force_original_aspect_ratio=decrease,setsar=1"
+        place = f"overlay=x={MARGIN_X}+({CONTENT_W}-overlay_w)/2:y={CONTENT_TOP}+({CONTENT_H}-overlay_h)/2"
     if visual["type"] == "image":
         src = resolve_src(visual["src"], base_dir)
         cmd += ["-loop", "1", "-t", dur, "-i", str(src)]

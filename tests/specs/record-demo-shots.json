@@ -1,0 +1,23 @@
+{
+  "skills": ["bruhs"],
+  "command": "scripts/record_demo.mjs",
+  "query": "node <PLUGIN_DIR>/scripts/record_demo.mjs record shots.json --out <DIR>",
+  "files": ["tests/fixtures/demo-app/index.html"],
+  "context": "A shot list for the demo-app fixture (a quota settings form with a redacted API key): type a limit, click Save, wait for the saved message, zoom on it, press Meta+K. A second shot list records the same page as an iPhone 15 (touch). Playwright with Chromium and ffmpeg with libx264 are installed.",
+  "expected_behavior": [
+    "check exits 0 for the well-formed shot list and reports the capture as 2560x1440 device pixels (1280x720 at scale 2)",
+    "A step with two actions, a target with two kinds, a relative start url, an odd output size, or no visible step exits 2 and names the rule",
+    "A zoom deeper than the capture keeps sharp (under 0.8 captured pixels per output pixel) warns with the scale that would fix it; a capture smaller than the frame warns that it will look soft",
+    "record writes demo.mp4 (1920x1080, 60 fps), poster.png and manifest.json, and removes its work directory",
+    "The desktop manifest records cursor moves, clicks, one key chip, at least one zoom of 1.15x or more, and the mark as a chapter; its duration matches the video",
+    "The mobile recording is 1080x1920, captured at scale 3, with touch indicators and no cursor moves or clicks",
+    "A step whose target never appears exits 4, names the step, saves failed-step-N.png, prints the page's accessibility snapshot without redacted text, and removes the work directory"
+  ],
+  "failure_modes": [
+    "Recording CSS pixels: a 2x viewport captured at half resolution",
+    "A cursor that teleports, or a click with no visible press",
+    "Showing a mouse cursor on a touch device",
+    "A redacted secret leaking through the failure snapshot",
+    "Leaving raw frames behind in the output directory"
+  ]
+}

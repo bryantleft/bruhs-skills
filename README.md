@@ -120,7 +120,7 @@ Git-only mode skips Linear if not configured.
 
 Reviewer walkthrough for a PR: markdown by default (`--post` drops it as a comment), an interactive HTML canvas with `--canvas`, or a narrated video with `--video`.
 
-**Video:** a 45–90 second walkthrough covering intent, change, implications and validation. The demo footage comes from `/bruhs:verify` artifacts. Narration uses a local voice model (piper; macOS `say`, espeak-ng or captions-only as fallbacks), and ffmpeg renders it on your machine. Every result it narrates is labelled shown (with a receipt), intended, or not checked. The author watches it first. Then `--post` adds the transcript as a PR comment, and the author drags the video into it (GitHub has no video upload API).
+**Video:** a 45–90 second walkthrough covering intent, change, implications and validation. The demo footage comes from `/bruhs:verify` artifacts or `scripts/record_demo.mjs`, which records a browser flow from a short shot list at device-pixel resolution, with a cursor that moves like a hand (touch indicators on mobile), auto-zoom on each element the flow touches, keyboard chips and blurred secrets. Narration uses a local voice model (piper; macOS `say`, espeak-ng or captions-only as fallbacks), and ffmpeg renders it on your machine. Every result it narrates is labelled shown (with a receipt), intended, or not checked. The author watches it first. Then `--post` adds the transcript as a PR comment, and the author drags the video into it (GitHub has no video upload API).
 
 ### `/bruhs:peep`
 
@@ -206,6 +206,7 @@ Stack-agnostic and stack-specific guidance, loaded conditionally by `cook` and `
 | `practices/effect-ts.md` + `practices/effect-*.md` | Effect-TS (service, error, schema, layer, RPC, atom, anti-patterns) |
 | `practices/rust.md` + `practices/rust-*.md` | Rust (ownership, errors, async, axum, leptos, gpui, type-state) |
 | `practices/ui-design.md` | UI quality (integrates `pbakaus/impeccable` skills plus Emil-derived design engineering) |
+| `practices/demo-recording.md` | Browser demo recordings — shot lists, resolution, camera, cursor and touch, redaction (used by walk, verify, UI previews) |
 | `practices/design-engineering.md` | Emil-derived UI polish, motion standards, animation review, gestures, performance, a11y, and animation vocabulary |
 
 ## Utility Scripts
@@ -219,6 +220,7 @@ Stack-agnostic and stack-specific guidance, loaded conditionally by `cook` and `
 - `derive_stack_rules.py` — emit stack-specific behavioral rules as markdown given state JSON on stdin.
 - `write_bruhs_config.py` *(deprecated)* — thin shim that forwards to `sync_bruhs_block.py --kind state` so existing callers don't break.
 - `validate_pr_ready.sh` — run typecheck + lint + tests for the detected stack (Node/Rust/Python/Go); used by `yeet`, `peep`, `cook`.
+- `record_demo.mjs` — record a browser demo from a shot list: device-pixel capture, human cursor or touch indicators, auto-zoom on each action, key chips, redaction; used by `walk --video`, `verify` and UI previews.
 - `walk_video.py` — check a walkthrough scene script (claims need receipts, scenes run intent → validation) and render it to a narrated, captioned MP4 with a local TTS engine and ffmpeg; used by `walk --video`.
 
 ## Evaluations
@@ -321,7 +323,8 @@ Run `/mcp` (or your agent's equivalent) to verify connected servers.
 
 - **GitHub CLI (`gh`)** — required for PR creation. Authenticate with `gh auth login`.
 - **tldraw MCP** (optional) — required for `/bruhs:doodle`. See the command docs for install hints.
-- **ffmpeg with libass** (optional) — required for `/bruhs:walk --video`. Homebrew's and Debian's builds include libass.
+- **Playwright + Chromium** (optional) — for `scripts/record_demo.mjs` demo recordings. The project's own Playwright works, or `npm i -g playwright && npx playwright install chromium`.
+- **ffmpeg with libass** (optional) — required for `/bruhs:walk --video` and demo recordings. Homebrew's and Debian's builds include libass.
 - **piper** (optional) — the local voice for `/bruhs:walk --video`: `uv tool install piper-tts`, plus one voice in `~/.local/share/bruhs/voices/`. Without it, narration falls back to macOS `say`, then espeak-ng, then captions only.
 
 ## License

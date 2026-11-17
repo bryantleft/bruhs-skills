@@ -172,6 +172,8 @@ await browser.close()
 
 Do not add Playwright as a project dependency just for the probe — use what's already in `package.json`.
 
+When the evidence is a behavior someone should watch (and with `--keep-artifacts`), record it with `scripts/record_demo.mjs` into `/tmp/verify-this/<slug>/treatment/`: same steps as the probe, written as a shot list, captured at device pixels with a cursor and zooms on the result. Its `demo.mp4`, `poster.png` and `manifest.json` are the receipt `/bruhs:walk --video` uses. Format → `practices/demo-recording.md`.
+
 For Electron / Chromium apps launched with `--remote-debugging-port=<port>`, use `chromium.connectOverCDP('http://127.0.0.1:<port>')` and select the page by a stable app-root selector, **not** by tab order.
 
 ### Performance
