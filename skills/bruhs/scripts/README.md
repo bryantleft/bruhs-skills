@@ -155,10 +155,10 @@ live in `commands/walk.md` → *Video Mode*.
 Invocation:
 
     python3 <SKILL_DIR>/scripts/walk_video.py engines [--voice FILE.onnx]
-    python3 <SKILL_DIR>/scripts/walk_video.py check  script.json [--tts ENGINE]
+    python3 <SKILL_DIR>/scripts/walk_video.py check  script.json [--tts ENGINE] [--slides MODE]
     python3 <SKILL_DIR>/scripts/walk_video.py render script.json --out DIR \
         [--tts auto|piper|say|espeak-ng|none] [--voice FILE.onnx] \
-        [--say-voice NAME] [--no-burn-captions] [--keep-work]
+        [--slides auto|html|ass] [--say-voice NAME] [--no-burn-captions] [--keep-work]
 
 `check` reports every problem at once: scenes out of intent → change →
 implications → validation order, a `shown` claim without a receipt, code or
@@ -166,7 +166,14 @@ points that don't fit the slide, missing image or video files. It also warns
 about backticks in narration and walkthroughs estimated past 90 seconds.
 
 `render` narrates each sentence separately, so captions match the voice
-exactly, then draws slides and captions with libass and joins the scenes.
+exactly, draws the slides, burns captions in with libass and joins the
+scenes with 0.35 s cross-fades that fall in the silence between them.
+
+Slides: `html` draws them in Chromium through `render_slides.mjs` (measured
+layout, highlighted code, code shrinks from 30 px to 22 px before a scene is
+refused); `ass` draws them with libass from estimated character widths.
+`auto` uses `html` when Node can start Playwright's Chromium and warns when
+it falls back. Naming `html` when it's unavailable exits 3.
 It writes `walkthrough.mp4`, `captions.srt`, `transcript.md` (the PR comment
 body, with the claims table) and `manifest.json` into `--out`.
 
@@ -178,6 +185,15 @@ and warns when it falls back. Naming an unavailable engine is an error.
 Exit codes: `0` success, `2` usage or script validation error, `3` ffmpeg
 (with libass), the requested engine, or its voice is missing, `4` ffmpeg or
 the TTS engine failed mid-render.
+
+### `render_slides.mjs`
+
+Internal to `walk_video.py --slides html`: takes the validated scenes and the
+slide geometry as JSON, draws each slide as HTML in Chromium, measures what
+overflows (heading, title lines, code rows and columns at the smallest code
+size, points and claims height) and screenshots each slide to a 1920x1080
+PNG. `probe` checks that Chromium starts. Shares Playwright discovery with
+`record_demo.mjs`.
 
 ### `record_demo.mjs`
 

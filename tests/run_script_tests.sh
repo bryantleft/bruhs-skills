@@ -530,6 +530,27 @@ out=$(python3 "$SCRIPTS/walk_video.py" check "$wv/backticks.json" --tts none 2>&
 assert_eq "backticks in narration warn but pass" "0" "$ec"
 assert_contains "the warning explains backticks are read aloud" "backticks" "$out"
 
+# Slides: HTML measures real layout (and shrinks code to fit); libass estimates.
+wide='return send(res, 429, { error: "rate_limited", retryAfter: windowSeconds, limit: quota.perMinute, client: key });'
+mutate wide-line "s['scenes'][1]['visual']['text'] = '+    ' + '''$wide'''"
+ec=$(capture_ec python3 "$SCRIPTS/walk_video.py" check "$wv/wide-line.json" --tts none --slides ass)
+assert_eq "libass slides refuse a ${#wide}-column line" "2" "$ec"
+if node "$SCRIPTS/render_slides.mjs" probe >/dev/null 2>&1; then
+    out=$(python3 "$SCRIPTS/walk_video.py" check "$wv/wide-line.json" --tts none --slides html 2>&1); ec=$?
+    assert_eq "HTML slides shrink the code until the same line fits" "0" "$ec"
+    assert_contains "check reports the slide renderer" '"slides": "html"' "$out"
+    mutate huge-line "s['scenes'][1]['visual']['text'] = '+' + 'x' * 400"
+    out=$(python3 "$SCRIPTS/walk_video.py" check "$wv/huge-line.json" --tts none --slides html 2>&1); ec=$?
+    assert_eq "a line too wide even at the smallest code size exits 2" "2" "$ec"
+    assert_contains "the error says how many columns fit" "columns; the slide holds" "$out"
+    mutate long-heading 's["scenes"][2]["heading"] = "Counters are per process so a client with three replicas behind the balancer gets three times its quota"'
+    out=$(python3 "$SCRIPTS/walk_video.py" check "$wv/long-heading.json" --tts none --slides html 2>&1); ec=$?
+    assert_eq "a heading wider than one line exits 2" "2" "$ec"
+    assert_contains "the error names the measured overflow" "wider than one line holds" "$out"
+else
+    printf '  [SKIP] walk_video HTML slides (node with playwright chromium not available)\n'
+fi
+
 # No piper binary and no voice: asking for piper by name fails loudly; auto falls back.
 nopiper_path="$(dirname "$(command -v python3)"):/usr/bin:/bin"
 out=$(env PATH="$nopiper_path" XDG_DATA_HOME="$wv/empty" BRUHS_PIPER_VOICE= python3 "$SCRIPTS/walk_video.py" check "$wv/script.json" --tts piper 2>&1); ec=$?
@@ -557,6 +578,17 @@ PY
     assert_contains "transcript keeps the receipt (pipes escaped)" 'npm test: 2 passed \| 0 failed' "$transcript"
     assert_contains "transcript labels unchecked claims" "| Not checked |" "$transcript"
     assert_contains "transcript says the narration engine" "none (captions only)" "$transcript"
+    if node "$SCRIPTS/render_slides.mjs" probe >/dev/null 2>&1; then
+        assert "the default render draws HTML slides and leaves no work directory" python3 -c "import json,sys; assert json.load(open(sys.argv[1]))['slides'] == 'html'" "$wv/out/manifest.json"
+        python3 "$SCRIPTS/walk_video.py" render "$wv/script.json" --tts none --slides ass --out "$wv/out-ass" >/dev/null 2>"$wv/render-ass.err"; ec=$?
+        assert_eq "--slides ass still renders" "0" "$ec"
+        assert "the libass render's length matches its manifest" python3 - "$wv/out-ass/walkthrough.mp4" "$wv/out-ass/manifest.json" <<'PY'
+import json, subprocess, sys
+probed = float(subprocess.check_output(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", sys.argv[1]]))
+m = json.load(open(sys.argv[2]))
+assert m["slides"] == "ass" and abs(probed - m["seconds"]) < 0.2, (probed, m["seconds"])
+PY
+    fi
 else
     printf '  [SKIP] walk_video render (ffmpeg with libass not on PATH)\n'
 fi

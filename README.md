@@ -221,7 +221,7 @@ Stack-agnostic and stack-specific guidance, loaded conditionally by `cook` and `
 - `write_bruhs_config.py` *(deprecated)* — thin shim that forwards to `sync_bruhs_block.py --kind state` so existing callers don't break.
 - `validate_pr_ready.sh` — run typecheck + lint + tests for the detected stack (Node/Rust/Python/Go); used by `yeet`, `peep`, `cook`.
 - `record_demo.mjs` — record a browser demo from a shot list: device-pixel capture, human cursor or touch indicators, auto-zoom on each action, key chips, redaction; used by `walk --video`, `verify` and UI previews.
-- `walk_video.py` — check a walkthrough scene script (claims need receipts, scenes run intent → validation) and render it to a narrated, captioned MP4 with a local TTS engine and ffmpeg; used by `walk --video`.
+- `walk_video.py` — check a walkthrough scene script (claims need receipts, scenes run intent → validation) and render it to a narrated, captioned MP4 with a local TTS engine and ffmpeg, HTML slides drawn in Chromium (`render_slides.mjs`) and cross-faded scenes; used by `walk --video`.
 
 ## Evaluations
 
@@ -323,7 +323,7 @@ Run `/mcp` (or your agent's equivalent) to verify connected servers.
 
 - **GitHub CLI (`gh`)** — required for PR creation. Authenticate with `gh auth login`.
 - **tldraw MCP** (optional) — required for `/bruhs:doodle`. See the command docs for install hints.
-- **Playwright + Chromium** (optional) — for `scripts/record_demo.mjs` demo recordings. The project's own Playwright works, or `npm i -g playwright && npx playwright install chromium`.
+- **Playwright + Chromium** (optional) — for `scripts/record_demo.mjs` demo recordings and the HTML slides in `/bruhs:walk --video` (libass slides are the fallback). The project's own Playwright works, or `npm i -g playwright && npx playwright install chromium`.
 - **ffmpeg with libass** (optional) — required for `/bruhs:walk --video` and demo recordings. Homebrew's and Debian's builds include libass.
 - **piper** (optional) — the local voice for `/bruhs:walk --video`: `uv tool install piper-tts`, plus one voice in `~/.local/share/bruhs/voices/`. Without it, narration falls back to macOS `say`, then espeak-ng, then captions only.
 

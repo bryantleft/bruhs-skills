@@ -1,5 +1,7 @@
 {
-  "skills": ["bruhs"],
+  "skills": [
+    "bruhs"
+  ],
   "command": "scripts/walk_video.py",
   "query": "python3 <PLUGIN_DIR>/scripts/walk_video.py render script.json --out <DIR>",
   "files": [],
@@ -14,12 +16,16 @@
     "--tts piper with no piper binary or voice exits 3 and says how to install piper; auto falls back to say, espeak-ng, then captions-only and says so",
     "render --tts none writes a 1920x1080 walkthrough.mp4 with an audio track, captions.srt, transcript.md and manifest.json, and removes its work directory",
     "The rendered duration matches manifest.json",
-    "transcript.md lists every claim with its status and receipt, escaping pipes so the markdown table holds"
+    "transcript.md lists every claim with its status and receipt, escaping pipes so the markdown table holds",
+    "With Playwright's Chromium available, slides are drawn as HTML: check measures the real layout, shrinks code to fit, and refuses a line too wide even at the smallest code size or a heading wider than one line",
+    "--slides ass draws libass slides and refuses a line wider than its estimated column count",
+    "Scenes join with short cross-fades and the manifest's scene starts and total length account for the overlap"
   ],
   "failure_modes": [
     "A claim marked shown renders without any receipt behind it",
     "Braces or backslashes in code are swallowed as libass override tags",
     "Falling back to a silent video without saying so",
-    "Leaving per-scene intermediates behind in the output directory"
+    "Leaving per-scene intermediates behind in the output directory",
+    "Falling back from HTML to libass slides without saying so"
   ]
 }

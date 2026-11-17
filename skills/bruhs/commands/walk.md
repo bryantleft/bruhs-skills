@@ -371,14 +371,21 @@ optional for a trivial change.
 
 ```bash
 python3 <SKILL_DIR>/scripts/walk_video.py check  "$OUT/script.json"
-python3 <SKILL_DIR>/scripts/walk_video.py render "$OUT/script.json" --out "$OUT" [--tts <engine>]
+python3 <SKILL_DIR>/scripts/walk_video.py render "$OUT/script.json" --out "$OUT" [--tts <engine>] [--slides html|ass]
 ```
 
 `check` lists every problem at once. Typical ones are a shown claim with no receipt,
 scenes out of order, or code that doesn't fit the slide. Fix the script; never loosen a
 claim's status to get past an error. `render` writes `walkthrough.mp4` (1920x1080,
-captions burned in), `captions.srt`, `transcript.md` and `manifest.json`, then prints
-the manifest.
+captions burned in, scenes cross-faded), `captions.srt`, `transcript.md` and
+`manifest.json`, then prints the manifest.
+
+**Slides.** With Node and Playwright's Chromium installed (the same the demo recorder
+needs), slides are drawn as HTML: real text layout, syntax-highlighted code and diffs,
+and code that shrinks to fit before the slide refuses it. Fit is measured in the browser,
+so `check` reports exactly what overflows. Without Chromium, `auto` falls back to libass
+slides and warns. Pass the warning on with the install line (`npm i -g playwright &&
+npx playwright install chromium`).
 
 **Narration engines.** `auto` picks the first available:
 

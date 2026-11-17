@@ -45,7 +45,8 @@ class DemoError extends Error {
 // is 16:9, so it fills a 1920×1080 frame with no bars. Scale 2 captures
 // 2560×1440 device pixels: 1.33 source pixels per output pixel at zoom 1, and
 // still ≥ 0.8 at the default 1.6 max auto-zoom (RESOLUTION_FLOOR below).
-// Scale 3 would allow deeper zooms but measured ~2× slower screencast frames.
+// Scale 3 would allow deeper zooms, but under continuous animation the
+// screencast measured 25 fps at scale 3 against 51 at scale 2 (60 at scale 1).
 const DESKTOP = { viewport: { width: 1280, height: 720 }, scale: 2, output: [1920, 1080], maxZoom: 1.6 };
 // Mobile: Playwright's iPhone 15 descriptor (393×659, DPR 3, touch) captured
 // at 1179×1977, framed in a 1080×1920 portrait video.
@@ -1377,4 +1378,4 @@ if (isMain) {
   });
 }
 
-export { validateShots, resolveGeometry, minJerk, keyLabel };
+export { validateShots, resolveGeometry, minJerk, keyLabel, loadPlaywright };

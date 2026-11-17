@@ -7,10 +7,15 @@ renders a 1920x1080 MP4 with burned-in captions using ffmpeg + libass.
 
 Usage:
     python3 walk_video.py engines [--voice PATH]
-    python3 walk_video.py check  SCRIPT.json [--tts ENGINE] [--voice PATH]
+    python3 walk_video.py check  SCRIPT.json [--tts ENGINE] [--voice PATH] [--slides MODE]
     python3 walk_video.py render SCRIPT.json --out DIR [--tts ENGINE]
-                                 [--voice PATH] [--say-voice NAME]
+                                 [--voice PATH] [--say-voice NAME] [--slides MODE]
                                  [--no-burn-captions] [--keep-work]
+
+MODE is auto (default), html or ass. html draws slides in Chromium through
+render_slides.mjs (Node + Playwright, the same the demo recorder needs): real
+text layout, highlighted code, measured fit. ass draws them with libass.
+auto uses html when it can start Chromium and says so when it falls back.
 
 ENGINE is auto (default), piper, say, espeak-ng or none. auto picks the first
 available in that order. none renders a silent, captions-only video.
@@ -28,6 +33,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import textwrap
 import wave
 from pathlib import Path
@@ -49,6 +55,8 @@ STATUSES = ("shown", "intended", "unchecked")
 STATUS_LABEL = {"shown": "SHOWN", "intended": "INTENDED", "unchecked": "NOT CHECKED"}
 VISUAL_TYPES = ("title", "points", "code", "diff", "image", "video", "claims")
 ENGINES = ("piper", "say", "espeak-ng", "none")
+SLIDE_MODES = ("html", "ass")
+SCRIPTS_DIR = Path(__file__).resolve().parent
 
 # ── Layout (1920x1080; every capacity below is derived from these) ──────────
 WIDTH, HEIGHT, FPS = 1920, 1080, 30
@@ -92,6 +100,11 @@ LEAD_IN_S, SENTENCE_GAP_S, TAIL_S = 0.4, 0.25, 0.7
 TARGET_MAX_SECONDS = 90
 
 SAMPLE_RATE, CHANNELS, SAMPLE_WIDTH = 48000, 2, 2
+
+# Scenes cross-fade into each other. 0.35 s reads as a cut that breathes, not
+# a dissolve, and stays inside the silence every scene already has at its
+# edges (LEAD_IN_S + TAIL_S = 1.1 s), so no word is ever faded.
+XFADE_S = 0.35
 
 COLORS = {
     "bg": "0f1115",
@@ -163,8 +176,11 @@ def _nonempty_str(value: object) -> bool:
     return isinstance(value, str) and value.strip() != ""
 
 
-def validate_script(script: object, base_dir: Path) -> Tuple[List[str], List[str]]:
-    """Return (errors, warnings). Errors block rendering; warnings don't."""
+def validate_script(script: object, base_dir: Path, estimate_fit: bool = True) -> Tuple[List[str], List[str]]:
+    """Return (errors, warnings). Errors block rendering; warnings don't.
+
+    estimate_fit checks that text fits the slide from average character
+    widths. HTML slides measure the real layout instead (measure_slides)."""
     errors: List[str] = []
     warnings: List[str] = []
     if not isinstance(script, dict):
@@ -205,7 +221,7 @@ def validate_script(script: object, base_dir: Path) -> Tuple[List[str], List[str
         heading = scene.get("heading")
         if not _nonempty_str(heading):
             errors.append(f"{where}: \"heading\" must be a non-empty string")
-        elif len(heading) > HEADING_MAX_CHARS:
+        elif estimate_fit and len(heading) > HEADING_MAX_CHARS:
             errors.append(
                 f"{where}: heading is {len(heading)} chars; one line holds {HEADING_MAX_CHARS}. Shorten it"
             )
@@ -229,7 +245,7 @@ def validate_script(script: object, base_dir: Path) -> Tuple[List[str], List[str
         if not isinstance(visual, dict) or visual.get("type") not in VISUAL_TYPES:
             errors.append(f"{where}: \"visual.type\" must be one of {', '.join(VISUAL_TYPES)}")
             continue
-        errors.extend(_validate_visual(where, kind, visual, claims, pr, base_dir))
+        errors.extend(_validate_visual(where, kind, visual, claims, pr, base_dir, estimate_fit))
 
     if kinds_seen and kinds_seen[0] != "intent":
         errors.append("the first scene must be an intent scene: say why the PR exists before what it does")
@@ -249,7 +265,7 @@ def validate_script(script: object, base_dir: Path) -> Tuple[List[str], List[str
 
 
 def _validate_visual(
-    where: str, kind: str, visual: dict, claims: object, pr: dict, base_dir: Path
+    where: str, kind: str, visual: dict, claims: object, pr: dict, base_dir: Path, estimate_fit: bool = True
 ) -> List[str]:
     errors: List[str] = []
     vtype = visual["type"]
@@ -261,7 +277,7 @@ def _validate_visual(
     if vtype == "title":
         if not _nonempty_str(pr.get("title")):
             errors.append(f"{where}: a title visual needs \"pr.title\"")
-        else:
+        elif estimate_fit:
             lines = wrap(pr["title"], int(CONTENT_W / (PROP_EM * TITLE_SIZE)))
             if len(lines) > TITLE_MAX_LINES:
                 errors.append(f"{where}: pr.title wraps to {len(lines)} lines; the title card holds {TITLE_MAX_LINES}")
@@ -269,7 +285,7 @@ def _validate_visual(
         items = visual.get("items")
         if not isinstance(items, list) or not items or not all(_nonempty_str(x) for x in items):
             errors.append(f"{where}: a points visual needs \"items\": a non-empty array of strings")
-        elif points_height(items) > CONTENT_H:
+        elif estimate_fit and points_height(items) > CONTENT_H:
             errors.append(
                 f"{where}: the points need {points_height(items)}px; the slide holds {CONTENT_H}px. "
                 "Use fewer or shorter items"
@@ -278,7 +294,7 @@ def _validate_visual(
         text = visual.get("text")
         if not _nonempty_str(text):
             errors.append(f"{where}: a {vtype} visual needs \"text\"")
-        else:
+        elif estimate_fit:
             lines = expand_code(text)
             if len(lines) > CODE_MAX_LINES:
                 errors.append(
@@ -305,11 +321,11 @@ def _validate_visual(
         if "fill" in visual and not isinstance(visual["fill"], bool):
             errors.append(f"{where}: \"fill\" must be true or false")
     elif vtype == "claims":
-        errors.extend(_validate_claims(where, claims))
+        errors.extend(_validate_claims(where, claims, estimate_fit))
     return errors
 
 
-def _validate_claims(where: str, claims: object) -> List[str]:
+def _validate_claims(where: str, claims: object, estimate_fit: bool = True) -> List[str]:
     errors: List[str] = []
     if not isinstance(claims, list) or not claims:
         return [f"{where}: the validation scene needs \"claims\": what was shown, what is intended, what was not checked"]
@@ -330,7 +346,7 @@ def _validate_claims(where: str, claims: object) -> List[str]:
             )
         if "receipt" in claim and claim["receipt"] is not None and not isinstance(claim["receipt"], str):
             errors.append(f"{cwhere}: \"receipt\" must be a string")
-    if not errors and claims_height(claims) > CONTENT_H:
+    if not errors and estimate_fit and claims_height(claims) > CONTENT_H:
         errors.append(
             f"{where}: the claims need {claims_height(claims)}px; the slide holds {CONTENT_H}px. "
             "Merge or shorten claims; the transcript keeps the full receipts"
@@ -411,6 +427,72 @@ def run(cmd: Sequence[str], *, cwd: Optional[Path] = None, stdin: Optional[str] 
         tail = "\n".join((proc.stderr or proc.stdout).strip().splitlines()[-15:])
         raise WalkVideoError(f"{failure} (exit {proc.returncode}): {' '.join(cmd[:3])} …\n{tail}", EXIT_RENDER_FAILED)
     return proc
+
+
+# ── Slides ──────────────────────────────────────────────────────────────────
+
+
+def slide_layout() -> dict:
+    """The slide geometry render_slides.mjs draws with; one source of truth."""
+    return {
+        "width": WIDTH, "height": HEIGHT, "margin_x": MARGIN_X, "kind_y": KIND_Y, "heading_y": HEADING_Y,
+        "heading_size": HEADING_SIZE, "content_top": CONTENT_TOP, "content_w": CONTENT_W, "content_h": CONTENT_H,
+        "title_size": TITLE_SIZE, "title_max_lines": TITLE_MAX_LINES, "point_size": POINT_SIZE,
+        "point_gap": POINT_GAP, "point_indent": POINT_INDENT, "code_size": CODE_SIZE,
+        "claim_tag_w": CLAIM_TAG_W, "claim_size": CLAIM_SIZE, "receipt_size": RECEIPT_SIZE, "claim_gap": CLAIM_GAP,
+    }
+
+
+def html_slides_status() -> Tuple[bool, str]:
+    node = shutil.which("node")
+    if not node:
+        return False, "node not on PATH"
+    try:
+        proc = subprocess.run([node, str(SCRIPTS_DIR / "render_slides.mjs"), "probe"],
+                              capture_output=True, text=True, timeout=120)
+    except subprocess.TimeoutExpired:
+        return False, "Chromium did not start within 120 s"
+    if proc.returncode != 0:
+        return False, (proc.stderr.strip().splitlines() or ["render_slides probe failed"])[-1]
+    return True, "node + playwright chromium"
+
+
+def choose_slides(requested: str) -> Tuple[str, List[str]]:
+    if requested == "ass":
+        return "ass", []
+    ok, detail = html_slides_status()
+    if ok:
+        return "html", []
+    if requested == "html":
+        raise WalkVideoError(
+            f"HTML slides need Node with Playwright's Chromium: {detail}. Install with "
+            "npm i -g playwright && npx playwright install chromium, or pass --slides ass", EXIT_MISSING_TOOL)
+    return "ass", [f"HTML slides unavailable ({detail}); drawing slides with libass. "
+                   "Install Playwright's Chromium for highlighted code and measured layout"]
+
+
+def run_slides(script: dict, work: Path, measure_only: bool) -> List[dict]:
+    """Draw (or only measure) every slide in Chromium; one result per scene."""
+    work.mkdir(parents=True, exist_ok=True)
+    spec = work / "slides.json"
+    spec.write_text(json.dumps({"pr": script.get("pr", {}), "scenes": script["scenes"], "layout": slide_layout(),
+                                "colors": COLORS}, ensure_ascii=False), encoding="utf-8")
+    cmd = ["node", str(SCRIPTS_DIR / "render_slides.mjs"), "render", str(spec)]
+    cmd += ["--measure-only"] if measure_only else ["--out", str(work)]
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    if proc.returncode != 0:
+        tail = "\n".join(proc.stderr.strip().splitlines()[-10:])
+        code = EXIT_MISSING_TOOL if proc.returncode == EXIT_MISSING_TOOL else EXIT_RENDER_FAILED
+        raise WalkVideoError(f"render_slides.mjs failed (exit {proc.returncode}):\n{tail}", code)
+    return json.loads(proc.stdout)["scenes"]
+
+
+def slide_errors(script: dict, results: List[dict]) -> List[str]:
+    errors = []
+    for res in results:
+        scene = script["scenes"][res["index"] - 1]
+        errors += [f"scene {res['index']} ({scene['kind']}): {e}" for e in res["errors"]]
+    return errors
 
 
 def synthesize(engine: str, engines: Dict[str, dict], text: str, raw: Path, say_voice: Optional[str]) -> None:
@@ -706,13 +788,14 @@ def build_scene_audio(scene: dict, idx: int, engine: str, engines: Dict[str, dic
 
 
 def render_scene(scene: dict, idx: int, pr: dict, audio: Path, cues: List[Tuple[float, float, str]],
-                 duration: float, work: Path, base_dir: Path, burn_captions: bool) -> Path:
+                 duration: float, work: Path, base_dir: Path, burn_captions: bool,
+                 slide: Optional[Path] = None) -> Path:
     ass = AssScene(duration)
     visual = scene["visual"]
     # A filled image or video takes the whole frame: a recording shrunk into
     # the slide's content box loses the detail it was recorded to show.
     fill = visual["type"] in ("image", "video") and visual.get("fill") is True
-    if not fill:
+    if not fill and slide is None:
         draw_header(ass, scene, pr)
         draw_visual(ass, scene, pr)
     if burn_captions:
@@ -723,8 +806,11 @@ def render_scene(scene: dict, idx: int, pr: dict, audio: Path, cues: List[Tuple[
 
     out = work / f"scene{idx:02d}.mp4"
     dur = f"{duration:.3f}"
-    cmd = ["ffmpeg", "-v", "error", "-y", "-f", "lavfi",
-           "-i", f"color=c=0x{COLORS['bg']}:s={WIDTH}x{HEIGHT}:r={FPS}:d={dur}"]
+    if slide is not None:
+        cmd = ["ffmpeg", "-v", "error", "-y", "-loop", "1", "-framerate", str(FPS), "-t", dur, "-i", slide.name]
+    else:
+        cmd = ["ffmpeg", "-v", "error", "-y", "-f", "lavfi",
+               "-i", f"color=c=0x{COLORS['bg']}:s={WIDTH}x{HEIGHT}:r={FPS}:d={dur}"]
     if fill:
         box = f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=decrease,setsar=1"
         place = "overlay=x=(main_w-overlay_w)/2:y=(main_h-overlay_h)/2"
@@ -746,7 +832,7 @@ def render_scene(scene: dict, idx: int, pr: dict, audio: Path, cues: List[Tuple[
                  f"[0:v][m]{place}:eof_action=repeat[b];[b]ass={ass_name}[v]")
         audio_index = 2
     else:
-        graph = f"[0:v]ass={ass_name}[v]"
+        graph = f"[0:v]format=yuv420p,ass={ass_name}[v]"
         audio_index = 1
     cmd += ["-i", audio.name, "-filter_complex", graph, "-map", "[v]", "-map", f"{audio_index}:a",
             "-t", dur, "-r", str(FPS), "-c:v", "libx264", "-preset", "medium", "-crf", "20",
@@ -792,8 +878,31 @@ def transcript_markdown(script: dict, engine: str, engines: Dict[str, dict], dur
     return "\n".join(lines)
 
 
+def join_scenes(files: List[Path], durations: List[float], work: Path, video: Path) -> None:
+    """Cross-fade scenes into one file (a plain copy-join for a single scene)."""
+    if len(files) == 1:
+        shutil.copyfile(files[0], video)
+        return
+    inputs: List[str] = []
+    for f in files:
+        inputs += ["-i", f.name]
+    parts = []
+    v_prev, a_prev = "[0:v]", "[0:a]"
+    offset = 0.0
+    for k in range(1, len(files)):
+        offset += durations[k - 1] - XFADE_S
+        v_out, a_out = f"[v{k}]", f"[a{k}]"
+        parts.append(f"{v_prev}[{k}:v]xfade=transition=fade:duration={XFADE_S}:offset={offset:.3f}{v_out}")
+        parts.append(f"{a_prev}[{k}:a]acrossfade=d={XFADE_S}:c1=tri:c2=tri{a_out}")
+        v_prev, a_prev = v_out, a_out
+    run(["ffmpeg", "-v", "error", "-y", *inputs, "-filter_complex", ";".join(parts), "-map", v_prev, "-map", a_prev,
+         "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p", "-r", str(FPS),
+         "-c:a", "aac", "-b:a", "160k", "-ar", str(SAMPLE_RATE), "-movflags", "+faststart", str(video)],
+        cwd=work, failure="ffmpeg could not join the scenes")
+
+
 def render(script: dict, script_path: Path, out_dir: Path, engine: str, engines: Dict[str, dict],
-           say_voice: Optional[str], burn_captions: bool, keep_work: bool) -> dict:
+           say_voice: Optional[str], burn_captions: bool, keep_work: bool, slides: str = "ass") -> dict:
     base_dir = script_path.parent
     out_dir.mkdir(parents=True, exist_ok=True)
     work = out_dir / "work"
@@ -801,27 +910,35 @@ def render(script: dict, script_path: Path, out_dir: Path, engine: str, engines:
         shutil.rmtree(work)
     work.mkdir()
     pr = script.get("pr", {})
+    slide_files: Dict[int, Path] = {}
+    if slides == "html":
+        results = run_slides(script, work, measure_only=False)
+        errors = slide_errors(script, results)
+        if errors:
+            raise WalkVideoError("the slides don't fit:\n" + "\n".join(f"  - {e}" for e in errors), EXIT_INVALID)
+        slide_files = {r["index"]: Path(r["slide"]) for r in results if r["slide"]}
 
     scene_files: List[Path] = []
+    durations: List[float] = []
     srt: List[str] = []
     offset = 0.0
     scene_report = []
     for idx, scene in enumerate(script["scenes"], start=1):
         audio, cues, duration = build_scene_audio(scene, idx, engine, engines, work, say_voice)
-        scene_files.append(render_scene(scene, idx, pr, audio, cues, duration, work, base_dir, burn_captions))
+        scene_files.append(render_scene(scene, idx, pr, audio, cues, duration, work, base_dir, burn_captions,
+                                        slide_files.get(idx)))
+        durations.append(duration)
         for start, end, chunk in cues:
             srt += [str(len(srt) // 4 + 1), f"{srt_time(offset + start)} --> {srt_time(offset + end)}", chunk, ""]
         scene_report.append({"index": idx, "kind": scene["kind"], "heading": scene["heading"],
                              "start": round(offset, 2), "seconds": round(duration, 2)})
-        offset += duration
+        # The next scene starts XFADE_S early: it fades in over this one's tail.
+        offset += duration - XFADE_S
+    offset += XFADE_S  # the last scene has no successor to overlap
 
-    concat_list = work / "scenes.txt"
-    concat_list.write_text("".join(f"file '{p.name}'\n" for p in scene_files), encoding="utf-8")
     out_dir = out_dir.resolve()
     video = out_dir / "walkthrough.mp4"
-    run(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", concat_list.name,
-         "-c", "copy", "-movflags", "+faststart", str(video)],
-        cwd=work, failure="ffmpeg could not join the scenes")
+    join_scenes(scene_files, durations, work, video)
     (out_dir / "captions.srt").write_text("\n".join(srt), encoding="utf-8")
     (out_dir / "transcript.md").write_text(
         transcript_markdown(script, engine, engines, offset, say_voice), encoding="utf-8")
@@ -836,6 +953,7 @@ def render(script: dict, script_path: Path, out_dir: Path, engine: str, engines:
         "engine": engine,
         "voice": engines["piper"]["voice"] if engine == "piper" else say_voice,
         "captions_burned": burn_captions,
+        "slides": slides,
         "scenes": scene_report,
     }
     (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -866,6 +984,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         p.add_argument("script", type=Path)
         p.add_argument("--tts", choices=("auto",) + ENGINES, default="auto")
         p.add_argument("--voice", help="piper .onnx voice file")
+        p.add_argument("--slides", choices=("auto",) + SLIDE_MODES, default="auto",
+                       help="html (Chromium: measured layout, highlighted code) or ass (libass); auto prefers html")
         if name == "render":
             p.add_argument("--out", type=Path, required=True)
             p.add_argument("--say-voice", help="voice name for macOS say (see: say -v '?')")
@@ -883,14 +1003,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             return EXIT_OK
 
         script = load_script(args.script)
-        errors, warnings = validate_script(script, args.script.parent)
+        slides, slide_notes = choose_slides(args.slides)
+        errors, warnings = validate_script(script, args.script.parent, estimate_fit=slides == "ass")
+        warnings += slide_notes
         if args.command == "check":
+            if slides == "html" and not errors:
+                with tempfile.TemporaryDirectory(prefix="walk-slides-") as tmp:
+                    errors += slide_errors(script, run_slides(script, Path(tmp), measure_only=True))
             engine, notes = choose_engine(args.tts, engines) if not errors else (None, [])
             scenes = script.get("scenes") if isinstance(script, dict) else None
             estimate = sum(estimate_seconds(s.get("narration", "")) for s in scenes
                            if isinstance(s, dict) and isinstance(s.get("narration"), str)) if isinstance(scenes, list) else 0
             print(json.dumps({"ok": not errors, "errors": errors, "warnings": warnings + notes,
-                              "engine": engine, "estimated_seconds": round(estimate, 1)}, indent=2, ensure_ascii=False))
+                              "engine": engine, "slides": slides, "estimated_seconds": round(estimate, 1)},
+                             indent=2, ensure_ascii=False))
             return EXIT_INVALID if errors else EXIT_OK
 
         if errors:
@@ -900,7 +1026,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         for note in warnings + notes:
             print(f"warning: {note}", file=sys.stderr)
         manifest = render(script, args.script.resolve(), args.out, engine, engines, args.say_voice,
-                          not args.no_burn_captions, args.keep_work)
+                          not args.no_burn_captions, args.keep_work, slides)
         manifest["warnings"] = warnings + notes
         print(json.dumps(manifest, indent=2, ensure_ascii=False))
         return EXIT_OK
