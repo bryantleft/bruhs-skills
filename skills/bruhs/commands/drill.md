@@ -98,7 +98,15 @@ Read the project, not a dashboard. Don't trust a green CI badge — green can me
    - Architecture rules in code comments / ADRs but no enforcer → unenforced.
    - Test files excluded from lint/type config → test-code linter absent.
    - Any gate in `continue-on-error: true` → advisory, not a gate.
-5. **Apply the "what would slip through" test** to each absent or advisory layer. Concrete: *if this layer were absent for the next 10 PRs, which class of bug would slip through?* If the answer is "none in this codebase" → don't flag it. If the answer is concrete → it's a candidate.
+   - Several tests asserting one contract, or tests that restate implementation → ownerless tests (layer 2 or 7 waste).
+5. **Check the orchestrator for cycle-time waste** (see `practices/testing-infrastructure.md` → CI cycle time). Evidence comes from workflow files and recent run timings (`gh run list`, `gh run view --json jobs`), not guesses:
+   - No `concurrency` / `cancel-in-progress` on PR workflows → superseded runs burn runners.
+   - Path or change checks inside steps after checkout/install → skip after setup.
+   - The same broad suite on PR, push to main and schedule → no stage ownership.
+   - Full suite on every PR with no deterministic selection, or selection that does not widen on unknown inputs.
+   - More shards than the slowest job's duration justifies, or caches writable from PRs.
+   Report orchestrator waste as layer-8 candidates. The bug class is queued, unverified work, measured as PR-to-merge cycle time.
+6. **Apply the "what would slip through" test** to each absent or advisory layer. Concrete: *if this layer were absent for the next 10 PRs, which class of bug would slip through?* If the answer is "none in this codebase" → don't flag it. If the answer is concrete → it's a candidate.
 
 **Output of Phase 1:** A working set of weak or missing layers, each tied to specific evidence (file paths, CI step names, threshold values, exclusion lists). Don't propose adoption plans yet.
 
@@ -186,7 +194,7 @@ The layers `/bruhs:drill` reasons about. Tool-agnostic by design — pick the ru
 | 5 | **Complexity composite** | High-complexity / low-coverage hotspots. Combines cyclomatic / cognitive complexity with coverage so the worst-of-both code is visible. (The "CRAP" idea — high-risk code with no safety net.) | A list of hotspots produced per PR; gate on "no new hotspot above X". |
 | 6 | **Architecture checker** | Layer / dependency rule violations — callers reaching past the architecture an ADR committed to. The rule set IS the architecture, machine-checked. | Rule set committed in-repo; CI fails on any violation. |
 | 7 | **Test-code linter** | Rot in test files themselves — AI-generated test code that becomes a second, untyped, unreviewed codebase. Applies the production lint + type config to test files. | Test files are not excluded from lint/type config; same gate as production code. |
-| 8 | **CI orchestrator** | Discipline collapse. Without it, every other layer is opt-in. Runs every layer as a hard gate; nothing in `continue-on-error: true` unless the team has explicitly chosen advisory for that layer. | Every gate above runs on every PR; failures block merge. |
+| 8 | **CI orchestrator** | Discipline collapse and queued, unverified work. Without it, every other layer is opt-in. Runs every layer as a hard gate at a declared stage; nothing in `continue-on-error: true` unless the team has explicitly chosen advisory for that layer. Cancels superseded runs, skips before setup, and selects tests deterministically with widening on unknown inputs. | Every gate runs at a declared stage and failures block merge; PR-stage selection widens to the full set on unknown inputs. |
 
 The 8th is the load-bearing one. Layers 1–7 without a real orchestrator are decoration.
 
@@ -282,6 +290,9 @@ What this command refuses to do — and what it should call out when others do i
 - **Proposing a layer without checking the orchestrator.** If `continue-on-error: true` is the norm, adopting any layer is theatre. Fix layer 8 first or in the same PR.
 - **Recommending tools in Phase 2.** Tool choice belongs in Phase 3, after the team has agreed which layer matters.
 - **Recommending without an opinion.** "Here are three runners, you pick" is failure. Pick one. Defend it.
+- **Adding a test instead of strengthening the owner.** A new test for a contract that already has an owner is duplicate runtime on every change. Name the owner, strengthen it, and list the duplicate for deletion.
+- **Cutting CI cost by narrowing coverage silently.** Test selection that skips tests on unknown inputs, or a gate moved off the PR stage without a documented reason, trades a visible bill for invisible risk.
+- **Copying another project's CI numbers.** Shard counts, admission delays and test-line budgets need receipts from this repository's timings.
 - **Leaving old tests when a deeper layer subsumes them.** If acceptance specs cover the integration path, the 14 brittle integration unit tests are waste — list them for deletion in the hand-off.
 
 ---
